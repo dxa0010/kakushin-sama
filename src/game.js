@@ -1286,9 +1286,9 @@ function drawWallClock(glitch) {
 /* ---------- lights ---------- */
 const PT_SCALE = 34;   // r155+のライト物理単位化に伴うスケール（cd換算）
 // 壁のフィルを底上げして、点光源キーを弱めても部屋が暗く沈まないようにする
-const ambient = new THREE.AmbientLight(0x2c2c40, 0.85 * 0.44 * 0.5);
+const ambient = new THREE.AmbientLight(0x2c2c40, 0.85 * 0.44 * 0.25);
 scene.add(ambient);
-const hemi = new THREE.HemisphereLight(0x323c58, 0x100c0a, 0.85 * 0.42 * 0.5);
+const hemi = new THREE.HemisphereLight(0x323c58, 0x100c0a, 0.85 * 0.42 * 0.25);
 scene.add(hemi);
 const roomLights = [];
 const fixtureMats = [];
@@ -1299,7 +1299,7 @@ const fixtureMats = [];
   // 【壁抜け対策】distance を 5.2 まで絞り、各室の照明が隣室の床・壁へ
   // 届かないようにする（部屋の間口が概ね 4〜5m なので、光は自室内で減衰しきる）。
   // レンジを下げた分ぶんだけ強度を引き上げ、さらに全体を一段暗く（0.36）。
-  const l = new THREE.PointLight(0xffdca8, 0.18 * PT_SCALE, 5.2, 2);   // 初期値も半減（applyLightsが即上書き）
+  const l = new THREE.PointLight(0xffdca8, 0.09 * PT_SCALE, 5.2, 2);   // 初期値も連動（applyLightsが即上書き）
   l.position.set(x, 2.66, z);
   l.castShadow = true;
   l.shadow.mapSize.set(1024, 1024);
@@ -1568,9 +1568,9 @@ const visit = {
 };
 let aggro = 0, etaxRejects = 0, tearGenuine = 0, clockGlitch = false;
 // キー光源を弱め、その分アンビエント/ヘミのフィルで底上げする（壁焼け対策）。
-// ユーザー要望で全フェーズをさらに半分の明るさに落とす（夜の暗さを強める）。
-// 旧: {1:[0.36,0.72], 2:[0.20,0.48], 3:[0.07,0.3]} → キー/フィルとも 1/2。
-const LIGHT_BASE = { 1: [0.18, 0.36], 2: [0.10, 0.24], 3: [0.035, 0.15] };
+// ユーザー要望で段階的に暗くしている（夜の暗さを強める）。
+// 初期 {1:[0.36,0.72],...} → 1/2 → さらに 1/2（＝元の 1/4）。キー/フィル比は維持。
+const LIGHT_BASE = { 1: [0.09, 0.18], 2: [0.05, 0.12], 3: [0.018, 0.075] };
 function applyLights(mul = 1) {
   const [li, am] = LIGHT_BASE[phase];
   roomLights.forEach(l => l.intensity = li * mul * PT_SCALE);
