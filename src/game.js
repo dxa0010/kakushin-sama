@@ -425,7 +425,7 @@ const M = {
     map: loadTex("./assets/textures/hardwood2_diffuse.jpg", true, 3.2, 4.4),
     bumpMap: loadTex("./assets/textures/hardwood2_bump.jpg", false, 3.2, 4.4),
     roughnessMap: loadTex("./assets/textures/hardwood2_roughness.jpg", false, 3.2, 4.4),
-    color: 0x87705a, bumpScale: 0.9, roughness: 0.8, metalness: 0.0,
+    color: 0x726b62, bumpScale: 0.9, roughness: 0.84, metalness: 0.0,   // グレイッシュな茶（彩度を落とした板色）
   }),
   ceil:   new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.96 }),
   wood:   new THREE.MeshStandardMaterial({ map: woodTex, normalMap: normalFromTex(woodTex, 1.4), roughness: 0.58 }),
@@ -689,17 +689,19 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
     vbox(0.05, dh, 0.05, M.steel, dx + px * (dw / 2 - 0.05), dh / 2, dz + pz * (dd / 2 - 0.06)));
   vbox(0.04, 0.04, dd - 0.1, M.steel, dx - (dw / 2 - 0.05), 0.1, dz);
   vbox(0.04, 0.04, dd - 0.1, M.steel, dx + (dw / 2 - 0.05), 0.1, dz);
-  // モニタ（スタンド＋角丸ベゼル＋発光面）
-  rbox(0.2, 0.02, 0.14, M.dark, dx, dh + 0.03, dz - 0.28, 0, 0.006, 2);
-  vbox(0.05, 0.18, 0.03, M.dark, dx, dh + 0.12, dz - 0.28);
-  rbox(0.7, 0.42, 0.03, M.dark, dx, dh + 0.34, dz - 0.29, 0, 0.01, 2);
-  vbox(0.64, 0.36, 0.008, new THREE.MeshStandardMaterial({ color: 0x11151c, emissive: 0x14243a, roughness: 0.3 }), dx, dh + 0.34, dz - 0.305);
-  // キーボード・マウス
-  rbox(0.44, 0.02, 0.15, M.dark, dx - 0.03, dh + 0.03, dz + 0.12, 0, 0.006, 2);
-  rbox(0.06, 0.022, 0.1, M.dark, dx + 0.32, dh + 0.03, dz + 0.14, 0, 0.008, 2);
-  vcyl(0.05, 0.04, 0.11, M.white, dx - 0.62, dh + 0.06, dz + 0.02, 12);     // マグカップ
+  // モニタ（スタンド＋角丸ベゼル＋発光面）。椅子は -z 側にあるので、
+  // モニタは机の奥側(+z)に置き、画面は椅子の方（-z）を向ける。
+  const mz = dz + 0.26;                                                      // 奥端（壁側）
+  rbox(0.2, 0.02, 0.14, M.dark, dx, dh + 0.03, mz, 0, 0.006, 2);            // スタンド台座
+  vbox(0.05, 0.18, 0.04, M.dark, dx, dh + 0.12, mz);                        // 支柱
+  rbox(0.7, 0.42, 0.03, M.dark, dx, dh + 0.34, mz + 0.01, 0, 0.01, 2);      // ベゼル
+  vbox(0.64, 0.36, 0.008, new THREE.MeshStandardMaterial({ color: 0x11151c, emissive: 0x14243a, roughness: 0.3 }), dx, dh + 0.34, mz - 0.006);  // 画面（-z面＝椅子側）
+  // キーボード・マウス（椅子側 -z の手前に。モニタとの間に作業スペースを空ける）
+  rbox(0.44, 0.02, 0.15, M.dark, dx - 0.03, dh + 0.03, dz - 0.2, 0, 0.006, 2);
+  rbox(0.06, 0.022, 0.1, M.dark, dx + 0.32, dh + 0.03, dz - 0.18, 0, 0.008, 2);
+  vcyl(0.05, 0.04, 0.11, M.white, dx - 0.62, dh + 0.06, dz + 0.05, 12);     // マグカップ（奥の隅）
   for (let i = 0; i < 3; i++)
-    vbox(0.28, 0.006, 0.2, M.paper, dx - 0.5 + Math.random() * 0.9, dh + 0.03, dz - 0.05 + Math.random() * 0.4, Math.random() * 1.2);
+    vbox(0.28, 0.006, 0.2, M.paper, dx - 0.5 + Math.random() * 0.9, dh + 0.03, dz + 0.02 + Math.random() * 0.22, Math.random() * 1.2);
   // 椅子（座面・背もたれ・5本脚キャスター・ガスシリンダー）
   solids.push({ x1: 6.35, z1: -3.6, x2: 6.85, z2: -3.1 });
   const chx = 6.6, chz = -3.35;
@@ -853,8 +855,8 @@ const fixtureMats = [];
 [[3.8, 1.0], [-4.2, 3.0], [-5.0, -3.2], [5.6, -4.4]].forEach(([x, z]) => {
   // 【壁抜け対策】distance を 5.2 まで絞り、各室の照明が隣室の床・壁へ
   // 届かないようにする（部屋の間口が概ね 4〜5m なので、光は自室内で減衰しきる）。
-  // レンジを下げた分ぶんだけ強度を 0.30→0.42 へ引き上げ、明るさを維持。
-  const l = new THREE.PointLight(0xffdca8, 0.42 * PT_SCALE, 5.2, 2);
+  // レンジを下げた分ぶんだけ強度を引き上げ、さらに全体を一段暗く（0.36）。
+  const l = new THREE.PointLight(0xffdca8, 0.36 * PT_SCALE, 5.2, 2);
   l.position.set(x, 2.66, z);
   l.castShadow = true;
   l.shadow.mapSize.set(1024, 1024);
@@ -1005,14 +1007,14 @@ const visit = {
 };
 let aggro = 0, etaxRejects = 0, tearGenuine = 0, clockGlitch = false;
 // キー光源を弱め、その分アンビエント/ヘミのフィルで底上げする（壁焼け対策）。
-// distance=5.2 に絞った分、キー強度は 0.30→0.42 に引き上げて明るさを維持。
-const LIGHT_BASE = { 1: [0.42, 0.85], 2: [0.24, 0.55], 3: [0.09, 0.35] };
+// 全体をもう一段暗く（キー 0.42→0.36、フィルも微減）。ホラーの夜の暗さに寄せる。
+const LIGHT_BASE = { 1: [0.36, 0.72], 2: [0.20, 0.48], 3: [0.07, 0.3] };
 function applyLights(mul = 1) {
   const [li, am] = LIGHT_BASE[phase];
   roomLights.forEach(l => l.intensity = li * mul * PT_SCALE);
-  ambient.intensity = am * 0.44 * (mul === 1 ? 1 : 0.7);
-  hemi.intensity = am * 0.42 * (mul === 1 ? 1 : 0.7);
-  const f = Math.min(1, (li * mul) / 0.42);   // 器具の発光面も連動して暗くなる
+  ambient.intensity = am * 0.4 * (mul === 1 ? 1 : 0.7);
+  hemi.intensity = am * 0.38 * (mul === 1 ? 1 : 0.7);
+  const f = Math.min(1, (li * mul) / 0.36);   // 器具の発光面も連動して暗くなる
   fixtureMats.forEach(m => m.color.setRGB(0.12 + 0.82 * f, 0.1 + 0.78 * f, 0.08 + 0.64 * f));
 }
 const OMENS = ["tv", "lights", "clock", "poster"];
