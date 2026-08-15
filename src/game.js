@@ -486,7 +486,7 @@ const M = {
   /* --- 机まわり専用（高精細化用） --- */
   plastic:  new THREE.MeshStandardMaterial({ color: 0x1b1c20, roughness: 0.5, metalness: 0.05 }),   // 家電の樹脂（モニタ枠・キーボード土台）
   keycap:   new THREE.MeshStandardMaterial({ color: 0x35373d, roughness: 0.62 }),                   // キーキャップ（土台よりわずかに明るいグレー）
-  screen:   new THREE.MeshStandardMaterial({ color: 0x0b0e14, emissive: 0x1c3350, emissiveIntensity: 1.0, roughness: 0.18, metalness: 0.1 }),  // 液晶面（薄い青の自発光）
+  screen:   new THREE.MeshStandardMaterial({ color: 0x0b0e14, emissive: 0x3a5f96, emissiveIntensity: 1.7, roughness: 0.5, metalness: 0.0 }),  // 液晶面（青白くはっきり点灯。机の主光源。つや消しで映り込みの白点を抑える）
   ceramic:  new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.35, metalness: 0.0 }),   // マグカップの陶器（少しつや）
   penBody:  new THREE.MeshStandardMaterial({ color: 0x202227, roughness: 0.55 }),                   // ペン軸
   lampShade:new THREE.MeshStandardMaterial({ color: 0x2b2d33, roughness: 0.6, metalness: 0.2 }),    // デスクライトの傘（黒）
@@ -942,6 +942,13 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   bezel.rotation.x = -0.06;
   const scr = vbox(0.66, 0.375, 0.006, M.screen, dx, panY, panZ - 0.018);    // 液晶面（-z＝椅子側）
   scr.rotation.x = -0.06;
+  // 画面の光で手元をほのかに照らす青白い局所光（消したデスクライトの代替。弱め・短レンジ）
+  const scrGlow = new THREE.PointLight(0x88a8d8, 0.05 * 34, 1.2, 2.2);
+  scrGlow.position.set(dx, panY - 0.22, panZ - 0.28);   // 画面より下・手前へ。ガラス面への正反射を避ける
+  scrGlow.castShadow = true; scrGlow.shadow.mapSize.set(512, 512);
+  scrGlow.shadow.bias = -0.0008; scrGlow.shadow.normalBias = 0.02;
+  scrGlow.shadow.camera.near = 0.05; scrGlow.shadow.camera.far = 1.4;
+  scene.add(scrGlow);
   vbox(0.05, 0.012, 0.006, new THREE.MeshStandardMaterial({ color: 0x2a2c31, roughness: 0.5 }), dx, panY - 0.205, panZ - 0.02);  // 下ベゼルのロゴ帯
   // 電源ケーブル（台座から天板の奥へ垂れる）
   const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.14, 6), M.dark);
@@ -994,15 +1001,10 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   arm2.position.set(laX - 0.14, top + 0.34, laZ - 0.04); arm2.rotation.z = 1.15; scene.add(arm2);
   const shade = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.11, 16, 1, true), M.lampShade);
   shade.position.set(laX - 0.3, top + 0.34, laZ - 0.06); shade.rotation.z = -0.7; scene.add(shade);
+  // デスクライトは消灯（ユーザー要望）。電球は光らない暗いガラス球にし、光源は置かない。
   const lampGlow = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 8),
-    new THREE.MeshBasicMaterial({ color: 0xd8b070 }));                       // 電球は小さく・控えめに（ブルームを抑える）
+    new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.5, metalness: 0.1 }));  // 消えた電球（黒っぽい）
   lampGlow.position.set(laX - 0.32, top + 0.3, laZ - 0.06); scene.add(lampGlow);
-  const deskLamp = new THREE.PointLight(0xffd9a0, 0.04 * 34, 1.3, 2.4);      // 局所の暖色光（弱め・短レンジ・強めの減衰で手元だけ照らす）
-  deskLamp.position.set(laX - 0.34, top + 0.24, laZ - 0.05);
-  deskLamp.castShadow = true; deskLamp.shadow.mapSize.set(512, 512);
-  deskLamp.shadow.bias = -0.0008; deskLamp.shadow.normalBias = 0.02;
-  deskLamp.shadow.camera.near = 0.05; deskLamp.shadow.camera.far = 1.5;
-  scene.add(deskLamp);
   // 椅子（座面・背もたれ・5本脚キャスター・ガスシリンダー）
   solids.push({ x1: 6.35, z1: -3.6, x2: 6.85, z2: -3.1 });
   const chx = 6.6, chz = -3.35;
@@ -1284,9 +1286,9 @@ function drawWallClock(glitch) {
 /* ---------- lights ---------- */
 const PT_SCALE = 34;   // r155+のライト物理単位化に伴うスケール（cd換算）
 // 壁のフィルを底上げして、点光源キーを弱めても部屋が暗く沈まないようにする
-const ambient = new THREE.AmbientLight(0x2c2c40, 0.85 * 0.44);
+const ambient = new THREE.AmbientLight(0x2c2c40, 0.85 * 0.44 * 0.5);
 scene.add(ambient);
-const hemi = new THREE.HemisphereLight(0x323c58, 0x100c0a, 0.85 * 0.42);
+const hemi = new THREE.HemisphereLight(0x323c58, 0x100c0a, 0.85 * 0.42 * 0.5);
 scene.add(hemi);
 const roomLights = [];
 const fixtureMats = [];
@@ -1297,7 +1299,7 @@ const fixtureMats = [];
   // 【壁抜け対策】distance を 5.2 まで絞り、各室の照明が隣室の床・壁へ
   // 届かないようにする（部屋の間口が概ね 4〜5m なので、光は自室内で減衰しきる）。
   // レンジを下げた分ぶんだけ強度を引き上げ、さらに全体を一段暗く（0.36）。
-  const l = new THREE.PointLight(0xffdca8, 0.36 * PT_SCALE, 5.2, 2);
+  const l = new THREE.PointLight(0xffdca8, 0.18 * PT_SCALE, 5.2, 2);   // 初期値も半減（applyLightsが即上書き）
   l.position.set(x, 2.66, z);
   l.castShadow = true;
   l.shadow.mapSize.set(1024, 1024);
@@ -1335,11 +1337,11 @@ const itemMeshes = {};
 function makeGlow(x, y, z, color) {
   const grp = new THREE.Group();
   const core = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.13),
-    new THREE.MeshLambertMaterial({ color: 0xfff6d8, emissive: color })
+    new THREE.OctahedronGeometry(0.085),                     // アイコンを小さく（0.13→0.085）
+    new THREE.MeshLambertMaterial({ color: 0xd8cba8, emissive: color })   // コアも少し落ち着かせる
   );
   grp.add(core);
-  const l = new THREE.PointLight(color, 0.8 * 3.2, 2.6, 2);
+  const l = new THREE.PointLight(color, 0.34 * 3.2, 1.5, 2);  // 周囲を照らす明かりを暗く（0.8→0.34）・レンジも大幅短縮（2.6→1.5）で布への広い反射を抑える
   grp.add(l);
   grp.position.set(x, y, z);
   scene.add(grp);
@@ -1566,8 +1568,9 @@ const visit = {
 };
 let aggro = 0, etaxRejects = 0, tearGenuine = 0, clockGlitch = false;
 // キー光源を弱め、その分アンビエント/ヘミのフィルで底上げする（壁焼け対策）。
-// 全体をもう一段暗く（キー 0.42→0.36、フィルも微減）。ホラーの夜の暗さに寄せる。
-const LIGHT_BASE = { 1: [0.36, 0.72], 2: [0.20, 0.48], 3: [0.07, 0.3] };
+// ユーザー要望で全フェーズをさらに半分の明るさに落とす（夜の暗さを強める）。
+// 旧: {1:[0.36,0.72], 2:[0.20,0.48], 3:[0.07,0.3]} → キー/フィルとも 1/2。
+const LIGHT_BASE = { 1: [0.18, 0.36], 2: [0.10, 0.24], 3: [0.035, 0.15] };
 function applyLights(mul = 1) {
   const [li, am] = LIGHT_BASE[phase];
   roomLights.forEach(l => l.intensity = li * mul * PT_SCALE);
