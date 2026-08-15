@@ -1070,38 +1070,110 @@ for (let i = 0; i < 7; i++) {
 }
 // 壁掛け時計（プロシージャル。針メッシュ自体をゲーム内時刻と同期回転）
 let lastWallMin = -1;
-const clockHands = { minute: null, hour: null };
+const clockHands = { minute: null, hour: null, second: null };
 {
   const clx = 1.4, cly = 2.1, clz = -5.9;   // 中央壁の少し手前
-  // ケース（角丸円盤）・文字盤・ガラスリング
-  vcyl(0.28, 0.28, 0.05, M.oakDark, clx, cly, clz, 40).rotation.x = Math.PI / 2;
-  const face = new THREE.Mesh(new THREE.CircleGeometry(0.25, 40),
-    new THREE.MeshStandardMaterial({ color: 0xf0ece0, roughness: 0.7 }));
-  face.position.set(clx, cly, clz + 0.026); scene.add(face);
-  const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.02, 10, 40), M.steel);
-  bezel.position.set(clx, cly, clz + 0.026); scene.add(bezel);
-  // 時刻目盛り（12本、太い4本＝12/3/6/9）
-  for (let i = 0; i < 12; i++) {
-    const a = i / 12 * Math.PI * 2;
-    const big = i % 3 === 0;
-    const t = new THREE.Mesh(new THREE.BoxGeometry(big ? 0.018 : 0.008, big ? 0.05 : 0.03, 0.006), M.dark);
-    t.position.set(clx + Math.sin(a) * 0.215, cly + Math.cos(a) * 0.215, clz + 0.03);
-    t.rotation.z = -a; scene.add(t);
+  // --- 文字盤テクスチャ（数字・分目盛り・メーカー刻印・経年のくすみ） ---
+  const faceTex = makeTex(512, 512, (c, w, h) => {
+    const cx = w / 2, cy = h / 2, R = w * 0.47;
+    // キャンバス全体を暗い下地で塗りつぶす（透明を使わず不透明テクスチャにする）
+    c.fillStyle = "#141210"; c.fillRect(0, 0, w, h);
+    // くすんだ古象牙色の文字盤（強い天井灯でも白飛びしないよう暗めに）＋外周ビネット
+    const g = c.createRadialGradient(cx, cy, R * 0.1, cx, cy, R);
+    g.addColorStop(0, "#c3b89c"); g.addColorStop(0.7, "#b7ac90"); g.addColorStop(1, "#9d9276");
+    c.fillStyle = g; c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fill();
+    // 経年のシミ（薄い茶の斑点）
+    for (let i = 0; i < 40; i++) {
+      const a = i * 2.399, r = R * (0.15 + (i % 7) / 7 * 0.75);
+      const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r, s = 2 + (i % 5) * 3;
+      c.fillStyle = `rgba(120,96,60,${0.03 + (i % 3) * 0.02})`;
+      c.beginPath(); c.arc(x, y, s, 0, Math.PI * 2); c.fill();
+    }
+    // 分目盛り（60本、5本ごとに太く）＋12個の数字（純黒・太めで確実に読ませる）
+    for (let i = 0; i < 60; i++) {
+      const a = i / 60 * Math.PI * 2 - Math.PI / 2;
+      const big = i % 5 === 0;
+      const r0 = R * (big ? 0.78 : 0.87), r1 = R * 0.94;
+      c.strokeStyle = "#000000"; c.lineWidth = big ? 9 : 3.5; c.lineCap = "round";
+      c.beginPath();
+      c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      c.stroke();
+    }
+    c.fillStyle = "#000000"; c.font = `bold ${Math.round(R * 0.24)}px Georgia, serif`;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    for (let n = 1; n <= 12; n++) {
+      const a = n / 12 * Math.PI * 2 - Math.PI / 2, r = R * 0.64;
+      c.fillText(String(n), cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    // メーカー刻印と MADE IN 表記
+    c.fillStyle = "#5a4f3e"; c.font = `bold ${Math.round(R * 0.08)}px Georgia, serif`;
+    c.fillText("SEIKOSHA", cx, cy - R * 0.36);
+    c.font = `${Math.round(R * 0.05)}px Georgia, serif`;
+    c.fillText("QUARTZ", cx, cy + R * 0.32);
+  });
+  faceTex.wrapS = faceTex.wrapT = THREE.ClampToEdgeWrapping; faceTex.repeat.set(1, 1);
+  // ミップマップ生成が細い数字・目盛りを潰すため無効化し、常にフル解像度でサンプルさせる
+  faceTex.generateMipmaps = false;
+  faceTex.minFilter = THREE.LinearFilter;
+  faceTex.magFilter = THREE.LinearFilter;
+  faceTex.anisotropy = 1;
+  faceTex.needsUpdate = true;
+  // --- ケース：濃い木の本体＋外周リム＋背面（奥行きのある枠に見せる） ---
+  // ボディは文字盤より確実に後ろに置く（前面が文字盤を隠さないよう中心を奥へ）
+  vcyl(0.29, 0.29, 0.06, M.oakDark, clx, cly, clz - 0.04, 44).rotation.x = Math.PI / 2;   // 背面のボディ（前面 ≈ clz-0.01）
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.275, 0.03, 12, 48),
+    new THREE.MeshStandardMaterial({ map: M.oakDark.map, normalMap: M.oakDark.normalMap, color: 0x6e523a, roughness: 0.6 }));
+  rim.position.set(clx, cly, clz + 0.028); scene.add(rim);                                  // 木の外リム
+  // 文字盤：CircleGeometry の既定UVは中心一点しか拾わないため、UVを円全体に貼り直す。
+  const faceGeo = new THREE.CircleGeometry(0.235, 48);
+  {
+    const pos = faceGeo.attributes.position, uv = faceGeo.attributes.uv, r = 0.235;
+    for (let i = 0; i < pos.count; i++)
+      uv.setXY(i, 0.5 + (pos.getX(i) / r) * 0.47, 0.5 + (pos.getY(i) / r) * 0.47);
+    uv.needsUpdate = true;
   }
+  const face = new THREE.Mesh(faceGeo,
+    new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.98, metalness: 0.0 }));
+  face.position.set(clx, cly, clz + 0.020); scene.add(face);
+  // 内側の影リング（文字盤外周だけをうっすら暗くして奥行きを出す。中央は暗くしない）
+  const shadowRing = new THREE.Mesh(new THREE.TorusGeometry(0.243, 0.010, 10, 48),
+    new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1, transparent: true, opacity: 0.35 }));
+  shadowRing.position.set(clx, cly, clz + 0.023); scene.add(shadowRing);
+  // 金属ベゼル（暗所で黒く沈まないよう metalness 低め・粗さ中）
+  const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.252, 0.012, 12, 48),
+    new THREE.MeshStandardMaterial({ color: 0xb7bcc2, roughness: 0.4, metalness: 0.3 }));
+  bezel.position.set(clx, cly, clz + 0.030); scene.add(bezel);
+  // ガラスカバー（ごく薄い反射。文字盤を覆い隠さないよう不透明度を最小に）
+  const glass = new THREE.Mesh(new THREE.CircleGeometry(0.246, 48),
+    new THREE.MeshStandardMaterial({ color: 0xeef3f6, roughness: 0.06, metalness: 0.0, transparent: true, opacity: 0.04 }));
+  glass.position.set(clx, cly, clz + 0.048); scene.add(glass);
   // 針：端を軸に回すため、ジオメトリを先端側へずらしてからグループごと回転させる
-  function makeHand(len, wid, thick, mat, z) {
+  // 幅方向にテーパーする菱形の針（先端が細くなる本物らしい形）
+  function makeHand(len, wid, thick, mat, z, taper = 0.35) {
     const g = new THREE.Group();
-    const geo = new THREE.BoxGeometry(wid, len, thick);
-    geo.translate(0, len / 2 - wid, 0);         // 根元が原点、先端が上（+Y）に伸びる
-    const m = new THREE.Mesh(geo, mat);
+    const shape = new THREE.Shape();
+    shape.moveTo(-wid * 0.5, -len * 0.12);
+    shape.lineTo(-wid * taper * 0.5, len * 0.9 - wid);
+    shape.lineTo(0, len - wid);              // 先端
+    shape.lineTo(wid * taper * 0.5, len * 0.9 - wid);
+    shape.lineTo(wid * 0.5, -len * 0.12);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: false });
+    const m = new THREE.Mesh(geo, mat); m.position.z = -thick / 2;
     g.add(m);
     g.position.set(clx, cly, clz + z);
     scene.add(g);
     return g;
   }
-  clockHands.hour = makeHand(0.13, 0.02, 0.006, M.dark, 0.033);
-  clockHands.minute = makeHand(0.2, 0.014, 0.006, M.dark, 0.038);
-  vcyl(0.016, 0.016, 0.02, M.steel, clx, cly, clz + 0.042, 12).rotation.x = Math.PI / 2;  // 中央キャップ
+  const handMat = new THREE.MeshStandardMaterial({ color: 0x14110d, roughness: 0.5, metalness: 0.2 });
+  const secMat = new THREE.MeshStandardMaterial({ color: 0xb02b1f, roughness: 0.5, metalness: 0.1 });
+  clockHands.hour   = makeHand(0.135, 0.024, 0.006, handMat, 0.033);
+  clockHands.minute = makeHand(0.205, 0.017, 0.006, handMat, 0.037);
+  clockHands.second = makeHand(0.215, 0.006, 0.004, secMat, 0.040, 0.7);
+  // 中央ハブ（金属キャップ＋赤い秒針のカウンターウェイト風）
+  vcyl(0.017, 0.017, 0.018, new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.4, metalness: 0.3 }),
+    clx, cly, clz + 0.043, 16).rotation.x = Math.PI / 2;
   drawWallClock(false);
 }
 function drawWallClock(glitch) {
@@ -1110,6 +1182,11 @@ function drawWallClock(glitch) {
   // 12時位置(+Y)を0として時計回り＝-Z回転
   clockHands.hour.rotation.z = -(mins / 720) * Math.PI * 2;
   clockHands.minute.rotation.z = -((mins % 60) / 60) * Math.PI * 2;
+  if (clockHands.second) {
+    // 秒針：グリッチ時はランダム、通常は分の端数から秒を作って滑らかに回す
+    const sec = glitch ? Math.random() * 60 : (mins * 60) % 60;
+    clockHands.second.rotation.z = -(sec / 60) * Math.PI * 2;
+  }
 }
 
 /* ---------- lights ---------- */
