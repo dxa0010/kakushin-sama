@@ -452,6 +452,16 @@ const M = {
     color: 0xa89478, roughness: 0.96,                                                               // 掛け布団: くすんだオートミール茶（白いシーツと差をつけつつ暗すぎない）
   }),
   pillow:   new THREE.MeshStandardMaterial({ color: 0xe4ddcc, roughness: 0.9 }),                    // 枕（マットレスより明るい白）
+  /* --- 机まわり専用（高精細化用） --- */
+  plastic:  new THREE.MeshStandardMaterial({ color: 0x1b1c20, roughness: 0.5, metalness: 0.05 }),   // 家電の樹脂（モニタ枠・キーボード土台）
+  keycap:   new THREE.MeshStandardMaterial({ color: 0x35373d, roughness: 0.62 }),                   // キーキャップ（土台よりわずかに明るいグレー）
+  screen:   new THREE.MeshStandardMaterial({ color: 0x0b0e14, emissive: 0x1c3350, emissiveIntensity: 1.0, roughness: 0.18, metalness: 0.1 }),  // 液晶面（薄い青の自発光）
+  ceramic:  new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.35, metalness: 0.0 }),   // マグカップの陶器（少しつや）
+  penBody:  new THREE.MeshStandardMaterial({ color: 0x202227, roughness: 0.55 }),                   // ペン軸
+  lampShade:new THREE.MeshStandardMaterial({ color: 0x2b2d33, roughness: 0.6, metalness: 0.2 }),    // デスクライトの傘（黒）
+  lampArm:  new THREE.MeshStandardMaterial({ color: 0x3a3c42, roughness: 0.4, metalness: 0.6 }),    // アーム
+  form:     new THREE.MeshStandardMaterial({ color: 0xe9e4d6, roughness: 0.96 }),                   // 確定申告フォーム用紙（白めのオフホワイト）
+  formInk:  new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.9 }),                    // 用紙の印字（薄い罫線・文字塊）
 };
 // 背表紙：くすんだ布・革装丁の色（ホラーの暗い室内で浮かない、彩度低め・暗め）
 const bookMats = [0x5a3730, 0x33455a, 0x3d5240, 0x5a4a28, 0x39344f, 0x6b5636,
@@ -689,19 +699,82 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
     vbox(0.05, dh, 0.05, M.steel, dx + px * (dw / 2 - 0.05), dh / 2, dz + pz * (dd / 2 - 0.06)));
   vbox(0.04, 0.04, dd - 0.1, M.steel, dx - (dw / 2 - 0.05), 0.1, dz);
   vbox(0.04, 0.04, dd - 0.1, M.steel, dx + (dw / 2 - 0.05), 0.1, dz);
-  // モニタ（スタンド＋角丸ベゼル＋発光面）。椅子は -z 側にあるので、
-  // モニタは机の奥側(+z)に置き、画面は椅子の方（-z）を向ける。
-  const mz = dz + 0.26;                                                      // 奥端（壁側）
-  rbox(0.2, 0.02, 0.14, M.dark, dx, dh + 0.03, mz, 0, 0.006, 2);            // スタンド台座
-  vbox(0.05, 0.18, 0.04, M.dark, dx, dh + 0.12, mz);                        // 支柱
-  rbox(0.7, 0.42, 0.03, M.dark, dx, dh + 0.34, mz + 0.01, 0, 0.01, 2);      // ベゼル
-  vbox(0.64, 0.36, 0.008, new THREE.MeshStandardMaterial({ color: 0x11151c, emissive: 0x14243a, roughness: 0.3 }), dx, dh + 0.34, mz - 0.006);  // 画面（-z面＝椅子側）
-  // キーボード・マウス（椅子側 -z の手前に。モニタとの間に作業スペースを空ける）
-  rbox(0.44, 0.02, 0.15, M.dark, dx - 0.03, dh + 0.03, dz - 0.2, 0, 0.006, 2);
-  rbox(0.06, 0.022, 0.1, M.dark, dx + 0.32, dh + 0.03, dz - 0.18, 0, 0.008, 2);
-  vcyl(0.05, 0.04, 0.11, M.white, dx - 0.62, dh + 0.06, dz + 0.05, 12);     // マグカップ（奥の隅）
-  for (let i = 0; i < 3; i++)
-    vbox(0.28, 0.006, 0.2, M.paper, dx - 0.5 + Math.random() * 0.9, dh + 0.03, dz + 0.02 + Math.random() * 0.22, Math.random() * 1.2);
+  const top = dh + 0.025;                        // 天板上面の高さ（小物はこの上に置く）
+  // ── モニタ ──────────────────────────────────────────
+  // 椅子は -z 側。モニタは奥(+z)に置き、画面を椅子側(-z)へ向ける。
+  const mz = dz + 0.24;                                                      // 支柱の位置（奥寄り）
+  rbox(0.26, 0.018, 0.16, M.plastic, dx, top + 0.009, mz, 0, 0.01, 2);       // スタンド台座（重り）
+  const neck = rbox(0.045, 0.22, 0.055, M.plastic, dx, top + 0.13, mz, 0, 0.015, 2);  // 支柱
+  neck.rotation.x = 0.06;                                                    // わずかに後傾
+  // パネル：背面ケース(厚)＋前面ベゼル(薄・角丸)＋液晶面。全体を -z にわずかに傾ける
+  const panY = top + 0.36, panZ = mz - 0.03;
+  const monBack = rbox(0.72, 0.44, 0.05, M.plastic, dx, panY, panZ + 0.02, 0, 0.014, 2);   // 背面ケース
+  monBack.rotation.x = -0.06;
+  const bezel = rbox(0.72, 0.44, 0.02, new THREE.MeshStandardMaterial({ color: 0x141519, roughness: 0.4 }), dx, panY, panZ - 0.006, 0, 0.012, 2);
+  bezel.rotation.x = -0.06;
+  const scr = vbox(0.66, 0.375, 0.006, M.screen, dx, panY, panZ - 0.018);    // 液晶面（-z＝椅子側）
+  scr.rotation.x = -0.06;
+  vbox(0.05, 0.012, 0.006, new THREE.MeshStandardMaterial({ color: 0x2a2c31, roughness: 0.5 }), dx, panY - 0.205, panZ - 0.02);  // 下ベゼルのロゴ帯
+  // 電源ケーブル（台座から天板の奥へ垂れる）
+  const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.14, 6), M.dark);
+  cable.position.set(dx + 0.1, top + 0.06, mz + 0.05); cable.rotation.x = 0.4; scene.add(cable);
+  // ── キーボード（土台＋キーキャップ格子） ───────────────
+  const kbX = dx - 0.02, kbZ = dz - 0.22, kbW = 0.46, kbD = 0.16;
+  rbox(kbW, 0.016, kbD, M.plastic, kbX, top + 0.008, kbZ, 0, 0.006, 2);      // 土台
+  for (let r = 0; r < 4; r++)                                                // キーキャップ 4行×14列
+    for (let c = 0; c < 14; c++)
+      vbox(0.024, 0.008, 0.022, M.keycap,
+        kbX - kbW / 2 + 0.035 + c * 0.0295, top + 0.02, kbZ - kbD / 2 + 0.035 + r * 0.031);
+  vbox(0.16, 0.008, 0.022, M.keycap, kbX, top + 0.02, kbZ + kbD / 2 - 0.02);  // スペースキー
+  // ── マウス（角丸・2ボタンのすき間） ────────────────────
+  const msX = dx + 0.34, msZ = dz - 0.2;
+  rbox(0.058, 0.026, 0.095, M.plastic, msX, top + 0.013, msZ, 0, 0.02, 3);   // 本体
+  vbox(0.001, 0.02, 0.05, new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 0.6 }), msX, top + 0.022, msZ - 0.02);  // ボタン分割線
+  // ── マグカップ（取っ手＋縁の凹み） ─────────────────────
+  const cupX = dx - 0.6, cupZ = dz + 0.06;
+  vcyl(0.05, 0.045, 0.11, M.ceramic, cupX, top + 0.055, cupZ, 16);           // 胴
+  vcyl(0.043, 0.043, 0.02, new THREE.MeshStandardMaterial({ color: 0x241a12, roughness: 0.4 }), cupX, top + 0.1, cupZ, 16);  // 中のコーヒー
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.008, 8, 16, Math.PI * 1.2), M.ceramic);
+  handle.position.set(cupX + 0.05, top + 0.055, cupZ); handle.rotation.y = Math.PI / 2; scene.add(handle);  // 取っ手
+  // ── ペン立て＋ペン ────────────────────────────────────
+  const pcX = dx - 0.68, pcZ = dz + 0.2;
+  vcyl(0.035, 0.032, 0.1, M.steel, pcX, top + 0.05, pcZ, 12);                // 筒
+  [[-0.012, 0.01, 0.06], [0.014, -0.008, -0.05], [0.002, 0.014, 0.12]].forEach(([ox, oz, tilt]) => {
+    const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.16, 8), M.penBody);
+    pen.position.set(pcX + ox, top + 0.11, pcZ + oz); pen.rotation.z = tilt; pen.rotation.x = tilt * 0.6; scene.add(pen);
+  });
+  // ── 散乱した確定申告フォーム（重なり＋印字） ──────────────
+  const forms = [[-0.42, 0.18, 0.9], [-0.34, 0.28, 0.6], [0.05, 0.24, 1.3]];
+  forms.forEach(([ox, oz, ry], i) => {
+    const fx = dx + ox, fz = dz + oz, fy = top + 0.004 + i * 0.004;
+    rbox(0.24, 0.004, 0.32, M.form, fx, fy, fz, ry, 0.002, 1);               // A4 用紙
+    // 印字：見出し帯＋罫線数本（用紙面のすぐ上に薄板で）
+    const put = (w, d, lx, lz) => { const m = vbox(w, 0.001, d, M.formInk, fx + lx, fy + 0.003, fz + lz, ry); return m; };
+    put(0.16, 0.012, 0, -0.12);                                              // タイトル帯
+    for (let r = 0; r < 5; r++) put(0.18, 0.003, 0, -0.05 + r * 0.035);      // 罫線
+  });
+  // ── 付箋（モニタ台座に1枚、机に1枚） ─────────────────────
+  vbox(0.05, 0.001, 0.05, new THREE.MeshStandardMaterial({ color: 0xd9c94a, roughness: 0.9 }), dx + 0.28, top + 0.003, dz + 0.02, 0.3);
+  const noteOnBase = vbox(0.05, 0.001, 0.05, new THREE.MeshStandardMaterial({ color: 0xd98fb0, roughness: 0.9 }), dx - 0.09, top + 0.006, mz - 0.04, -0.2);
+  noteOnBase.position.y = top + 0.02;
+  // ── デスクライト（アーム＋傘＋暖色の局所光。ホラーの手元の光だまり） ──
+  const laX = dx + 0.62, laZ = dz + 0.2;
+  vcyl(0.05, 0.06, 0.02, M.lampArm, laX, top + 0.01, laZ, 12);               // 台座
+  const arm1 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.34, 8), M.lampArm);
+  arm1.position.set(laX, top + 0.18, laZ); arm1.rotation.z = 0.35; scene.add(arm1);
+  const arm2 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.28, 8), M.lampArm);
+  arm2.position.set(laX - 0.14, top + 0.34, laZ - 0.04); arm2.rotation.z = 1.15; scene.add(arm2);
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.11, 16, 1, true), M.lampShade);
+  shade.position.set(laX - 0.3, top + 0.34, laZ - 0.06); shade.rotation.z = -0.7; scene.add(shade);
+  const lampGlow = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xd8b070 }));                       // 電球は小さく・控えめに（ブルームを抑える）
+  lampGlow.position.set(laX - 0.32, top + 0.3, laZ - 0.06); scene.add(lampGlow);
+  const deskLamp = new THREE.PointLight(0xffd9a0, 0.04 * 34, 1.3, 2.4);      // 局所の暖色光（弱め・短レンジ・強めの減衰で手元だけ照らす）
+  deskLamp.position.set(laX - 0.34, top + 0.24, laZ - 0.05);
+  deskLamp.castShadow = true; deskLamp.shadow.mapSize.set(512, 512);
+  deskLamp.shadow.bias = -0.0008; deskLamp.shadow.normalBias = 0.02;
+  deskLamp.shadow.camera.near = 0.05; deskLamp.shadow.camera.far = 1.5;
+  scene.add(deskLamp);
   // 椅子（座面・背もたれ・5本脚キャスター・ガスシリンダー）
   solids.push({ x1: 6.35, z1: -3.6, x2: 6.85, z2: -3.1 });
   const chx = 6.6, chz = -3.35;
