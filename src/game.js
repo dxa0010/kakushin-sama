@@ -1034,14 +1034,34 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   // 一冊 = 背表紙スラブ＋その奥の小口（ページ束）。lean で傾ける。
   // 本棚は右壁(x=8)際で室内(-x)を向いて開く。背表紙は室内側(-x)、小口は壁側(+x)。
   // bw = 背の幅（薄い/厚い）、bh = 本の高さ、bd = 本の奥行き（棚の奥行きに収める）。
+  // 背表紙の装飾用マテリアル（タイトル帯＝暗色／金の箔押し／隆起バンド＝影）
+  const bandDark = new THREE.MeshStandardMaterial({ color: 0x14110d, roughness: 0.7 });
+  const bandGilt = new THREE.MeshStandardMaterial({ color: 0x9c7b34, roughness: 0.5, metalness: 0.35 });
   function placeBook(spineFaceX, yBase, z, bw, bh, mat, lean = 0) {
     const bd = 0.22 + Math.random() * 0.05;                 // 奥行き
+    const parts = [];
     // 背表紙：室内を向く薄い色スラブ
-    const spine = vbox(0.022, bh, bw, mat, spineFaceX, yBase + bh / 2, z);
+    parts.push(vbox(0.022, bh, bw, mat, spineFaceX, yBase + bh / 2, z));
     // 小口（ページ束）：背表紙の奥（+x側）へ延びる。少し低く・細くして束に見せる
-    const pages = vbox(bd, bh - 0.018, bw - 0.012, pageMat,
-      spineFaceX + 0.011 + bd / 2, yBase + (bh - 0.018) / 2, z);
-    if (lean) { spine.rotation.x = lean; pages.rotation.x = lean; }
+    parts.push(vbox(bd, bh - 0.018, bw - 0.012, pageMat,
+      spineFaceX + 0.011 + bd / 2, yBase + (bh - 0.018) / 2, z));
+    // --- 背表紙のディティール（室内側 -x にわずかに突出。傾いた本には貼らず位置ズレを避ける） ---
+    if (lean === 0) {
+      const fx = spineFaceX - 0.012;       // 背表紙前面のわずか手前
+      const bandMat = Math.random() < 0.45 ? bandGilt : bandDark;   // 金箔押しか、暗色の刷りか
+      if (bw > 0.032) {                    // タイトル帯（上寄り）。細い本では省略。
+        const tw = Math.min(bw * 0.66, 0.05);
+        vbox(0.006, bh * 0.16, tw, bandMat, fx, yBase + bh * 0.72, z);
+        if (Math.random() < 0.5)           // 著者帯（下寄り・小さめ）を時々
+          vbox(0.005, bh * 0.06, tw * 0.7, bandMat, fx, yBase + bh * 0.30, z);
+      }
+      if (bw > 0.05 && Math.random() < 0.4) {   // 革装丁の隆起バンド（上下2本のリブ）
+        for (const yy of [0.42, 0.58])
+          vbox(0.010, 0.012, bw, mat, fx - 0.002, yBase + bh * yy, z);
+      }
+    } else {                               // 傾いた本は背表紙と小口だけを一緒に傾ける
+      parts.forEach(m => { m.rotation.x = lean; });
+    }
     return bh;
   }
   for (let s = 0; s < 4; s++) {
