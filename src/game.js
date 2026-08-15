@@ -6,7 +6,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 /* ============================================================
    確定申告からは逃げられない — prototype
    ============================================================ */
@@ -440,6 +440,12 @@ const M = {
   paper:  new THREE.MeshStandardMaterial({ color: 0xcfc8b4, roughness: 0.95 }),
   tv:     new THREE.MeshStandardMaterial({ color: 0x101216, emissive: 0x000000, roughness: 0.22, metalness: 0.4 }),
   suit:   new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.82 }),
+  /* --- 家具統一パレット（2020年代の賃貸・量産家具で統一） --- */
+  oak:      new THREE.MeshStandardMaterial({ map: woodTex, normalMap: normalFromTex(woodTex, 1.1), color: 0xc8a97e, roughness: 0.62 }),  // 主材: ライトオーク
+  oakDark:  new THREE.MeshStandardMaterial({ map: woodTex, normalMap: normalFromTex(woodTex, 1.1), color: 0x8a6a4a, roughness: 0.66 }),  // 縁・脚まわりの濃い木口
+  steel:    new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.45, metalness: 0.75 }),  // 黒スチール脚（量産家具の定番）
+  melamine: new THREE.MeshStandardMaterial({ color: 0xd8d4c8, roughness: 0.55 }),                   // 白メラミン化粧板
+  mattress: new THREE.MeshStandardMaterial({ color: 0xd6d0c0, roughness: 0.92 }),                   // マットレス・枕の生成り
 };
 const bookMats = [0x8a5a52, 0x50708a, 0x6a8258, 0x8a7c4e, 0x5c5880, 0x9a8468]
   .map(cc => new THREE.MeshLambertMaterial({ color: cc }));
@@ -473,39 +479,24 @@ function aoPatch(x, z, w, d) {
   scene.add(m); return m;
 }
 
-/* ---------- glTF家具（外部アセット。CC0、Poly Haven） ---------- */
-const gltfLoader = new GLTFLoader();
-// 各アセット由来の色温度・彩度のばらつきを部屋の暗いウォームトーンへ寄せるための共通ティント
-function tintModel(root, tint, roughBoost = 0) {
-  root.traverse(o => {
-    if (!o.isMesh) return;
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    mats.forEach(mat => {
-      if (mat.color) mat.color.multiply(tint);
-      if (roughBoost && "roughness" in mat) mat.roughness = Math.min(1, mat.roughness + roughBoost);
-    });
-    o.castShadow = true;
-    o.receiveShadow = true;
-  });
+/* ---------- 高精細プロシージャル家具用ヘルパー ---------- */
+// 角丸ボックス（面取り・エッジの丸みが v6 の素の BoxGeometry との一番の違い）
+function rbox(w, h, d, mat, x, y, z, ry = 0, r = 0.02, seg = 3) {
+  const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2, h / 2, d / 2)), mat);
+  m.position.set(x, y, z); m.rotation.y = ry;
+  scene.add(m); return m;
 }
-/**
- * glTFモデルをロードして配置する。当たり判定は同期的に別途 solids.push() する前提
- * （モデルの実寸はダウンロード時に計測済みの固定値を使うため、ロード完了を待つ必要がない）。
- */
-function loadModel(url, { x = 0, y = 0, z = 0, ry = 0, scale = 1, tint = null, roughBoost = 0, onLoad = null } = {}) {
-  const grp = new THREE.Group();
-  grp.position.set(x, y, z);
-  grp.rotation.y = ry;
-  grp.scale.setScalar(scale);
-  scene.add(grp);
-  gltfLoader.load(url, (gltf) => {
-    grp.add(gltf.scene);
-    tintModel(gltf.scene, new THREE.Color(tint || 0xffffff), roughBoost);
-    if (onLoad) onLoad(gltf.scene);
-  }, undefined, (err) => {
-    console.error("glTF load failed:", url, err);
-  });
-  return grp;
+// テーパー付き丸脚（家具の脚。下がわずかに細い）
+function tleg(rt, rb, h, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 14), mat);
+  m.position.set(x, y, z); scene.add(m); return m;
+}
+// 引き出し前板（本体からわずかに浮かせ、周囲に目地の影を作る）
+function drawer(w, h, mat, x, y, z, knobMat = M.steel) {
+  rbox(w, h, 0.024, mat, x, y, z, 0, 0.008, 2);
+  const k = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.035, 10), knobMat);
+  k.rotation.x = Math.PI / 2;
+  k.position.set(x, y, z + 0.028); scene.add(k);
 }
 // floor & ceiling
 {
@@ -547,24 +538,50 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
 {
   solids.push({ x1: -7.5, z1: -5.75, x2: -5.6, z2: -3.7 });
   aoPatch(-6.55, -4.7, 2.2, 2.3);
-  loadModel("./assets/models/old_bed_frame/old_bed_frame.gltf",
-    { x: -6.55, y: 0, z: -4.7, ry: Math.PI / 2, tint: 0xcac2b4, roughBoost: 0.05 });
-  vbox(0.9, 0.16, 1.9, M.white, -6.55, 0.42, -4.7);          // マットレス
-  vbox(0.62, 0.14, 1.66, M.fabric, -6.32, 0.53, -4.7, 0.03); // 乱れた掛け布団
-  vbox(0.72, 0.1, 0.42, M.white, -6.9, 0.55, -4.7, 0.1);     // 枕
+  // ロータイプの木製プラットフォームベッド（脚・フレーム・ヘッドボード・すのこ縁）
+  [[-6.98, -5.55], [-6.12, -5.55], [-6.98, -3.85], [-6.12, -3.85]].forEach(([x, z]) =>
+    tleg(0.035, 0.028, 0.18, M.steel, x, 0.09, z));
+  rbox(0.98, 0.14, 1.96, M.oak, -6.55, 0.25, -4.7, 0, 0.025);            // フレーム
+  rbox(0.9, 0.04, 1.88, M.oakDark, -6.55, 0.335, -4.7, 0, 0.012);        // すのこ天端
+  rbox(0.98, 0.52, 0.05, M.oak, -6.55, 0.52, -5.66, 0, 0.02);            // ヘッドボード
+  rbox(0.9, 0.06, 0.03, M.oakDark, -6.55, 0.72, -5.63, 0, 0.012);        // ヘッドボード笠木
+  // 寝具（角丸で柔らかく。掛け布団は2枚重ね＋端が垂れる）
+  rbox(0.88, 0.17, 1.84, M.mattress, -6.55, 0.44, -4.7, 0, 0.055, 4);    // マットレス
+  rbox(0.8, 0.12, 1.5, M.fabric, -6.5, 0.56, -4.5, 0.04, 0.05, 4);       // 掛け布団（上層・ずれてる）
+  rbox(0.72, 0.09, 1.3, M.fabric, -6.62, 0.6, -4.35, -0.06, 0.045, 4);   // 掛け布団（めくれた層）
+  const flap = rbox(0.3, 0.5, 0.09, M.fabric, -6.06, 0.32, -4.4, 0, 0.04, 4);
+  flap.rotation.z = 0.12;                                                 // 端が床側へ垂れる
+  rbox(0.6, 0.11, 0.38, M.mattress, -6.55, 0.58, -5.35, 0.12, 0.05, 4);  // 枕（少し斜め）
 }
-// キッチン（シンク・コンロ・取っ手）
+// キッチン（白メラミンの量産ユニット。扉・目地・バー取っ手・蛇口・五徳まで）
 {
   solids.push({ x1: -7.9, z1: 1.2, x2: -6.2, z2: 5.6 });
-  vbox(1.6, 0.86, 4.3, M.woodDark, -7.07, 0.43, 3.4);
-  vbox(1.74, 0.06, 4.44, M.metal, -7.07, 0.92, 3.4);
-  vbox(0.85, 0.025, 1.05, new THREE.MeshLambertMaterial({ color: 0x24272b }), -7.05, 0.945, 4.35); // シンク
-  vcyl(0.028, 0.028, 0.32, M.metal, -7.55, 1.08, 4.35, 8);
-  vbox(0.36, 0.05, 0.05, M.metal, -7.4, 1.23, 4.35);
-  vcyl(0.14, 0.14, 0.03, M.dark, -7.05, 0.955, 2.25, 12);   // コンロ
-  vcyl(0.14, 0.14, 0.03, M.dark, -7.05, 0.955, 2.85, 12);
-  vbox(0.03, 0.03, 0.5, M.metal, -6.17, 0.62, 2.4);
-  vbox(0.03, 0.03, 0.5, M.metal, -6.17, 0.62, 4.2);
+  vbox(1.6, 0.82, 4.3, M.melamine, -7.07, 0.45, 3.4);                    // 本体
+  vbox(1.56, 0.08, 4.26, M.dark, -7.07, 0.04, 3.4);                       // 台輪（蹴込み）
+  rbox(1.7, 0.05, 4.42, M.metal, -7.07, 0.885, 3.4, 0, 0.015);            // ステンレス天板
+  // 前面の扉4枚（目地の影＋縦バー取っ手）
+  [[2.05, 0.98], [3.05, 0.98], [4.0, 0.88], [4.9, 0.88]].forEach(([z, w]) => {
+    rbox(0.025, 0.68, w, M.melamine, -6.245, 0.48, z, 0, 0.008, 2);
+    vbox(0.025, 0.3, 0.022, M.steel, -6.228, 0.62, z - w / 2 + 0.07);
+  });
+  // シンク（凹み＋縁）
+  vbox(0.85, 0.025, 1.05, new THREE.MeshLambertMaterial({ color: 0x24272b }), -7.05, 0.9, 4.35);
+  rbox(0.91, 0.02, 1.11, M.metal, -7.05, 0.906, 4.35, 0, 0.008, 2);
+  // 蛇口（立ち上がり＋曲がり首＋吐水口＋ハンドル）
+  vcyl(0.024, 0.028, 0.26, M.metal, -7.5, 1.03, 4.35, 12);
+  const neck = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 10, 16, Math.PI / 2), M.metal);
+  neck.position.set(-7.5, 1.16, 4.35); neck.rotation.y = Math.PI / 2; scene.add(neck);
+  vcyl(0.02, 0.014, 0.06, M.metal, -7.41, 1.19, 4.35, 10);               // 吐水口
+  vbox(0.1, 0.022, 0.03, M.steel, -7.5, 1.045, 4.26);                    // レバーハンドル
+  // 2口コンロ（バーナーリング＋五徳＋前面ツマミ）
+  [2.25, 2.85].forEach((z) => {
+    vcyl(0.15, 0.15, 0.028, M.dark, -7.05, 0.925, z, 18);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.012, 8, 20), M.steel);
+    ring.position.set(-7.05, 0.945, z); ring.rotation.x = Math.PI / 2; scene.add(ring);
+    for (let a = 0; a < 4; a++)
+      vbox(0.2, 0.012, 0.018, M.dark, -7.05, 0.948, z, a * Math.PI / 4);
+    vcyl(0.022, 0.026, 0.035, M.dark, -6.235, 0.78, z + 0.1, 10).rotation.z = Math.PI / 2;  // ツマミ
+  });
 }
 // クローゼット（開き戸が、少しだけ開いている）
 {
@@ -578,61 +595,121 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(2.06, 0.1, 0.12, M.woodDark, -1.6, 2.2, -4.98);
   vbox(2.06, 0.05, 0.12, M.woodDark, -1.6, 0.028, -4.98);
 }
-// タンス（実写PBR、寝室の壁際）
+// タンス（オーク3段チェスト。天板が張り出し、脚・引き出し・取っ手まで作り込む）
 {
   solids.push({ x1: -5.4, z1: -5.95, x2: -3.0, z2: -5.35 });
-  aoPatch(-4.2, -5.65, 2.5, 0.7);
-  loadModel("./assets/models/modern_wooden_cabinet/modern_wooden_cabinet.gltf",
-    { x: -4.2, y: 0, z: -5.65, ry: Math.PI, tint: 0xb0a89c, roughBoost: 0.08 });
+  aoPatch(-4.2, -5.6, 2.6, 0.9);
+  const cx = -4.2, cz = -5.62, cw = 2.2, cd = 0.52;
+  // 黒スチールの短脚（前2本は手前に出るので見える）
+  [[-1.0, 0.2], [1.0, 0.2], [-1.0, -0.2], [1.0, -0.2]].forEach(([dx, dz]) =>
+    tleg(0.03, 0.024, 0.14, M.steel, cx + dx * (cw / 2 - 0.06), 0.07, cz + dz * (cd / 2 - 0.06)));
+  rbox(cw, 0.68, cd, M.oak, cx, 0.48, cz, 0, 0.02);                         // 本体
+  rbox(cw + 0.08, 0.05, cd + 0.06, M.oakDark, cx, 0.845, cz, 0, 0.018);     // 張り出した天板
+  // 引き出し3段（前板を浮かせ、横一列2連ノブ）
+  for (let r = 0; r < 3; r++) {
+    const dy = 0.66 - r * 0.2;
+    rbox(cw - 0.06, 0.18, 0.026, M.oak, cx, dy, cz + cd / 2 + 0.002, 0, 0.01, 2);
+    [-0.42, 0.42].forEach((kx) => {
+      const k = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.04, 12), M.steel);
+      k.rotation.x = Math.PI / 2;
+      k.position.set(cx + kx, dy, cz + cd / 2 + 0.03); scene.add(k);
+    });
+  }
+  // 天板の上の小物（目覚まし時計・畳んだ布）
+  vbox(0.16, 0.11, 0.07, M.dark, cx - 0.6, 0.925, cz, 0.1);
+  vcyl(0.05, 0.05, 0.02, M.metal, cx - 0.6, 0.99, cz + 0.04, 12).rotation.x = Math.PI / 2;
+  rbox(0.34, 0.09, 0.26, M.fabric, cx + 0.55, 0.915, cz, 0.05, 0.04, 3);
 }
-// ローテーブル＋ラグ＋生活の痕跡
+// ローテーブル＋ラグ＋生活の痕跡（角丸天板・テーパー脚・幕板・下段棚）
 {
   solids.push({ x1: 2.0, z1: 1.6, x2: 3.4, z2: 2.8 });
   const rug = new THREE.Mesh(new THREE.CircleGeometry(1.35, 24),
     new THREE.MeshLambertMaterial({ color: 0x4a302c }));
   rug.rotation.x = -Math.PI / 2; rug.position.set(2.7, 0.015, 2.2); scene.add(rug);
-  vbox(1.4, 0.05, 1.2, M.wood, 2.7, 0.7, 2.2);
-  [[2.1, 1.7], [3.3, 1.7], [2.1, 2.7], [3.3, 2.7]].forEach(([x, z]) =>
-    vcyl(0.035, 0.035, 0.68, M.woodDark, x, 0.34, z, 8));
-  vcyl(0.09, 0.08, 0.11, M.white, 2.4, 0.78, 2.0, 10);      // カップ麺
-  vcyl(0.055, 0.055, 0.13, M.metal, 3.05, 0.79, 2.45, 10);  // 空き缶
-  vbox(0.1, 0.03, 0.22, M.dark, 2.95, 0.74, 1.9, 0.4);      // リモコン
+  const tx = 2.7, tz = 2.2;
+  rbox(1.4, 0.05, 1.2, M.oak, tx, 0.42, tz, 0, 0.02);                       // 天板（角丸）
+  rbox(1.28, 0.03, 1.08, M.oakDark, tx, 0.24, tz, 0, 0.012);                // 下段棚
+  [[-0.62, -0.52], [0.62, -0.52], [-0.62, 0.52], [0.62, 0.52]].forEach(([dx, dz]) =>
+    tleg(0.024, 0.032, 0.4, M.oakDark, tx + dx, 0.2, tz + dz));             // テーパー脚
+  // 幕板（天板下を一周）
+  rbox(1.3, 0.05, 0.03, M.oak, tx, 0.37, tz - 0.5, 0, 0.008, 2);
+  rbox(1.3, 0.05, 0.03, M.oak, tx, 0.37, tz + 0.5, 0, 0.008, 2);
+  // 生活の痕跡（天板 y≈0.445 の上に置く）
+  vcyl(0.09, 0.08, 0.11, M.white, tx - 0.3, 0.5, tz - 0.2, 12);             // カップ麺
+  vcyl(0.055, 0.055, 0.13, M.metal, tx + 0.35, 0.51, tz + 0.25, 12);       // 空き缶
+  rbox(0.1, 0.028, 0.22, M.dark, tx + 0.25, 0.46, tz - 0.3, 0.4, 0.01, 2);   // リモコン
 }
-// TVボード＋テレビ
+// TVボード＋薄型テレビ（角丸ローボード・引き出し・スタンド・ベゼル）
 {
   solids.push({ x1: 2.6, z1: 5.2, x2: 4.8, z2: 5.7 });
   aoPatch(3.7, 5.15, 2.6, 1.0);
-  vbox(2.2, 0.42, 0.5, M.woodDark, 3.7, 0.21, 5.45);
-  vbox(0.96, 0.3, 0.02, M.dark, 3.2, 0.2, 5.19);
-  vbox(0.96, 0.3, 0.02, M.dark, 4.2, 0.2, 5.19);
-  loadModel("./assets/models/Television_01/Television_01.gltf",
-    { x: 3.7, y: 0.42, z: 5.35, ry: Math.PI, tint: 0xb8b8b8, roughBoost: 0.05 });
-  vbox(0.5, 0.34, 0.015, M.tv, 3.7, 0.65, 5.115);            // 画面（前触れで光る、モデル前面に薄く重ねる）
+  const bx = 3.7, bz = 5.45;
+  rbox(2.2, 0.34, 0.5, M.oak, bx, 0.22, bz, 0, 0.02);                       // ローボード本体
+  rbox(2.24, 0.03, 0.54, M.oakDark, bx, 0.4, bz, 0, 0.012);                 // 天板
+  [[-1.05, 0.22], [1.05, 0.22]].forEach(([dx, dz]) =>
+    tleg(0.024, 0.02, 0.06, M.steel, bx + dx, 0.03, bz + dz));
+  // 引き出し2連（横バー取っ手）
+  [-0.55, 0.55].forEach((dx) => {
+    rbox(0.98, 0.22, 0.024, M.oak, bx + dx, 0.2, bz - 0.252, 0, 0.008, 2);
+    vbox(0.44, 0.02, 0.024, M.steel, bx + dx, 0.2, bz - 0.268);
+  });
+  // 薄型テレビ本体（スタンド＋背面パネル＋前面ベゼル）
+  const sx = bx, sz = bz - 0.02;
+  rbox(0.44, 0.02, 0.14, M.dark, sx, 0.415, sz, 0, 0.006, 2);               // スタンド台座
+  vbox(0.1, 0.14, 0.03, M.dark, sx, 0.49, sz);                             // スタンド首
+  rbox(1.1, 0.64, 0.035, M.dark, sx, 0.86, sz, 0, 0.012, 2);               // 背面パネル（黒枠）
+  vbox(1.02, 0.56, 0.008, M.tv, sx, 0.86, sz - 0.02);                      // 画面（前触れで光る）
 }
-// PCデスク（モニタ・キーボード・散乱書類・椅子）
+// PCデスク（オーク天板＋黒スチール脚。モニタ・キーボード・散乱書類・椅子）
 {
   solids.push({ x1: 6.0, z1: -2.9, x2: 7.7, z2: -1.7 });
   aoPatch(6.85, -2.3, 2.2, 1.7);
-  loadModel("./assets/models/metal_office_desk/metal_office_desk.gltf",
-    { x: 6.85, y: 0, z: -2.3, ry: Math.PI / 2, tint: 0xc4c4c0, roughBoost: 0.05 });
-  vbox(0.86, 0.52, 0.04, M.dark, 6.85, 1.12, -2.62);
-  vbox(0.78, 0.44, 0.015, new THREE.MeshLambertMaterial({ color: 0x11151c, emissive: 0x0a1420 }), 6.85, 1.12, -2.59);
-  vcyl(0.04, 0.04, 0.1, M.dark, 6.85, 0.83, -2.62, 8);
-  vbox(0.55, 0.025, 0.18, M.dark, 6.8, 0.795, -2.12);
-  vbox(0.09, 0.025, 0.14, M.dark, 7.38, 0.795, -2.08);
-  vcyl(0.05, 0.04, 0.1, M.white, 6.3, 0.84, -2.55, 10);
+  const dx = 6.85, dz = -2.3, dw = 1.6, dd = 0.72, dh = 0.74;
+  rbox(dw, 0.05, dd, M.oak, dx, dh, dz, 0, 0.018);                          // 天板
+  // 黒スチールの角脚（コの字を左右に）＋貫
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([px, pz]) =>
+    vbox(0.05, dh, 0.05, M.steel, dx + px * (dw / 2 - 0.05), dh / 2, dz + pz * (dd / 2 - 0.06)));
+  vbox(0.04, 0.04, dd - 0.1, M.steel, dx - (dw / 2 - 0.05), 0.1, dz);
+  vbox(0.04, 0.04, dd - 0.1, M.steel, dx + (dw / 2 - 0.05), 0.1, dz);
+  // モニタ（スタンド＋角丸ベゼル＋発光面）
+  rbox(0.2, 0.02, 0.14, M.dark, dx, dh + 0.03, dz - 0.28, 0, 0.006, 2);
+  vbox(0.05, 0.18, 0.03, M.dark, dx, dh + 0.12, dz - 0.28);
+  rbox(0.7, 0.42, 0.03, M.dark, dx, dh + 0.34, dz - 0.29, 0, 0.01, 2);
+  vbox(0.64, 0.36, 0.008, new THREE.MeshStandardMaterial({ color: 0x11151c, emissive: 0x14243a, roughness: 0.3 }), dx, dh + 0.34, dz - 0.305);
+  // キーボード・マウス
+  rbox(0.44, 0.02, 0.15, M.dark, dx - 0.03, dh + 0.03, dz + 0.12, 0, 0.006, 2);
+  rbox(0.06, 0.022, 0.1, M.dark, dx + 0.32, dh + 0.03, dz + 0.14, 0, 0.008, 2);
+  vcyl(0.05, 0.04, 0.11, M.white, dx - 0.62, dh + 0.06, dz + 0.02, 12);     // マグカップ
   for (let i = 0; i < 3; i++)
-    vbox(0.28, 0.006, 0.2, M.paper, 6.35 + Math.random() * 0.9, 0.79, -2.35 + Math.random() * 0.4, Math.random() * 1.2);
-  // 椅子
+    vbox(0.28, 0.006, 0.2, M.paper, dx - 0.5 + Math.random() * 0.9, dh + 0.03, dz - 0.05 + Math.random() * 0.4, Math.random() * 1.2);
+  // 椅子（座面・背もたれ・5本脚キャスター・ガスシリンダー）
   solids.push({ x1: 6.35, z1: -3.6, x2: 6.85, z2: -3.1 });
-  loadModel("./assets/models/SchoolChair_01/SchoolChair_01.gltf",
-    { x: 6.6, y: 0, z: -3.35, ry: Math.PI, tint: 0x9ea4b0, roughBoost: 0.05 });
+  const chx = 6.6, chz = -3.35;
+  rbox(0.44, 0.07, 0.42, M.dark, chx, 0.48, chz, 0, 0.03, 3);               // 座面
+  const back = rbox(0.42, 0.5, 0.06, M.dark, chx, 0.76, chz + 0.2, 0, 0.03, 3);
+  back.rotation.x = -0.12;                                                  // 背もたれ（少し倒す）
+  vcyl(0.03, 0.03, 0.34, M.steel, chx, 0.31, chz, 10);                      // ガスシリンダー
+  for (let a = 0; a < 5; a++) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.04), M.steel);
+    leg.position.set(chx + Math.sin(a / 5 * Math.PI * 2) * 0.13, 0.13, chz + Math.cos(a / 5 * Math.PI * 2) * 0.13);
+    leg.rotation.y = a / 5 * Math.PI * 2; scene.add(leg);
+    vcyl(0.028, 0.028, 0.05, M.dark, chx + Math.sin(a / 5 * Math.PI * 2) * 0.24, 0.06, chz + Math.cos(a / 5 * Math.PI * 2) * 0.24, 10).rotation.z = Math.PI / 2;
+  }
 }
-// 本棚（本がぎっしり、一冊だけ倒れている）
+// 本棚（オークのオープンシェルフ。本がぎっしり、一冊だけ倒れている）
 {
   solids.push({ x1: 7.35, z1: 1.2, x2: 7.95, z2: 3.2 });
-  loadModel("./assets/models/wooden_bookshelf_worn/wooden_bookshelf_worn.gltf",
-    { x: 7.65, y: 0, z: 2.2, ry: Math.PI / 2, tint: 0xb8ac98, roughBoost: 0.05 });
+  const shx = 7.62, shzC = 2.15;            // 棚中心（壁際）
+  const shH = 2.15, shD = 0.34, shW = 1.9;  // 高さ・奥行き・間口(z方向)
+  // 側板・天地・背板
+  rbox(shD, shH, 0.04, M.oak, shx, shH / 2, shzC - shW / 2, 0, 0.012);      // 左側板
+  rbox(shD, shH, 0.04, M.oak, shx, shH / 2, shzC + shW / 2, 0, 0.012);      // 右側板
+  rbox(shD, 0.04, shW, M.oak, shx, shH - 0.02, shzC, 0, 0.012);            // 天板
+  rbox(shD, 0.04, shW, M.oakDark, shx, 0.06, shzC, 0, 0.012);              // 地板
+  vbox(0.02, shH, shW, M.oakDark, shx + shD / 2 - 0.01, shH / 2, shzC);    // 背板
+  // 棚板4枚（本の載る面 yb = 0.1 + s*0.5 に合わせる）
+  for (let s = 0; s < 4; s++)
+    rbox(shD - 0.03, 0.03, shW - 0.06, M.oak, shx, 0.1 + s * 0.5, shzC, 0, 0.01, 2);
   // 棚板の上に本を並べる（ランダム、隙間・倒れた一冊を含む）
   for (let s = 0; s < 4; s++) {
     const yb = 0.1 + s * 0.5;
@@ -674,18 +751,46 @@ for (let i = 0; i < 7; i++) {
   p.rotation.y = Math.random()*0.9;
   scene.add(p);
 }
-// 壁掛け時計（実写PBR、針メッシュ自体をゲーム内時刻と同期回転）
+// 壁掛け時計（プロシージャル。針メッシュ自体をゲーム内時刻と同期回転）
 let lastWallMin = -1;
 const clockHands = { minute: null, hour: null };
-loadModel("./assets/models/wall_clock/wall_clock.gltf",
-  { x: 1.4, y: 2.1, z: -5.965, ry: 0, tint: 0xd0cabc, roughBoost: 0.03, onLoad: (root) => {
-    clockHands.minute = root.getObjectByName("wall_clock_minute_hand");
-    clockHands.hour = root.getObjectByName("wall_clock_hours_hand");
-    drawWallClock(false);
-  } });
+{
+  const clx = 1.4, cly = 2.1, clz = -5.9;   // 中央壁の少し手前
+  // ケース（角丸円盤）・文字盤・ガラスリング
+  vcyl(0.28, 0.28, 0.05, M.oakDark, clx, cly, clz, 40).rotation.x = Math.PI / 2;
+  const face = new THREE.Mesh(new THREE.CircleGeometry(0.25, 40),
+    new THREE.MeshStandardMaterial({ color: 0xf0ece0, roughness: 0.7 }));
+  face.position.set(clx, cly, clz + 0.026); scene.add(face);
+  const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.02, 10, 40), M.steel);
+  bezel.position.set(clx, cly, clz + 0.026); scene.add(bezel);
+  // 時刻目盛り（12本、太い4本＝12/3/6/9）
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2;
+    const big = i % 3 === 0;
+    const t = new THREE.Mesh(new THREE.BoxGeometry(big ? 0.018 : 0.008, big ? 0.05 : 0.03, 0.006), M.dark);
+    t.position.set(clx + Math.sin(a) * 0.215, cly + Math.cos(a) * 0.215, clz + 0.03);
+    t.rotation.z = -a; scene.add(t);
+  }
+  // 針：端を軸に回すため、ジオメトリを先端側へずらしてからグループごと回転させる
+  function makeHand(len, wid, thick, mat, z) {
+    const g = new THREE.Group();
+    const geo = new THREE.BoxGeometry(wid, len, thick);
+    geo.translate(0, len / 2 - wid, 0);         // 根元が原点、先端が上（+Y）に伸びる
+    const m = new THREE.Mesh(geo, mat);
+    g.add(m);
+    g.position.set(clx, cly, clz + z);
+    scene.add(g);
+    return g;
+  }
+  clockHands.hour = makeHand(0.13, 0.02, 0.006, M.dark, 0.033);
+  clockHands.minute = makeHand(0.2, 0.014, 0.006, M.dark, 0.038);
+  vcyl(0.016, 0.016, 0.02, M.steel, clx, cly, clz + 0.042, 12).rotation.x = Math.PI / 2;  // 中央キャップ
+  drawWallClock(false);
+}
 function drawWallClock(glitch) {
-  if (!clockHands.minute || !clockHands.hour) return;   // ロード未完了なら次回に回す
+  if (!clockHands.minute || !clockHands.hour) return;
   const mins = glitch ? Math.random() * 720 : gameMin % 720;
+  // 12時位置(+Y)を0として時計回り＝-Z回転
   clockHands.hour.rotation.z = -(mins / 720) * Math.PI * 2;
   clockHands.minute.rotation.z = -((mins % 60) / 60) * Math.PI * 2;
 }
