@@ -1,10 +1,9 @@
-# 開発引き継ぎ資料（v7時点）
+# 開発引き継ぎ資料（v8時点）
 
 次にこのリポジトリを触るセッション（人間・AI問わず）向けの技術メモ。「なぜこうなっているか」を中心に書く。ゲーム企画・レベルデザインの詳細は `README.md` を参照。
 
 - **更新日**: 2026年8月15日
 - **公開URL**: https://dxa0010.github.io/kakushin-sama/
-- **最新コミット**: `8d9ad52`（グラフィックス基盤刷新）
 - **ブランチ**: `claude/artifact-review-anha8j`
 
 ## 1. リポジトリ構成と、そうなっている理由
@@ -13,7 +12,8 @@
 index.html                 DOM/CSS/UI要素 + importmap + <script type="module">
 src/game.js                ゲーム全体（three.jsシーン構築・物理・AI・UI制御）を1ファイルに集約
 vendor/three/               Three.js r185 本体 + addons（postprocessing/loaders/environments等）
-assets/textures/            実写テクスチャ（現状: 床材のみ）
+assets/textures/            実写テクスチャ（壁・床・布地。ambientCG CC0 + three.js examples MIT）
+assets/models/               主要家具のglTFモデル（Poly Haven、CC0）
 .github/workflows/          GitHub Pages 自動デプロイ
 docs/HANDOFF.md             このファイル
 ```
@@ -66,15 +66,50 @@ python3 -m http.server 8765   # リポジトリルートで
   - いずれも ambientCG（CC0）。2Kソースをplaywright+Chromium(Canvas)でリサイズ・再圧縮し、`assets/textures/{plaster017,tatami005,fabric001}_{diffuse,normal,roughness}.jpg` として1024px・JPEG品質0.8〜0.85で保存（合計約1.8MB）。`normalMap`はNormalGL版（three.jsはOpenGL規約）。
   - `src/game.js` に `loadPBRSet(baseName, rx, ry)` ヘルパーを追加し、`M.wall` / `M.tatami` / `M.fabric` で使用。対応する旧プロシージャル定義（`wallTex`/`tatamiTex`/`fabricTex`、および `normalFromTex()` 呼び出し）は削除済み。`woodTex`/`ceilTex`/`fusumaTex`等、他のプロシージャルテクスチャは変更なし。
 
-## 4. 既知の未解決事項・次にやること（優先順）
+## 4. 家具のglTF化・洋室化（v8）
+
+### 実施内容
+
+- `src/game.js` に `GLTFLoader`（`vendor/three/addons/loaders/GLTFLoader.js`。同梱済みだったが今回初配線）をimportし、`loadModel(url, opts)` ヘルパーを追加（`vbox`/`vcyl` 定義の直後）。当たり判定は非同期ロードを待たず同期的に `solids.push()` する既存方式のまま（モデルの実寸は事前計測した固定値をハードコードして使っている）。
+- 置換した7点：壁掛け時計（`wall_clock`）・本棚（`wooden_bookshelf_worn`）・テレビ（`Television_01`）・PCデスク（`metal_office_desk`）・椅子（`SchoolChair_01`）・タンス（`modern_wooden_cabinet`、新規追加家具）・ベッドフレーム（`old_bed_frame`）。すべてPoly Haven、CC0、`assets/models/<AssetID>/<AssetID>.gltf`（+ `.bin` + `textures/`）。
+- **和室設定を廃止し洋室に統一**：ユーザー判断（「バイオハザード7のイメージを目指してる」路線と「和風家具はCC0が薄いので洋室化」の両方の指示）。畳（`M.tatami`、`tatami005`テクスチャ）とふすま（`M.fusuma`、`fusumaTex`プロシージャル）を削除し、床は全面フローリング（`M.floor`）に統一。押入れは「隠れ場所」としてのゲームロジック・当たり判定（`kind: "closet"`）はそのまま残し、**見た目だけ**ふすま2枚引き戸→白い開き戸に変更。表示テキストも「押入れ」→「クローゼット」に統一（`index.html` の `#hideOv` 文言、`src/game.js` の promptEl 分岐）。
+- **壁掛け時計の実装方式変更**：旧実装はCanvas 2Dで文字盤・針を毎分再描画して`CanvasTexture`として貼っていた（`drawWallClock()`）。`wall_clock.gltf` は分針・時針・時針・文字盤が個別ノードに分かれている（`wall_clock_minute_hand` / `wall_clock_hours_hand` / `wall_clock` 等）ため、**針メッシュ自体を `rotation.z` で回転**させる方式に変更。`root.getObjectByName()` でロード完了後に針への参照を取得し、`drawWallClock(glitch)` は角度計算だけ行うようになった（関数名は据え置き、呼び出し側の `clockGlitch` 連動ロジックは変更なし）。回転軸が `rotation.z` で正しいことは実機スクリーンショットで確認済み。
+- **色味の統一**：各glTFは出典（撮影条件）がバラバラなので、素材ごとに明度・彩度が食い違う。`tintModel(root, tint, roughBoost)` を追加し、`loadModel()` 呼び出し時に `tint`（0xRRGGBB、乗算）と `roughBoost`（roughnessへの加算）を指定して部屋の暗いウォームトーンへ寄せている。この関数内で `castShadow`/`receiveShadow` も一括設定している（下記「ハマった点」参照）。
+- 本棚（`wooden_bookshelf_worn`）はモデル自体には本が含まれていないため、棚板の上に手続き型の本（`bookMats[]`、`vbox`のランダム配置ループ）を従来通り重ねている。本の色を明るく戻した（後述）。
+
+### ハマった点
+
+- **非同期ロードとシャドウ一括設定の順序**：既存コードは起動時に `scene.traverse(o => { o.castShadow = ... })` を1回だけ同期実行して全メッシュの影フラグを立てていた（`src/game.js` 内、モンスター生成直後）。glTFは `GLTFLoader.load()` が非同期なので、この一括処理より後に読み込まれたメッシュには影フラグが付かない。→ `tintModel()` 内で各メッシュに個別に `castShadow = true; receiveShadow = true;` を設定することで解決。
+- **本の色が真っ黒に潰れる**：`bookMats[]` は元々プロシージャル本棚（明るいwoodDark材で照り返しがあった）向けに `offsetHSL(0, -0.22, -0.06)` で暗く調整されていた。実写PBR本棚（テクスチャ自体が焦げ茶色）に載せると暗すぎて潰れたため、`offsetHSL` 調整を外し彩度・明度を上げた色に変更（`src/game.js` の `bookMats` 定義）。
+- **ソフトウェアレンダリングでのスクリーンショットが激重＋タイムアウトする**：glTF家具5〜7点を同時にシャドウキャスト対象として読み込むと、SwiftShaderでの `page.screenshot()` に1枚あたり最大14秒程度かかった（メインスレッド自体は固まっていない。`performance.now()` 経由の生存確認では応答している）。Playwrightのデフォルトタイムアウト（30秒）を超えるケースがあったため、動作確認時はscreenshotのtimeoutを60秒程度に緩めて対応した。実GPUでは問題にならない想定だが、実機FPS計測はまだ（既存TODO）。
+- **カメラ向きの計算ミス**：`ply.yaw` の座標系は `dir = (-sin(yaw), -cos(yaw))`（`yaw=0` で -z方向）。動作確認用スクリプトで一度取り違えて時計や家具が画角外になる事故が複数回あった。次にワープ撮影する時はこの式を先に確認すること。
+
+### Poly Havenからのモデル取得手順（メモ）
+
+ローカル環境（クラウドサンドボックスと違いambientCG/Poly Havenに直接到達可能）から以下の手順で取得した：
+
+```bash
+# 1. アセット一覧・詳細確認
+curl -s "https://api.polyhaven.com/assets?t=models" | jq 'keys'
+curl -s "https://api.polyhaven.com/files/<AssetID>" | jq '.gltf["1k"]'
+
+# 2. gltf本体 + bin + テクスチャ一式をダウンロード（.gltf内のuri参照とディレクトリ構造を一致させること）
+#    d.gltf["1k"].gltf.url         … 本体.gltfのURL
+#    d.gltf["1k"].gltf.include     … { "textures/xxx.jpg": {url}, "AssetID.bin": {url} } の辞書
+```
+
+`dimensions`フィールド（API上の `info` エンドポイント）は単位が不定で信用できないことがあった（例: `WoodenChair_01` が高さ22mと出た）。実際のバウンディングボックスは `.gltf` の `accessors[].min/max`（全meshの合算）から計算するか、Three.js側で `new THREE.Box3().setFromObject(model)` を使うのが確実。
+
+## 5. 既知の未解決事項・次にやること（優先順）
 
 1. **AO（アンビエントオクルージョン）**：`vendor/three/addons/postprocessing/GTAOPass.js` は同梱済みで未使用。接地感が大きく向上するはずだが、GPU負荷とのトレードオフを実機で見てから判断すべき。
-2. **怪人「カクシン様」のモデル強化**：現状 `makeMonster()` はほぼ円柱＋Canvas顔テクスチャのまま（`src/game.js` 内で検索）。部屋の質感が上がった分、相対的に一番の粗になっている。glTFモデル差し替え候補（`vendor/three/addons/loaders/GLTFLoader.js` は同梱済み、未配線）。
-3. **`src/game.js` のファイル分割**：1700行の単一ファイルなので、そろそろ `render.js` / `game-logic.js` / `content.js`（ANOMS・DOCSPECS等のデータ）くらいには割ってもいい規模。急ぎではない。
-4. **フレームレート実測**：実機（ユーザーのPC）でのFPS計測がまだ。重ければ `bloomPass` の解像度を下げる、`shadow.mapSize` を1024→512に落とす等の調整枠を用意すること。
-5. **市役所END（未実装、README参照）**：グラフィックスと直接関係ないが、ゲーム内容側の積み残し。
+2. **怪人「カクシン様」のモデル強化**：現状 `makeMonster()` はほぼ円柱＋Canvas顔テクスチャのまま（`src/game.js` 内で検索）。家具のglTF化が進んだ分、相対的に一番の粗になっている。`GLTFLoader`は今回配線済みなので `loadModel()` をそのまま流用できる。
+3. **キッチン・押入れ枠のプロシージャル部分**：シンク・コンロ・押入れの箱部分はまだ手続き型ジオメトリのまま。優先度は家具本体より低いが、統一感を上げるならここも実写化の余地がある。
+4. **`src/game.js` のファイル分割**：1700行超の単一ファイルなので、そろそろ `render.js` / `game-logic.js` / `content.js`（ANOMS・DOCSPECS等のデータ）くらいには割ってもいい規模。急ぎではない。
+5. **フレームレート実測**：実機（ユーザーのPC）でのFPS計測がまだ。glTF家具の追加でシャドウマップ対象のメッシュ数が増えている（本棚10Kトライアングル等）ため、v7時点より重くなっている可能性がある。重ければ `bloomPass` の解像度を下げる、`shadow.mapSize` を1024→512に落とす、影を落とさない家具を増やす等の調整枠を用意すること。
+6. **市役所END（未実装、README参照）**：グラフィックスと直接関係ないが、ゲーム内容側の積み残し。
 
-## 5. デプロイ・運用メモ
+## 6. デプロイ・運用メモ
 
 - `main` ブランチはまだ存在しない（このリポジトリは `claude/artifact-review-anha8j` 一本で運用中）。`.github/workflows/deploy-pages.yml` は `main` と `claude/artifact-review-anha8j` の両方へのpushをトリガにしてある。
 - GitHub Pages の有効化はリポジトリ設定で一度だけ手動操作が必要だった（`Settings → Pages → Source: GitHub Actions`）。これは完了済み。以後は自動。

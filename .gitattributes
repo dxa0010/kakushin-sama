@@ -1,0 +1,5 @@
+*.bin binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gltf text eol=lf

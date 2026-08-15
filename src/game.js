@@ -6,6 +6,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 /* ============================================================
    確定申告からは逃げられない — prototype
    ============================================================ */
@@ -341,13 +342,6 @@ const woodTex = makeTex(128, 128, (c, w, h) => {
     c.stroke();
   }
 }, 1, 1);
-const fusumaTex = makeTex(128, 256, (c, w, h) => {
-  c.fillStyle = "#b6ac96"; c.fillRect(0, 0, w, h);
-  speckle(c, w, h, 500, "90,80,60", 0.05);
-  c.strokeStyle = "#5a4a34"; c.lineWidth = 8; c.strokeRect(0, 0, w, h);
-  c.fillStyle = "#3a2f20";
-  c.beginPath(); c.ellipse(w - 22, h / 2, 7, 16, 0, 0, Math.PI * 2); c.fill();
-});
 const nightTex = makeTex(256, 128, (c, w, h) => {
   const g = c.createLinearGradient(0, 0, 0, h);
   g.addColorStop(0, "#0a1226"); g.addColorStop(1, "#1a2338");
@@ -433,10 +427,6 @@ const M = {
     roughnessMap: loadTex("./assets/textures/hardwood2_roughness.jpg", false, 3.2, 4.4),
     color: 0x87705a, bumpScale: 0.9, roughness: 0.8, metalness: 0.0,
   }),
-  tatami: new THREE.MeshStandardMaterial({
-    ...loadPBRSet("tatami005", 2.6, 2.0),
-    color: 0xb0a878, roughness: 0.85,
-  }),
   ceil:   new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.96 }),
   wood:   new THREE.MeshStandardMaterial({ map: woodTex, normalMap: normalFromTex(woodTex, 1.4), roughness: 0.58 }),
   woodDark: new THREE.MeshStandardMaterial({ map: woodTex, color: 0x8a8378, roughness: 0.6 }),
@@ -447,13 +437,12 @@ const M = {
   }),
   white:  new THREE.MeshStandardMaterial({ color: 0xcfc9bd, roughness: 0.85 }),
   metal:  new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.32, metalness: 0.85 }),
-  fusuma: new THREE.MeshStandardMaterial({ map: fusumaTex, normalMap: normalFromTex(fusumaTex, 1.2), roughness: 0.9 }),
   paper:  new THREE.MeshStandardMaterial({ color: 0xcfc8b4, roughness: 0.95 }),
   tv:     new THREE.MeshStandardMaterial({ color: 0x101216, emissive: 0x000000, roughness: 0.22, metalness: 0.4 }),
   suit:   new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.82 }),
 };
-const bookMats = [0x5a3a36, 0x39485a, 0x46543a, 0x585034, 0x3c3a52, 0x6a5a48]
-  .map(cc => { const m = new THREE.MeshLambertMaterial({ color: cc }); m.color.offsetHSL(0, -0.22, -0.06); return m; });
+const bookMats = [0x8a5a52, 0x50708a, 0x6a8258, 0x8a7c4e, 0x5c5880, 0x9a8468]
+  .map(cc => new THREE.MeshLambertMaterial({ color: cc }));
 
 /* ---------- room geometry ---------- */
 const walls = [];   // collision AABBs {x1,z1,x2,z2}
@@ -483,12 +472,45 @@ function aoPatch(x, z, w, d) {
   m.position.set(x, 0.02, z);
   scene.add(m); return m;
 }
+
+/* ---------- glTF家具（外部アセット。CC0、Poly Haven） ---------- */
+const gltfLoader = new GLTFLoader();
+// 各アセット由来の色温度・彩度のばらつきを部屋の暗いウォームトーンへ寄せるための共通ティント
+function tintModel(root, tint, roughBoost = 0) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach(mat => {
+      if (mat.color) mat.color.multiply(tint);
+      if (roughBoost && "roughness" in mat) mat.roughness = Math.min(1, mat.roughness + roughBoost);
+    });
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+}
+/**
+ * glTFモデルをロードして配置する。当たり判定は同期的に別途 solids.push() する前提
+ * （モデルの実寸はダウンロード時に計測済みの固定値を使うため、ロード完了を待つ必要がない）。
+ */
+function loadModel(url, { x = 0, y = 0, z = 0, ry = 0, scale = 1, tint = null, roughBoost = 0, onLoad = null } = {}) {
+  const grp = new THREE.Group();
+  grp.position.set(x, y, z);
+  grp.rotation.y = ry;
+  grp.scale.setScalar(scale);
+  scene.add(grp);
+  gltfLoader.load(url, (gltf) => {
+    grp.add(gltf.scene);
+    tintModel(gltf.scene, new THREE.Color(tint || 0xffffff), roughBoost);
+    if (onLoad) onLoad(gltf.scene);
+  }, undefined, (err) => {
+    console.error("glTF load failed:", url, err);
+  });
+  return grp;
+}
 // floor & ceiling
 {
   const fl = new THREE.Mesh(new THREE.PlaneGeometry(17, 13), M.floor);
   fl.rotation.x = -Math.PI/2; scene.add(fl);
-  const tat = new THREE.Mesh(new THREE.PlaneGeometry(8, 6), M.tatami);
-  tat.rotation.x = -Math.PI/2; tat.position.set(-4, 0.01, -3); scene.add(tat);   // 寝室は畳
   const gk = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 1.7),
     new THREE.MeshLambertMaterial({ color: 0x393c41 }));
   gk.rotation.x = -Math.PI/2; gk.position.set(6.55, 0.008, -5.25); scene.add(gk); // 玄関たたき
@@ -521,14 +543,15 @@ vbox(0.34, 0.12, 1.56, M.woodDark, 0, 2.06, 2.75);
 vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
 
 /* ---------- 家具（当たり判定は従来のAABBを維持） ---------- */
-// ベッド（畳の上に、布団が乱れたまま）
+// ベッド（実写PBRの金属フレーム＋乱れた寝具）
 {
-  solids.push({ x1: -7.6, z1: -5.6, x2: -4.8, z2: -3.8 });
-  aoPatch(-6.2, -4.7, 3.6, 2.5);
-  vbox(2.8, 0.28, 1.8, M.woodDark, -6.2, 0.14, -4.7);
-  vbox(2.64, 0.2, 1.64, M.white, -6.2, 0.38, -4.7);
-  vbox(1.9, 0.16, 1.66, M.fabric, -5.75, 0.5, -4.7, 0.03);
-  vbox(0.52, 0.12, 0.72, M.white, -7.25, 0.52, -4.7, 0.15);
+  solids.push({ x1: -7.5, z1: -5.75, x2: -5.6, z2: -3.7 });
+  aoPatch(-6.55, -4.7, 2.2, 2.3);
+  loadModel("./assets/models/old_bed_frame/old_bed_frame.gltf",
+    { x: -6.55, y: 0, z: -4.7, ry: Math.PI / 2, tint: 0xcac2b4, roughBoost: 0.05 });
+  vbox(0.9, 0.16, 1.9, M.white, -6.55, 0.42, -4.7);          // マットレス
+  vbox(0.62, 0.14, 1.66, M.fabric, -6.32, 0.53, -4.7, 0.03); // 乱れた掛け布団
+  vbox(0.72, 0.1, 0.42, M.white, -6.9, 0.55, -4.7, 0.1);     // 枕
 }
 // キッチン（シンク・コンロ・取っ手）
 {
@@ -543,15 +566,24 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(0.03, 0.03, 0.5, M.metal, -6.17, 0.62, 2.4);
   vbox(0.03, 0.03, 0.5, M.metal, -6.17, 0.62, 4.2);
 }
-// 押入れ（ふすまが、少しだけ開いている）
+// クローゼット（開き戸が、少しだけ開いている）
 {
   solids.push({ x1: -2.6, z1: -5.9, x2: -0.6, z2: -5.0 });
   aoPatch(-1.6, -5.15, 2.4, 1.3);
   vbox(2.0, 2.2, 0.86, new THREE.MeshLambertMaterial({ color: 0x14120f }), -1.6, 1.1, -5.46);
-  vbox(0.94, 1.98, 0.04, M.fusuma, -2.1, 1.06, -4.99);
-  vbox(0.94, 1.98, 0.04, M.fusuma, -1.02, 1.06, -4.96);
+  vbox(0.94, 1.98, 0.04, M.white, -2.1, 1.06, -4.99);
+  vbox(0.94, 1.98, 0.04, M.white, -1.02, 1.06, -4.96, -0.25);
+  vbox(0.03, 0.16, 0.03, M.metal, -1.68, 1.06, -4.98);   // 取っ手
+  vbox(0.03, 0.16, 0.03, M.metal, -1.28, 1.06, -4.85);
   vbox(2.06, 0.1, 0.12, M.woodDark, -1.6, 2.2, -4.98);
   vbox(2.06, 0.05, 0.12, M.woodDark, -1.6, 0.028, -4.98);
+}
+// タンス（実写PBR、寝室の壁際）
+{
+  solids.push({ x1: -5.4, z1: -5.95, x2: -3.0, z2: -5.35 });
+  aoPatch(-4.2, -5.65, 2.5, 0.7);
+  loadModel("./assets/models/modern_wooden_cabinet/modern_wooden_cabinet.gltf",
+    { x: -4.2, y: 0, z: -5.65, ry: Math.PI, tint: 0xb0a89c, roughBoost: 0.08 });
 }
 // ローテーブル＋ラグ＋生活の痕跡
 {
@@ -573,18 +605,16 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(2.2, 0.42, 0.5, M.woodDark, 3.7, 0.21, 5.45);
   vbox(0.96, 0.3, 0.02, M.dark, 3.2, 0.2, 5.19);
   vbox(0.96, 0.3, 0.02, M.dark, 4.2, 0.2, 5.19);
-  vbox(1.7, 1.0, 0.06, M.dark, 3.7, 1.05, 5.52);
-  vbox(1.58, 0.88, 0.02, M.tv, 3.7, 1.05, 5.48);            // 画面（前触れで光る）
-  vcyl(0.05, 0.05, 0.14, M.dark, 3.7, 0.49, 5.45, 8);
-  vbox(0.6, 0.03, 0.3, M.dark, 3.7, 0.43, 5.45);
+  loadModel("./assets/models/Television_01/Television_01.gltf",
+    { x: 3.7, y: 0.42, z: 5.35, ry: Math.PI, tint: 0xb8b8b8, roughBoost: 0.05 });
+  vbox(0.5, 0.34, 0.015, M.tv, 3.7, 0.65, 5.115);            // 画面（前触れで光る、モデル前面に薄く重ねる）
 }
 // PCデスク（モニタ・キーボード・散乱書類・椅子）
 {
   solids.push({ x1: 6.0, z1: -2.9, x2: 7.7, z2: -1.7 });
   aoPatch(6.85, -2.3, 2.2, 1.7);
-  vbox(1.7, 0.05, 1.2, M.wood, 6.85, 0.76, -2.3);
-  [[6.1, -2.85], [7.6, -2.85], [6.1, -1.75], [7.6, -1.75]].forEach(([x, z]) =>
-    vbox(0.06, 0.74, 0.06, M.dark, x, 0.37, z));
+  loadModel("./assets/models/metal_office_desk/metal_office_desk.gltf",
+    { x: 6.85, y: 0, z: -2.3, ry: Math.PI / 2, tint: 0xc4c4c0, roughBoost: 0.05 });
   vbox(0.86, 0.52, 0.04, M.dark, 6.85, 1.12, -2.62);
   vbox(0.78, 0.44, 0.015, new THREE.MeshLambertMaterial({ color: 0x11151c, emissive: 0x0a1420 }), 6.85, 1.12, -2.59);
   vcyl(0.04, 0.04, 0.1, M.dark, 6.85, 0.83, -2.62, 8);
@@ -595,33 +625,28 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
     vbox(0.28, 0.006, 0.2, M.paper, 6.35 + Math.random() * 0.9, 0.79, -2.35 + Math.random() * 0.4, Math.random() * 1.2);
   // 椅子
   solids.push({ x1: 6.35, z1: -3.6, x2: 6.85, z2: -3.1 });
-  vcyl(0.26, 0.26, 0.07, M.fabric, 6.6, 0.46, -3.35, 12);
-  vcyl(0.03, 0.03, 0.4, M.metal, 6.6, 0.24, -3.35, 8);
-  vbox(0.44, 0.5, 0.06, M.fabric, 6.6, 0.85, -3.58);
-  [[0.28, 0], [-0.28, 0], [0, 0.28], [0, -0.28]].forEach(([dx, dz]) =>
-    vbox(0.07, 0.04, 0.07, M.metal, 6.6 + dx, 0.03, -3.35 + dz));
+  loadModel("./assets/models/SchoolChair_01/SchoolChair_01.gltf",
+    { x: 6.6, y: 0, z: -3.35, ry: Math.PI, tint: 0x9ea4b0, roughBoost: 0.05 });
 }
 // 本棚（本がぎっしり、一冊だけ倒れている）
 {
   solids.push({ x1: 7.35, z1: 1.2, x2: 7.95, z2: 3.2 });
-  vbox(0.04, 2.2, 2.0, M.woodDark, 7.93, 1.1, 2.2);
-  vbox(0.6, 2.2, 0.04, M.woodDark, 7.65, 1.1, 1.22);
-  vbox(0.6, 2.2, 0.04, M.woodDark, 7.65, 1.1, 3.18);
-  vbox(0.6, 0.04, 2.0, M.woodDark, 7.65, 2.18, 2.2);
+  loadModel("./assets/models/wooden_bookshelf_worn/wooden_bookshelf_worn.gltf",
+    { x: 7.65, y: 0, z: 2.2, ry: Math.PI / 2, tint: 0xb8ac98, roughBoost: 0.05 });
+  // 棚板の上に本を並べる（ランダム、隙間・倒れた一冊を含む）
   for (let s = 0; s < 4; s++) {
-    const yb = 0.06 + s * 0.52;
-    vbox(0.56, 0.04, 1.92, M.woodDark, 7.65, yb, 2.2);
-    let z = 1.28;
+    const yb = 0.1 + s * 0.5;
+    let z = 1.35;
     while (z < 3.05) {
       const bw = 0.07 + Math.random() * 0.06;
       if (Math.random() < 0.14) { z += bw; continue; }   // 抜けた隙間
       const bh = 0.3 + Math.random() * 0.14;
       vbox(0.32, bh, bw, bookMats[Math.floor(Math.random() * bookMats.length)],
-        7.7 - Math.random() * 0.05, yb + 0.02 + bh / 2, z + bw / 2);
+        7.6 - Math.random() * 0.05, yb + 0.02 + bh / 2, z + bw / 2);
       z += bw + 0.012;
     }
   }
-  vbox(0.32, 0.07, 0.44, bookMats[1], 7.6, 1.65, 2.9, 0.2);   // 倒れた一冊
+  vbox(0.32, 0.07, 0.44, bookMats[1], 7.5, 1.6, 2.9, 0.2);   // 倒れた一冊
 }
 // 玄関ドア
 {
@@ -649,39 +674,20 @@ for (let i = 0; i < 7; i++) {
   p.rotation.y = Math.random()*0.9;
   scene.add(p);
 }
-// 壁掛け時計（針はゲーム内時刻と同期）
-const clockCv = document.createElement("canvas");
-clockCv.width = clockCv.height = 128;
-const wallClockTex = new THREE.CanvasTexture(clockCv);
-wallClockTex.colorSpace = THREE.SRGBColorSpace;
+// 壁掛け時計（実写PBR、針メッシュ自体をゲーム内時刻と同期回転）
 let lastWallMin = -1;
+const clockHands = { minute: null, hour: null };
+loadModel("./assets/models/wall_clock/wall_clock.gltf",
+  { x: 1.4, y: 2.1, z: -5.965, ry: 0, tint: 0xd0cabc, roughBoost: 0.03, onLoad: (root) => {
+    clockHands.minute = root.getObjectByName("wall_clock_minute_hand");
+    clockHands.hour = root.getObjectByName("wall_clock_hours_hand");
+    drawWallClock(false);
+  } });
 function drawWallClock(glitch) {
-  const c = clockCv.getContext("2d");
-  c.clearRect(0, 0, 128, 128);
-  c.fillStyle = "#d8d2c2"; c.beginPath(); c.arc(64, 64, 60, 0, Math.PI * 2); c.fill();
-  c.strokeStyle = "#38342c"; c.lineWidth = 5; c.stroke();
-  c.strokeStyle = "#55503f"; c.lineWidth = 2;
-  for (let i = 0; i < 12; i++) {
-    const a = i / 12 * Math.PI * 2;
-    c.beginPath();
-    c.moveTo(64 + Math.cos(a) * 52, 64 + Math.sin(a) * 52);
-    c.lineTo(64 + Math.cos(a) * 46, 64 + Math.sin(a) * 46);
-    c.stroke();
-  }
+  if (!clockHands.minute || !clockHands.hour) return;   // ロード未完了なら次回に回す
   const mins = glitch ? Math.random() * 720 : gameMin % 720;
-  const ha = mins / 720 * Math.PI * 2 - Math.PI / 2;
-  const ma = (mins % 60) / 60 * Math.PI * 2 - Math.PI / 2;
-  c.strokeStyle = "#22201a"; c.lineWidth = 5; c.lineCap = "round";
-  c.beginPath(); c.moveTo(64, 64); c.lineTo(64 + Math.cos(ha) * 28, 64 + Math.sin(ha) * 28); c.stroke();
-  c.lineWidth = 3;
-  c.beginPath(); c.moveTo(64, 64); c.lineTo(64 + Math.cos(ma) * 42, 64 + Math.sin(ma) * 42); c.stroke();
-  wallClockTex.needsUpdate = true;
-}
-drawWallClock(false);
-{
-  const wc = new THREE.Mesh(new THREE.CircleGeometry(0.3, 24),
-    new THREE.MeshLambertMaterial({ map: wallClockTex, transparent: true }));
-  wc.position.set(1.4, 2.1, -5.965); scene.add(wc);
+  clockHands.hour.rotation.z = -(mins / 720) * Math.PI * 2;
+  clockHands.minute.rotation.z = -((mins % 60) / 60) * Math.PI * 2;
 }
 
 /* ---------- lights ---------- */
@@ -1444,7 +1450,7 @@ function frame(now) {
         promptEl.classList.remove("hidden");
         promptEl.textContent =
           nearTarget.kind === "desk"   ? (got < 5 ? `PC ── 書類が足りない（${got}/5）` : "［E］e-Taxを開く") :
-          nearTarget.kind === "closet" ? (ply.hidden ? "［E］押入れを出る" : "［E］押入れに隠れる") :
+          nearTarget.kind === "closet" ? (ply.hidden ? "［E］クローゼットを出る" : "［E］クローゼットに隠れる") :
           nearTarget.kind === "item"   ? "［E］書類を検分する" :
           "［E］調べる";
       } else promptEl.classList.add("hidden");
