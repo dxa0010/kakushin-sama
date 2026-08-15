@@ -446,9 +446,19 @@ const M = {
   steel:    new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.45, metalness: 0.75 }),  // 黒スチール脚（量産家具の定番）
   melamine: new THREE.MeshStandardMaterial({ color: 0xd8d4c8, roughness: 0.55 }),                   // 白メラミン化粧板
   mattress: new THREE.MeshStandardMaterial({ color: 0xd6d0c0, roughness: 0.92 }),                   // マットレス・枕の生成り
+  sheet:    new THREE.MeshStandardMaterial({ color: 0xcfc7b6, roughness: 0.9 }),                    // 敷きシーツ（少しグレイッシュ）
+  blanket:  new THREE.MeshStandardMaterial({
+    ...loadPBRSet("fabric001", 1.2, 1.2),
+    color: 0xa89478, roughness: 0.96,                                                               // 掛け布団: くすんだオートミール茶（白いシーツと差をつけつつ暗すぎない）
+  }),
+  pillow:   new THREE.MeshStandardMaterial({ color: 0xe4ddcc, roughness: 0.9 }),                    // 枕（マットレスより明るい白）
 };
-const bookMats = [0x8a5a52, 0x50708a, 0x6a8258, 0x8a7c4e, 0x5c5880, 0x9a8468]
-  .map(cc => new THREE.MeshLambertMaterial({ color: cc }));
+// 背表紙：くすんだ布・革装丁の色（ホラーの暗い室内で浮かない、彩度低め・暗め）
+const bookMats = [0x5a3730, 0x33455a, 0x3d5240, 0x5a4a28, 0x39344f, 0x6b5636,
+                  0x4a2a2a, 0x2e3a3a, 0x6a6258, 0x453040]
+  .map(cc => new THREE.MeshStandardMaterial({ color: cc, roughness: 0.86 }));
+// 小口（ページ束）の生成り。背表紙より内側に一段引っ込ませて見せる
+const pageMat = new THREE.MeshStandardMaterial({ color: 0xd8cfb4, roughness: 0.95 });
 
 /* ---------- room geometry ---------- */
 const walls = [];   // collision AABBs {x1,z1,x2,z2}
@@ -545,13 +555,21 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   rbox(0.9, 0.04, 1.88, M.oakDark, -6.55, 0.335, -4.7, 0, 0.012);        // すのこ天端
   rbox(0.98, 0.52, 0.05, M.oak, -6.55, 0.52, -5.66, 0, 0.02);            // ヘッドボード
   rbox(0.9, 0.06, 0.03, M.oakDark, -6.55, 0.72, -5.63, 0, 0.012);        // ヘッドボード笠木
-  // 寝具（角丸で柔らかく。掛け布団は2枚重ね＋端が垂れる）
+  // 寝具（角丸で柔らかく。素材ごとに色を分けて“のっぺり白い塊”を回避）
   rbox(0.88, 0.17, 1.84, M.mattress, -6.55, 0.44, -4.7, 0, 0.055, 4);    // マットレス
-  rbox(0.8, 0.12, 1.5, M.fabric, -6.5, 0.56, -4.5, 0.04, 0.05, 4);       // 掛け布団（上層・ずれてる）
-  rbox(0.72, 0.09, 1.3, M.fabric, -6.62, 0.6, -4.35, -0.06, 0.045, 4);   // 掛け布団（めくれた層）
-  const flap = rbox(0.3, 0.5, 0.09, M.fabric, -6.06, 0.32, -4.4, 0, 0.04, 4);
-  flap.rotation.z = 0.12;                                                 // 端が床側へ垂れる
-  rbox(0.6, 0.11, 0.38, M.mattress, -6.55, 0.58, -5.35, 0.12, 0.05, 4);  // 枕（少し斜め）
+  rbox(0.86, 0.03, 1.82, M.sheet, -6.55, 0.535, -4.7, 0, 0.03, 3);       // 敷きシーツ（マットレス上端を覆う）
+  // 掛け布団：くすんだ茶。頭側は畳まれ、足側は乱れてめくれ上がる3層。
+  rbox(0.84, 0.14, 1.02, M.blanket, -6.55, 0.6, -4.28, 0.02, 0.06, 4);   // 本体（足側〜中央、厚み感）
+  rbox(0.8, 0.1, 0.5, M.blanket, -6.52, 0.66, -3.9, -0.05, 0.05, 4);     // めくれた層（足元がふくらむ）
+  rbox(0.86, 0.05, 0.34, M.sheet, -6.55, 0.63, -5.02, 0.06, 0.04, 4);    // 頭側で折り返したシーツの縁（白）
+  // 足側で床方向へ垂れる布の端
+  const flap = rbox(0.28, 0.46, 0.1, M.blanket, -6.04, 0.34, -3.95, 0, 0.05, 4);
+  flap.rotation.z = 0.14;
+  const flap2 = rbox(0.2, 0.34, 0.08, M.blanket, -7.02, 0.38, -4.1, 0, 0.045, 4);
+  flap2.rotation.z = -0.12;                                              // 反対側にも少し
+  // 枕2つ（ヘッドボード際、少しずらして重ねる）
+  rbox(0.6, 0.12, 0.34, M.pillow, -6.42, 0.6, -5.32, 0.1, 0.06, 4);
+  rbox(0.54, 0.11, 0.3, M.pillow, -6.74, 0.58, -5.28, -0.14, 0.06, 4);
 }
 // キッチン（白メラミンの量産ユニット。扉・目地・バー取っ手・蛇口・五徳まで）
 {
@@ -710,20 +728,45 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   // 棚板4枚（本の載る面 yb = 0.1 + s*0.5 に合わせる）
   for (let s = 0; s < 4; s++)
     rbox(shD - 0.03, 0.03, shW - 0.06, M.oak, shx, 0.1 + s * 0.5, shzC, 0, 0.01, 2);
-  // 棚板の上に本を並べる（ランダム、隙間・倒れた一冊を含む）
+  // 一冊 = 背表紙スラブ＋その奥の小口（ページ束）。lean で傾ける。
+  // 本棚は右壁(x=8)際で室内(-x)を向いて開く。背表紙は室内側(-x)、小口は壁側(+x)。
+  // bw = 背の幅（薄い/厚い）、bh = 本の高さ、bd = 本の奥行き（棚の奥行きに収める）。
+  function placeBook(spineFaceX, yBase, z, bw, bh, mat, lean = 0) {
+    const bd = 0.22 + Math.random() * 0.05;                 // 奥行き
+    // 背表紙：室内を向く薄い色スラブ
+    const spine = vbox(0.022, bh, bw, mat, spineFaceX, yBase + bh / 2, z);
+    // 小口（ページ束）：背表紙の奥（+x側）へ延びる。少し低く・細くして束に見せる
+    const pages = vbox(bd, bh - 0.018, bw - 0.012, pageMat,
+      spineFaceX + 0.011 + bd / 2, yBase + (bh - 0.018) / 2, z);
+    if (lean) { spine.rotation.x = lean; pages.rotation.x = lean; }
+    return bh;
+  }
   for (let s = 0; s < 4; s++) {
-    const yb = 0.1 + s * 0.5;
-    let z = 1.35;
-    while (z < 3.05) {
-      const bw = 0.07 + Math.random() * 0.06;
-      if (Math.random() < 0.14) { z += bw; continue; }   // 抜けた隙間
-      const bh = 0.3 + Math.random() * 0.14;
-      vbox(0.32, bh, bw, bookMats[Math.floor(Math.random() * bookMats.length)],
-        7.6 - Math.random() * 0.05, yb + 0.02 + bh / 2, z + bw / 2);
-      z += bw + 0.012;
+    const yb = 0.1 + s * 0.5 + 0.02;
+    let z = 1.36;
+    let lean = 0;                                           // 隣接する本は同じ側へ寄りかかる
+    while (z < 3.02) {
+      const bw = 0.028 + Math.random() * 0.05;             // 背の幅（薄い文庫〜厚い専門書）
+      if (Math.random() < 0.12) { z += bw + 0.05; lean = 0; continue; }  // 抜けた隙間で列が途切れる
+      const bh = 0.30 + Math.random() * 0.15;
+      // 隙間の直後だけ寄りかかりを許可（倒れ込み）。列の途中はほぼ直立。
+      if (lean === 0 && Math.random() < 0.22) lean = (Math.random() * 0.12 + 0.04);
+      else if (Math.random() < 0.5) lean = 0;
+      placeBook(7.46, yb, z + bw / 2, bw, bh, bookMats[Math.floor(Math.random() * bookMats.length)], lean);
+      z += bw * Math.cos(lean) + 0.006;
+    }
+    // 各段に平積み1〜2冊（横に寝かせた本。背表紙が室内を向く向きで薄く積む）
+    const stackN = Math.random() < 0.6 ? 1 + Math.floor(Math.random() * 2) : 0;
+    let sy = yb;
+    for (let k = 0; k < stackN; k++) {
+      const th = 0.04 + Math.random() * 0.03;
+      const bookC = bookMats[Math.floor(Math.random() * bookMats.length)];
+      const zc = 2.7 + (Math.random() - 0.5) * 0.2, ry = (Math.random() - 0.5) * 0.15;
+      vbox(0.3, th, 0.24, pageMat, 7.55, sy + th / 2, zc, ry);           // 小口（束）
+      vbox(0.3, th - 0.004, 0.02, bookC, 7.45, sy + th / 2, zc, ry);     // 背表紙が室内(-x)を向く
+      sy += th + 0.004;
     }
   }
-  vbox(0.32, 0.07, 0.44, bookMats[1], 7.5, 1.6, 2.9, 0.2);   // 倒れた一冊
 }
 // 玄関ドア
 {
@@ -797,15 +840,21 @@ function drawWallClock(glitch) {
 
 /* ---------- lights ---------- */
 const PT_SCALE = 34;   // r155+のライト物理単位化に伴うスケール（cd換算）
-const ambient = new THREE.AmbientLight(0x28283a, 0.85 * 0.32);
+// 壁のフィルを底上げして、点光源キーを弱めても部屋が暗く沈まないようにする
+const ambient = new THREE.AmbientLight(0x2c2c40, 0.85 * 0.44);
 scene.add(ambient);
-const hemi = new THREE.HemisphereLight(0x2a3450, 0x0d0a08, 0.85 * 0.3);
+const hemi = new THREE.HemisphereLight(0x323c58, 0x100c0a, 0.85 * 0.42);
 scene.add(hemi);
 const roomLights = [];
 const fixtureMats = [];
-[[3.8, 1.0], [-4.5, 3.0], [-5.5, -3.5], [6.5, -5.0]].forEach(([x, z]) => {
-  const l = new THREE.PointLight(0xffdca8, 0.55 * PT_SCALE, 9, 2);
-  l.position.set(x, 2.5, z);
+// シーリング灯は全て壁から十分内側へ寄せる（壁際のホットスポットを作らない）。
+// y=2.66 まで持ち上げ、器具の発光面のすぐ内側に光源を置くことで
+// 「宙に浮いた変な光源が壁を焼く」見えを解消する。
+[[3.8, 1.0], [-4.2, 3.0], [-5.0, -3.2], [5.6, -4.4]].forEach(([x, z]) => {
+  // 強度を 0.55→0.30 に落とし、decay=2 の近接ホットスポットを抑える。
+  // 距離レンジも 9→8 に絞り、隣室まで光が漏れにくくする。
+  const l = new THREE.PointLight(0xffdca8, 0.30 * PT_SCALE, 8, 2);
+  l.position.set(x, 2.66, z);
   l.castShadow = true;
   l.shadow.mapSize.set(1024, 1024);
   l.shadow.bias = -0.0015;
@@ -815,11 +864,11 @@ const fixtureMats = [];
   l.shadow.camera.far = 10;
   scene.add(l); roomLights.push(l);
   // 照明器具（コード＋シェード＋発光面）── 影キャスト除外
-  vcyl(0.012, 0.012, 0.22, M.dark, x, 2.69, z, 6).userData.noShadow = true;
-  vcyl(0.16, 0.22, 0.12, M.dark, x, 2.54, z, 12).userData.noShadow = true;
-  const fm = new THREE.MeshBasicMaterial({ color: 0xf0e0b8 });
+  vcyl(0.012, 0.012, 0.16, M.dark, x, 2.72, z, 6).userData.noShadow = true;
+  vcyl(0.16, 0.22, 0.12, M.dark, x, 2.62, z, 12).userData.noShadow = true;
+  const fm = new THREE.MeshBasicMaterial({ color: 0xe8d6a6 });
   fixtureMats.push(fm);
-  vcyl(0.15, 0.15, 0.02, fm, x, 2.47, z, 12);
+  vcyl(0.15, 0.15, 0.02, fm, x, 2.55, z, 12);
 });
 const moon = new THREE.PointLight(0x7f95c8, 0.3 * PT_SCALE * 0.6, 7, 2);
 moon.position.set(-7.3, 1.8, -2.6);
@@ -952,13 +1001,14 @@ const visit = {
   omenLeft: 0, huntLeft: 0, omen: null, leaveT: 0,
 };
 let aggro = 0, etaxRejects = 0, tearGenuine = 0, clockGlitch = false;
-const LIGHT_BASE = { 1: [0.55, 0.85], 2: [0.26, 0.55], 3: [0.08, 0.35] };
+// キー光源を弱め、その分アンビエント/ヘミのフィルで底上げする（壁焼け対策）
+const LIGHT_BASE = { 1: [0.30, 0.85], 2: [0.17, 0.55], 3: [0.06, 0.35] };
 function applyLights(mul = 1) {
   const [li, am] = LIGHT_BASE[phase];
   roomLights.forEach(l => l.intensity = li * mul * PT_SCALE);
-  ambient.intensity = am * 0.32 * (mul === 1 ? 1 : 0.7);
-  hemi.intensity = am * 0.3 * (mul === 1 ? 1 : 0.7);
-  const f = Math.min(1, (li * mul) / 0.55);   // 器具の発光面も連動して暗くなる
+  ambient.intensity = am * 0.44 * (mul === 1 ? 1 : 0.7);
+  hemi.intensity = am * 0.42 * (mul === 1 ? 1 : 0.7);
+  const f = Math.min(1, (li * mul) / 0.30);   // 器具の発光面も連動して暗くなる
   fixtureMats.forEach(m => m.color.setRGB(0.12 + 0.82 * f, 0.1 + 0.78 * f, 0.08 + 0.64 * f));
 }
 const OMENS = ["tv", "lights", "clock", "poster"];
