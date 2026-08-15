@@ -851,17 +851,20 @@ const fixtureMats = [];
 // y=2.66 まで持ち上げ、器具の発光面のすぐ内側に光源を置くことで
 // 「宙に浮いた変な光源が壁を焼く」見えを解消する。
 [[3.8, 1.0], [-4.2, 3.0], [-5.0, -3.2], [5.6, -4.4]].forEach(([x, z]) => {
-  // 強度を 0.55→0.30 に落とし、decay=2 の近接ホットスポットを抑える。
-  // 距離レンジも 9→8 に絞り、隣室まで光が漏れにくくする。
-  const l = new THREE.PointLight(0xffdca8, 0.30 * PT_SCALE, 8, 2);
+  // 【壁抜け対策】distance を 5.2 まで絞り、各室の照明が隣室の床・壁へ
+  // 届かないようにする（部屋の間口が概ね 4〜5m なので、光は自室内で減衰しきる）。
+  // レンジを下げた分ぶんだけ強度を 0.30→0.42 へ引き上げ、明るさを維持。
+  const l = new THREE.PointLight(0xffdca8, 0.42 * PT_SCALE, 5.2, 2);
   l.position.set(x, 2.66, z);
   l.castShadow = true;
   l.shadow.mapSize.set(1024, 1024);
-  l.shadow.bias = -0.0015;
-  l.shadow.normalBias = 0.06;
-  l.shadow.radius = 6;
-  l.shadow.camera.near = 0.15;
-  l.shadow.camera.far = 10;
+  // バイアスを小さくして影を壁の根元に密着させる（peter-panning ＝
+  // 壁の足元から影が浮いて光が漏れる現象を抑える）。
+  l.shadow.bias = -0.0007;
+  l.shadow.normalBias = 0.02;
+  l.shadow.radius = 5;
+  l.shadow.camera.near = 0.12;
+  l.shadow.camera.far = 6;       // distance に合わせて截頭錐台を絞り、影の解像度を稼ぐ
   scene.add(l); roomLights.push(l);
   // 照明器具（コード＋シェード＋発光面）── 影キャスト除外
   vcyl(0.012, 0.012, 0.16, M.dark, x, 2.72, z, 6).userData.noShadow = true;
@@ -1001,14 +1004,15 @@ const visit = {
   omenLeft: 0, huntLeft: 0, omen: null, leaveT: 0,
 };
 let aggro = 0, etaxRejects = 0, tearGenuine = 0, clockGlitch = false;
-// キー光源を弱め、その分アンビエント/ヘミのフィルで底上げする（壁焼け対策）
-const LIGHT_BASE = { 1: [0.30, 0.85], 2: [0.17, 0.55], 3: [0.06, 0.35] };
+// キー光源を弱め、その分アンビエント/ヘミのフィルで底上げする（壁焼け対策）。
+// distance=5.2 に絞った分、キー強度は 0.30→0.42 に引き上げて明るさを維持。
+const LIGHT_BASE = { 1: [0.42, 0.85], 2: [0.24, 0.55], 3: [0.09, 0.35] };
 function applyLights(mul = 1) {
   const [li, am] = LIGHT_BASE[phase];
   roomLights.forEach(l => l.intensity = li * mul * PT_SCALE);
   ambient.intensity = am * 0.44 * (mul === 1 ? 1 : 0.7);
   hemi.intensity = am * 0.42 * (mul === 1 ? 1 : 0.7);
-  const f = Math.min(1, (li * mul) / 0.30);   // 器具の発光面も連動して暗くなる
+  const f = Math.min(1, (li * mul) / 0.42);   // 器具の発光面も連動して暗くなる
   fixtureMats.forEach(m => m.color.setRGB(0.12 + 0.82 * f, 0.1 + 0.78 * f, 0.08 + 0.64 * f));
 }
 const OMENS = ["tv", "lights", "clock", "poster"];
