@@ -276,7 +276,9 @@ const FilmShader = {
 };
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.6, 0.8);
+// strength 0.28 / threshold 0.9：しきい値を上げて「明るい白い面（寝具・紙・時計盤）」が滲むのを防ぎ、
+// 発光体（アイテムの光球・照明器具）だけを控えめに光らせる。
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.28, 0.55, 0.9);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 const filmPass = new ShaderPass(FilmShader);
@@ -462,6 +464,13 @@ const M = {
   lampArm:  new THREE.MeshStandardMaterial({ color: 0x3a3c42, roughness: 0.4, metalness: 0.6 }),    // アーム
   form:     new THREE.MeshStandardMaterial({ color: 0xe9e4d6, roughness: 0.96 }),                   // 確定申告フォーム用紙（白めのオフホワイト）
   formInk:  new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.9 }),                    // 用紙の印字（薄い罫線・文字塊）
+  /* --- 新規PBRテクスチャ（バリエーション拡充: metal063/fabric049/cardboard001/plastic011/concrete034/leather030） --- */
+  rustMetal: new THREE.MeshStandardMaterial({ ...loadPBRSet("metal063", 1, 1), color: 0x9a9088, roughness: 0.7, metalness: 0.85 }),  // 汚れた鋼（フレーム・家電・刃物）
+  workCloth: new THREE.MeshStandardMaterial({ ...loadPBRSet("fabric049", 1.4, 2.2), color: 0x3a3f33, roughness: 0.92 }),             // 作業着（暗いオリーブ黒）
+  cardboard: new THREE.MeshStandardMaterial({ ...loadPBRSet("cardboard001", 1, 1), color: 0xb8a284, roughness: 0.95 }),             // 段ボール・古紙
+  greyPlastic: new THREE.MeshStandardMaterial({ ...loadPBRSet("plastic011", 1, 1), color: 0x2a2c30, roughness: 0.5 }),              // 家電の樹脂（ざらつき）
+  leatherBook: new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 0.5, 0.5), color: 0x5a3d2a, roughness: 0.7 }),          // 革装丁の本・椅子
+  concrete:  new THREE.MeshStandardMaterial({ ...loadPBRSet("concrete034", 2, 2), color: 0x8a8680, roughness: 0.95 }),              // コンクリート（アクセント）
 };
 // 背表紙：くすんだ布・革装丁の色（ホラーの暗い室内で浮かない、彩度低め・暗め）
 const bookMats = [0x5a3730, 0x33455a, 0x3d5240, 0x5a4a28, 0x39344f, 0x6b5636,
@@ -563,23 +572,36 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
     tleg(0.035, 0.028, 0.18, M.steel, x, 0.09, z));
   rbox(0.98, 0.14, 1.96, M.oak, -6.55, 0.25, -4.7, 0, 0.025);            // フレーム
   rbox(0.9, 0.04, 1.88, M.oakDark, -6.55, 0.335, -4.7, 0, 0.012);        // すのこ天端
-  rbox(0.98, 0.52, 0.05, M.oak, -6.55, 0.52, -5.66, 0, 0.02);            // ヘッドボード
-  rbox(0.9, 0.06, 0.03, M.oakDark, -6.55, 0.72, -5.63, 0, 0.012);        // ヘッドボード笠木
+  // ヘッドボード（面取りパネル＋縦framing＋笠木で厚みを出す）
+  rbox(0.98, 0.58, 0.07, M.oak, -6.55, 0.55, -5.66, 0, 0.02);            // ヘッドボード本体
+  rbox(0.86, 0.42, 0.02, M.oakDark, -6.55, 0.55, -5.61, 0, 0.012);       // 中央の落とし込みパネル
+  [-0.44, 0.44].forEach(zx => vbox(0.06, 0.58, 0.05, M.oak, -6.55 + zx, 0.55, -5.64));  // 縦フレーム
+  rbox(1.0, 0.06, 0.05, M.oakDark, -6.55, 0.85, -5.64, 0, 0.014);        // 笠木
   // 寝具（角丸で柔らかく。素材ごとに色を分けて“のっぺり白い塊”を回避）
-  rbox(0.88, 0.17, 1.84, M.mattress, -6.55, 0.44, -4.7, 0, 0.055, 4);    // マットレス
-  rbox(0.86, 0.03, 1.82, M.sheet, -6.55, 0.535, -4.7, 0, 0.03, 3);       // 敷きシーツ（マットレス上端を覆う）
-  // 掛け布団：くすんだ茶。頭側は畳まれ、足側は乱れてめくれ上がる3層。
-  rbox(0.84, 0.14, 1.02, M.blanket, -6.55, 0.6, -4.28, 0.02, 0.06, 4);   // 本体（足側〜中央、厚み感）
-  rbox(0.8, 0.1, 0.5, M.blanket, -6.52, 0.66, -3.9, -0.05, 0.05, 4);     // めくれた層（足元がふくらむ）
-  rbox(0.86, 0.05, 0.34, M.sheet, -6.55, 0.63, -5.02, 0.06, 0.04, 4);    // 頭側で折り返したシーツの縁（白）
-  // 足側で床方向へ垂れる布の端
-  const flap = rbox(0.28, 0.46, 0.1, M.blanket, -6.04, 0.34, -3.95, 0, 0.05, 4);
-  flap.rotation.z = 0.14;
-  const flap2 = rbox(0.2, 0.34, 0.08, M.blanket, -7.02, 0.38, -4.1, 0, 0.045, 4);
-  flap2.rotation.z = -0.12;                                              // 反対側にも少し
-  // 枕2つ（ヘッドボード際、少しずらして重ねる）
-  rbox(0.6, 0.12, 0.34, M.pillow, -6.42, 0.6, -5.32, 0.1, 0.06, 4);
-  rbox(0.54, 0.11, 0.3, M.pillow, -6.74, 0.58, -5.28, -0.14, 0.06, 4);
+  rbox(0.88, 0.18, 1.84, M.mattress, -6.55, 0.44, -4.7, 0, 0.06, 5);     // マットレス（面取り大きめ＝弾力感）
+  rbox(0.86, 0.03, 1.82, M.sheet, -6.55, 0.54, -4.7, 0, 0.03, 3);        // 敷きシーツ（マットレス上端を覆う）
+  // 掛け布団：ふくらんだ本体＋キルトの縫い目＋足側でめくれた層＋折り返した端
+  const duvet = rbox(0.86, 0.2, 1.16, M.blanket, -6.55, 0.62, -4.2, 0.015, 0.09, 5);  // 本体（厚くふくらむ）
+  // キルトの縫い目（浅い溝を格子状に。掛け布団上面のすぐ下へ細い暗strip）
+  for (let qz = -0.42; qz <= 0.42; qz += 0.28)
+    vbox(0.82, 0.006, 0.012, M.oakDark, -6.55, 0.715, -4.2 + qz);        // 横の縫い目
+  for (let qx = -0.28; qx <= 0.28; qx += 0.28)
+    vbox(0.012, 0.006, 1.08, M.oakDark, -6.55 + qx, 0.715, -4.2);        // 縦の縫い目
+  rbox(0.82, 0.14, 0.46, M.blanket, -6.52, 0.68, -3.86, -0.06, 0.07, 5); // 足元でめくれてふくらむ層
+  // 頭側で折り返した掛け布団の端（裏地＝シーツ色が見える）
+  const foldBack = rbox(0.86, 0.06, 0.3, M.sheet, -6.55, 0.7, -4.86, 0.08, 0.04, 4);
+  foldBack.rotation.x = -0.15;
+  // 足側で床方向へ垂れる布の端（両サイド）
+  const flap = rbox(0.28, 0.5, 0.12, M.blanket, -6.02, 0.34, -3.9, 0, 0.06, 5);
+  flap.rotation.z = 0.16;
+  const flap2 = rbox(0.22, 0.4, 0.1, M.blanket, -7.04, 0.36, -4.05, 0, 0.05, 5);
+  flap2.rotation.z = -0.13;
+  // 枕2つ（ヘッドボード際、少しずらして重ねる。中央にへこみ＝使用感）
+  const pil1 = rbox(0.62, 0.14, 0.36, M.pillow, -6.4, 0.62, -5.28, 0.1, 0.08, 5);
+  const pil2 = rbox(0.56, 0.12, 0.32, M.pillow, -6.74, 0.6, -5.24, -0.16, 0.07, 5);
+  [pil1, pil2].forEach(p => p.scale.y = 0.9);                            // 少しつぶれた枕
+  // 枕の中央のへこみ（暗い薄box）
+  vbox(0.28, 0.01, 0.14, M.sheet, -6.4, 0.66, -5.28, 0.1);
 }
 // キッチン（白メラミンの量産ユニット。扉・目地・バー取っ手・蛇口・五徳まで）
 {
@@ -643,10 +665,37 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
       k.position.set(cx + kx, dy, cz + cd / 2 + 0.03); scene.add(k);
     });
   }
-  // 天板の上の小物（目覚まし時計・畳んだ布）
-  vbox(0.16, 0.11, 0.07, M.dark, cx - 0.6, 0.925, cz, 0.1);
-  vcyl(0.05, 0.05, 0.02, M.metal, cx - 0.6, 0.99, cz + 0.04, 12).rotation.x = Math.PI / 2;
-  rbox(0.34, 0.09, 0.26, M.fabric, cx + 0.55, 0.915, cz, 0.05, 0.04, 3);
+  // 天板の上の小物（レトロな目覚まし時計・眼鏡・文庫本・畳んだ布）
+  // ツインベル目覚まし時計：丸い本体＋文字盤＋上部2つのベル＋脚
+  const akX = cx - 0.62, akZ = cz + 0.02;
+  const akMetal = new THREE.MeshStandardMaterial({ color: 0x6b6f74, roughness: 0.55, metalness: 0.4 });  // 反射控えめの金属（滲み防止）
+  vcyl(0.07, 0.07, 0.05, akMetal, akX, 0.92, akZ, 20).rotation.x = Math.PI / 2;  // 本体（横向き円柱）
+  const akFace = new THREE.Mesh(new THREE.CircleGeometry(0.058, 20),
+    new THREE.MeshStandardMaterial({ color: 0xc4beae, roughness: 0.85 }));
+  akFace.position.set(akX, 0.92, akZ + 0.026); scene.add(akFace);           // 文字盤（やや暗いオフホワイト）
+  vbox(0.04, 0.006, 0.004, M.dark, akX, 0.925, akZ + 0.03, 0.6);            // 分針
+  vbox(0.026, 0.006, 0.004, M.dark, akX + 0.006, 0.918, akZ + 0.03, -0.3);  // 時針
+  [-0.05, 0.05].forEach(bx2 => {                                            // 上部の2つのベル
+    const bell = new THREE.Mesh(new THREE.SphereGeometry(0.028, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), akMetal);
+    bell.position.set(akX + bx2, 0.985, akZ); scene.add(bell);
+  });
+  vbox(0.012, 0.03, 0.008, akMetal, akX, 1.0, akZ - 0.02, 0.3);             // ベルを叩くハンマー
+  [-0.045, 0.045].forEach(fx => vcyl(0.006, 0.006, 0.03, M.steel, akX + fx, 0.87, akZ, 8));  // 2本脚
+  // 眼鏡（フレーム2枚＋ブリッジ＋つる）
+  const glX = cx + 0.1, glZ = cz + 0.05;
+  [-0.03, 0.03].forEach(gx => {
+    const lens = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.004, 8, 18), M.dark);
+    lens.rotation.x = -Math.PI / 2; lens.position.set(glX + gx, 0.878, glZ); scene.add(lens);
+  });
+  vbox(0.02, 0.004, 0.004, M.dark, glX, 0.878, glZ);                        // ブリッジ
+  vbox(0.004, 0.004, 0.08, M.dark, glX - 0.05, 0.878, glZ - 0.03);          // つる
+  vbox(0.004, 0.004, 0.08, M.dark, glX + 0.05, 0.878, glZ - 0.03);
+  // 文庫本（数冊積み、背表紙が見える）
+  [0, 1, 2].forEach(k => {
+    vbox(0.11, 0.018, 0.16, bookMats[(k * 3) % bookMats.length], cx + 0.62, 0.885 + k * 0.02, cz + 0.02, 0.08);
+  });
+  // 畳んだ布（少し崩れた2段）
+  rbox(0.32, 0.06, 0.24, M.fabric, cx + 0.62, 0.945, cz - 0.02, 0.05, 0.03, 3);
 }
 // ローテーブル＋ラグ＋生活の痕跡（角丸天板・テーパー脚・幕板・下段棚）
 {
@@ -663,9 +712,36 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   rbox(1.3, 0.05, 0.03, M.oak, tx, 0.37, tz - 0.5, 0, 0.008, 2);
   rbox(1.3, 0.05, 0.03, M.oak, tx, 0.37, tz + 0.5, 0, 0.008, 2);
   // 生活の痕跡（天板 y≈0.445 の上に置く）
-  vcyl(0.09, 0.08, 0.11, M.white, tx - 0.3, 0.5, tz - 0.2, 12);             // カップ麺
-  vcyl(0.055, 0.055, 0.13, M.metal, tx + 0.35, 0.51, tz + 0.25, 12);       // 空き缶
-  rbox(0.1, 0.028, 0.22, M.dark, tx + 0.25, 0.46, tz - 0.3, 0.4, 0.01, 2);   // リモコン
+  // カップ麺（本体テーパー＋フタが半分めくれ＋割り箸）
+  vcyl(0.092, 0.072, 0.11, new THREE.MeshStandardMaterial({ color: 0xd9d2c4, roughness: 0.9 }), tx - 0.32, 0.5, tz - 0.18, 16);
+  vcyl(0.085, 0.06, 0.02, new THREE.MeshStandardMaterial({ color: 0xb23a2a, roughness: 0.7 }), tx - 0.32, 0.45, tz - 0.18, 16);  // 帯（赤ラベル）
+  const lid = rbox(0.1, 0.004, 0.1, new THREE.MeshStandardMaterial({ color: 0xcfc8b8, roughness: 0.6, metalness: 0.3 }), tx - 0.32, 0.565, tz - 0.14, 0.3, 0.002, 1);
+  lid.rotation.x = -0.9;                                                    // 半分めくれたフタ
+  [[-0.005, 0.02], [0.008, -0.01]].forEach(([ox, oz]) => {                  // 割り箸2本
+    const ch = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.2, 6), M.oak);
+    ch.position.set(tx - 0.32 + ox, 0.58, tz - 0.18 + oz); ch.rotation.z = 0.5; ch.rotation.y = 0.3; scene.add(ch);
+  });
+  // 空き缶（胴＋上面のリム＋プルタブ）
+  vcyl(0.033, 0.033, 0.13, M.metal, tx + 0.36, 0.51, tz + 0.26, 16);
+  vcyl(0.03, 0.03, 0.006, M.steel, tx + 0.36, 0.577, tz + 0.26, 16);        // 天面
+  vbox(0.02, 0.002, 0.012, M.steel, tx + 0.36, 0.582, tz + 0.26);          // プルタブ
+  // リモコン（本体＋ボタン格子）
+  const rmx = tx + 0.22, rmz = tz - 0.32, rmr = 0.42;
+  rbox(0.1, 0.024, 0.24, M.dark, rmx, 0.46, rmz, rmr, 0.01, 2);
+  for (let br = 0; br < 5; br++)                                            // ボタン（2列×5行）
+    for (let bc = 0; bc < 2; bc++) {
+      const bxp = rmx + Math.cos(rmr) * (bc * 0.03 - 0.015) - Math.sin(rmr) * (br * 0.032 - 0.064);
+      const bzp = rmz + Math.sin(rmr) * (bc * 0.03 - 0.015) + Math.cos(rmr) * (br * 0.032 - 0.064);
+      vcyl(0.007, 0.007, 0.004, M.steel, bxp, 0.474, bzp, 6);
+    }
+  // 読みかけの雑誌（開いて伏せてある）
+  const mag = rbox(0.3, 0.008, 0.22, M.form, tx - 0.05, 0.452, tz + 0.28, 0.15, 0.003, 1);
+  mag.rotation.x = 0.02;
+  vbox(0.28, 0.001, 0.2, M.formInk, tx - 0.05, 0.457, tz + 0.28, 0.15);     // 誌面の印字塊
+  // コースターの輪染み（天板に薄く）
+  const stain = new THREE.Mesh(new THREE.RingGeometry(0.03, 0.045, 16),
+    new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 0.9, transparent: true, opacity: 0.5 }));
+  stain.rotation.x = -Math.PI / 2; stain.position.set(tx + 0.1, 0.446, tz - 0.02); scene.add(stain);
 }
 // TVボード＋薄型テレビ（角丸ローボード・引き出し・スタンド・ベゼル）
 {
@@ -681,12 +757,27 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
     rbox(0.98, 0.22, 0.024, M.oak, bx + dx, 0.2, bz - 0.252, 0, 0.008, 2);
     vbox(0.44, 0.02, 0.024, M.steel, bx + dx, 0.2, bz - 0.268);
   });
-  // 薄型テレビ本体（スタンド＋背面パネル＋前面ベゼル）
-  const sx = bx, sz = bz - 0.02;
-  rbox(0.44, 0.02, 0.14, M.dark, sx, 0.415, sz, 0, 0.006, 2);               // スタンド台座
-  vbox(0.1, 0.14, 0.03, M.dark, sx, 0.49, sz);                             // スタンド首
-  rbox(1.1, 0.64, 0.035, M.dark, sx, 0.86, sz, 0, 0.012, 2);               // 背面パネル（黒枠）
-  vbox(1.02, 0.56, 0.008, M.tv, sx, 0.86, sz - 0.02);                      // 画面（前触れで光る）
+  // 薄型テレビ（左右2脚スタンド＋極薄ベゼル＋つや消し画面）＋サウンドバー＋メディア機器
+  const sx = bx, sz = bz - 0.03;
+  [-0.42, 0.42].forEach(dx => {                                             // 左右のブレード脚
+    rbox(0.14, 0.014, 0.16, M.dark, sx + dx, 0.412, sz, 0, 0.004, 2);       // 接地脚
+    vbox(0.02, 0.12, 0.06, M.dark, sx + dx, 0.47, sz);                      // 支柱
+  });
+  rbox(1.16, 0.66, 0.028, M.plastic, sx, 0.86, sz + 0.006, 0, 0.006, 2);    // 背面ケース（薄）
+  rbox(1.14, 0.64, 0.012, new THREE.MeshStandardMaterial({ color: 0x0a0b0d, roughness: 0.35 }), sx, 0.86, sz - 0.006, 0, 0.004, 2);  // 極薄ベゼル
+  vbox(1.08, 0.6, 0.006, M.tv, sx, 0.86, sz - 0.014);                       // 画面（前触れで光る・つや消し）
+  vbox(0.05, 0.006, 0.006, new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.4 }), sx, 0.55, sz - 0.016);  // 下ベゼル中央のブランドロゴ
+  // サウンドバー（テレビ手前、天板上）
+  rbox(0.9, 0.05, 0.07, M.plastic, sx, 0.44, sz + 0.16, 0, 0.02, 2);
+  vbox(0.86, 0.03, 0.005, new THREE.MeshStandardMaterial({ color: 0x17181b, roughness: 0.7 }), sx, 0.44, sz + 0.197);  // スピーカーグリル面
+  // メディア機器（左下、電源LED点灯）＋赤い待機LED
+  rbox(0.4, 0.05, 0.28, M.plastic, bx - 0.6, 0.44, bz + 0.06, 0, 0.008, 2);
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.006, 6, 6),
+    new THREE.MeshBasicMaterial({ color: 0xff3020 }));
+  led.position.set(bx - 0.74, 0.45, bz + 0.19); scene.add(led);            // 待機ランプ（赤）
+  // HDMIケーブルがテレビ裏から機器へ垂れる
+  const tvcab = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.42, 6), M.dark);
+  tvcab.position.set(sx - 0.2, 0.62, sz + 0.05); tvcab.rotation.x = 0.2; scene.add(tvcab);
 }
 // PCデスク（オーク天板＋黒スチール脚。モニタ・キーボード・散乱書類・椅子）
 {
@@ -1010,38 +1101,156 @@ const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.3), posterMat);
 poster.position.set(-3.4, 1.7, -5.97);
 scene.add(poster);
 
-/* ---------- 怪人「カクシン様」 ---------- */
+/* ---------- 怪人「ジェイソン」（13日の金曜日オマージュ） ---------- */
+// グループの正面はローカル +z（mob更新で monster.lookAt(ply) するため、
+// マスク面は必ず +z を向くように組む）。全高 ≈ 2.05m の大柄・前傾姿勢。
 function makeMonster() {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 1.9, 10), M.suit);
-  body.position.y = 0.95; g.add(body);
-  // 顔 = 源泉徴収票
-  const cv = document.createElement("canvas");
-  cv.width = 256; cv.height = 320;
-  const c = cv.getContext("2d");
-  c.fillStyle = "#e8e4d8"; c.fillRect(0, 0, 256, 320);
-  c.strokeStyle = "#555"; c.lineWidth = 2;
-  c.strokeRect(10, 10, 236, 300);
-  c.fillStyle = "#222";
-  c.font = "bold 26px serif"; c.textAlign = "center";
-  c.fillText("源泉徴収票", 128, 46);
-  c.font = "11px sans-serif";
-  for (let r = 0; r < 6; r++) {
-    c.strokeStyle = "#888"; c.lineWidth = 1;
-    c.strokeRect(20, 66 + r*40, 216, 34);
+
+  // --- 怪人専用マテリアル（この個体だけで使うのでローカル定義） ---
+  const skin    = new THREE.MeshStandardMaterial({ color: 0x5f5346, roughness: 0.9 });           // くすんだ肌（手・首）暗め＝発光防止
+  const scalp   = new THREE.MeshStandardMaterial({ color: 0x1c1915, roughness: 0.92 });          // 頭頂（汚れた髪/頭皮）＝白いオーブ化を防ぐ
+  const boot    = new THREE.MeshStandardMaterial({ color: 0x1a1712, roughness: 0.8, metalness: 0.05 }); // 黒い作業ブーツ
+  const bootSole= new THREE.MeshStandardMaterial({ color: 0x0d0b09, roughness: 0.9 });           // 靴底
+  const strapM  = new THREE.MeshStandardMaterial({ color: 0x3a2f24, roughness: 0.7 });           // マスクの革ストラップ
+  const bladeM  = new THREE.MeshStandardMaterial({ color: 0xb4bac0, roughness: 0.32, metalness: 0.85 }); // マチェーテの刃
+  const handleM = new THREE.MeshStandardMaterial({ color: 0x241f1b, roughness: 0.7 });           // マチェーテの柄
+  // 作業着: workClothを流用しつつ、この個体用に法線タイリングを弱めた別インスタンス
+  // （furniture側の見た目を変えないようにclone。リブの主張を抑えて「厚手の上着」に見せる）
+  const cloth = M.workCloth.clone();
+  // リブが「タイヤ積み」に見えないよう法線をかなり弱め、粗さを上げて縞状ハイライトを消す
+  if (cloth.normalMap) { cloth.normalScale = new THREE.Vector2(0.22, 0.22); }
+  cloth.roughness = 0.97; cloth.metalness = 0.0;
+  const cm = (w, h, d, mat, x, y, z, ry = 0) => {   // ローカル簡易ボックス
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z); if (ry) m.rotation.y = ry; g.add(m); return m;
+  };
+  const cyl = (rt, rb, h, mat, x, y, z, seg = 10) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+    m.position.set(x, y, z); g.add(m); return m;
+  };
+
+  // === 脚（わずかに開く。前傾で膝が前に出るイメージ） ===
+  for (const s of [-1, 1]) {
+    // 太もも
+    cyl(0.13, 0.15, 0.55, cloth, s * 0.17, 0.62, 0.02);
+    // すね
+    cyl(0.11, 0.12, 0.55, cloth, s * 0.19, 0.15, 0.06);
+    // ブーツ（甲＋つま先＋底）
+    cm(0.22, 0.16, 0.30, boot, s * 0.19, 0.02, 0.12);
+    cm(0.22, 0.10, 0.14, boot, s * 0.19, 0.05, 0.30);   // つま先
+    cm(0.24, 0.04, 0.46, bootSole, s * 0.19, -0.05, 0.16); // 靴底
   }
-  c.fillStyle = "#111";
-  c.fillRect(52, 130, 42, 30);   // 目
-  c.fillRect(162, 130, 42, 30);  // 目
-  const faceTex = new THREE.CanvasTexture(cv);
-  faceTex.colorSpace = THREE.SRGBColorSpace;
-  const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.62, 0.78),
-    new THREE.MeshBasicMaterial({ map: faceTex })
+
+  // === 胴（大柄・厚い胸板。太めのバレル型で寸胴に。前傾のため上部を +z へ） ===
+  // 上半身は樽のように太く、腰でもあまり絞らない（砂時計に見えないよう rb を大きめに）
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.31, 0.74, 14), cloth);
+  torso.position.set(0, 1.22, 0.05); torso.rotation.x = 0.08; g.add(torso);
+  // 腹〜作業着の裾（胴とほぼ同径でつなぎ、寸胴の塊に見せる）
+  cyl(0.31, 0.32, 0.30, cloth, 0, 0.88, 0.03, 14);
+  // 開いたジャケットの前立て（濃い縦帯）
+  cm(0.11, 0.70, 0.02, strapM, 0, 1.22, 0.32, 0);
+
+  // === 肩（怒り肩・盛り上がった僧帽筋。太く高く、首の露出を隠す） ===
+  const shoulders = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.70, 12), cloth);
+  shoulders.position.set(0, 1.60, 0.03); shoulders.rotation.z = Math.PI / 2; g.add(shoulders);
+  for (const s of [-1, 1]) cyl(0.14, 0.11, 0.16, cloth, s * 0.33, 1.64, 0.02); // 肩の盛り上がり
+  // 立った襟（首の付け根を覆い、細い首が浮かないように。少し高く）
+  cyl(0.15, 0.18, 0.16, cloth, 0, 1.75, 0.035, 12);
+
+  // === 首（太い・短い）＋頭 ===
+  cyl(0.13, 0.15, 0.12, skin, 0, 1.80, 0.045);
+  // 頭は少し縦長の楕円体。露出する頭頂/後頭は暗い頭皮(scalp)にして白いオーブ化を防ぐ。
+  // マスクはこの前面に載せる。襟に近づけて neck gap をなくすため 1.90→1.87 に下げる
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.185, 16, 16), scalp);
+  head.position.set(0, 1.87, 0.05); head.scale.set(1.0, 1.12, 1.05); g.add(head);
+
+  // --- ホッケーマスク（+z 面に配置）。キャンバスで通気孔・赤シェブロン・目/口スリットを描く ---
+  const mcv = document.createElement("canvas");
+  mcv.width = 256; mcv.height = 320;
+  const mc = mcv.getContext("2d");
+  mc.fillStyle = "#9c9070"; mc.fillRect(0, 0, 256, 320);            // 骨色（暗めのクリーム＝強い照明下でも発光しにくい）
+  // 経年の汚れ（薄い斑）
+  mc.fillStyle = "rgba(74,62,42,0.30)";
+  for (let i = 0; i < 40; i++) {
+    const rx = 30 + Math.abs(Math.sin(i * 12.9) * 196);
+    const ry = 30 + Math.abs(Math.cos(i * 7.7) * 260);
+    mc.beginPath(); mc.arc(rx, ry, 3 + (i % 4), 0, Math.PI * 2); mc.fill();
+  }
+  // 目穴（2つ）と口穴
+  mc.fillStyle = "#0a0806";
+  mc.beginPath(); mc.ellipse(92, 138, 20, 14, 0, 0, Math.PI * 2); mc.fill();
+  mc.beginPath(); mc.ellipse(164, 138, 20, 14, 0, 0, Math.PI * 2); mc.fill();
+  mc.beginPath(); mc.ellipse(128, 232, 34, 12, 0, 0, Math.PI * 2); mc.fill(); // 口
+  // 通気孔クラスタ（三角配置の小さな黒丸）
+  mc.fillStyle = "#12100c";
+  const vent = (cx2, cy2) => { mc.beginPath(); mc.arc(cx2, cy2, 4.5, 0, Math.PI * 2); mc.fill(); };
+  vent(128, 78); vent(112, 96); vent(144, 96);                       // 額の三角
+  vent(128, 186); vent(112, 200); vent(144, 200);                    // 鼻下
+  vent(70, 188); vent(186, 188);                                     // 頬
+  // 赤い三角シェブロン（額中央から左右へ）
+  mc.fillStyle = "#a61d1d";
+  const chevron = (cx2, cy2, w2, h2, dir) => {
+    mc.beginPath(); mc.moveTo(cx2, cy2); mc.lineTo(cx2 + dir * w2, cy2 + h2 * 0.5);
+    mc.lineTo(cx2 + dir * w2 * 0.5, cy2 + h2); mc.closePath(); mc.fill();
+  };
+  chevron(128, 40, 26, 30, -1); chevron(128, 40, 26, 30, 1);         // 額のV
+  chevron(108, 250, 18, 26, -1); chevron(148, 250, 18, 26, 1);       // 顎の左右
+  const maskTex = new THREE.CanvasTexture(mcv);
+  maskTex.colorSpace = THREE.SRGBColorSpace;
+  // マスク本体は半球シェル状（頭の前面に張り付く）
+  const maskGeo = new THREE.SphereGeometry(0.205, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  const mask = new THREE.Mesh(
+    maskGeo,
+    // roughnessを上げmetalnessゼロ＝ブルーム閾値0.9で滲まない、樹脂っぽいマット面
+    new THREE.MeshStandardMaterial({ map: maskTex, roughness: 0.78, metalness: 0.0 })
   );
-  face.position.set(0, 2.25, 0.01);
-  g.add(face);
-  g.userData.face = face;
+  // 半球の開口を +z（正面）へ向ける：デフォルトは +y 開口なので x軸 -90°、さらに少し上向き
+  // 頭に合わせ 1.95→1.91。z方向に潰して（scale.z<1）オーブではなく顔型の平たいマスクに
+  mask.position.set(0, 1.88, 0.08);
+  mask.rotation.x = Math.PI * 0.5 + 0.06;
+  mask.scale.set(1.02, 1.05, 0.82);
+  g.add(mask);
+  // マスク周りの革ストラップ（頭の側面〜後ろ）
+  const strap = new THREE.Mesh(new THREE.TorusGeometry(0.185, 0.018, 6, 16), strapM);
+  strap.position.set(0, 1.88, 0.02); strap.rotation.y = Math.PI / 2; g.add(strap);
+
+  // === 腕（左右）。太めで大柄。右腕(+x)を下ろしマチェーテ、左腕はやや前へ ===
+  // 左腕（-x）：肩→上腕→前腕→拳
+  cyl(0.10, 0.09, 0.44, cloth, -0.37, 1.40, 0.06);                  // 上腕
+  cyl(0.085, 0.078, 0.42, cloth, -0.41, 1.02, 0.15);                // 前腕（やや前）
+  cyl(0.10, 0.10, 0.13, skin, -0.43, 0.80, 0.19);                   // 拳
+  // 右腕（+x）：下ろした腕
+  cyl(0.10, 0.09, 0.46, cloth, 0.37, 1.38, 0.04);                   // 上腕
+  cyl(0.085, 0.078, 0.44, cloth, 0.40, 0.98, 0.06);                 // 前腕
+  const rHand = cyl(0.10, 0.10, 0.14, skin, 0.42, 0.76, 0.08);      // 右拳（マチェーテ把持）
+
+  // === マチェーテ（右手に。刃を下向き・やや前へ） ===
+  const macheteGrp = new THREE.Group();
+  // 柄
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.024, 0.16, 8), handleM);
+  handle.position.y = 0.0; macheteGrp.add(handle);
+  // 柄頭
+  const pommel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.03, 8), handleM);
+  pommel.position.y = 0.09; macheteGrp.add(pommel);
+  // 刃（下向き。先端に向かって幅が出る片刃のイメージ）
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.60, 0.012), bladeM);
+  blade.position.y = -0.40; macheteGrp.add(blade);
+  // 刃先の尖り
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.10, 4), bladeM);
+  tip.position.y = -0.73; tip.rotation.x = Math.PI; tip.rotation.y = Math.PI / 4; macheteGrp.add(tip);
+  // 峰側の背（少し厚み）
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.58, 0.02), bladeM);
+  spine.position.set(-0.022, -0.39, 0); macheteGrp.add(spine);
+  // 右拳の位置に配置し、わずかに前傾＆外へ倒す
+  macheteGrp.position.set(0.42, 0.72, 0.12);
+  macheteGrp.rotation.set(0.35, 0, 0.12);
+  g.add(macheteGrp);
+
+  // 頭部アセンブリの参照（将来のエフェクト用に保持）
+  g.userData.face = head;
+  g.userData.mask = mask;
+
   scene.add(g);
   return g;
 }
@@ -1765,5 +1974,6 @@ $("startBtn").addEventListener("click", () => {
 
 /* debug hook (テスト用) */
 window.__dbg = { ply, mob, visit, ITEMS, openInspect, enterVisit, startOmen, ending, save, runLog,
+  monster, spawnMonster,   // 検証用: 怪人の直接制御
   st: () => state, gm: () => gameMin, setMin: v => { gameMin = v; },
   setMode: m => { mode = m; } };
