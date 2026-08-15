@@ -632,6 +632,78 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
       vbox(0.2, 0.012, 0.018, M.dark, -7.05, 0.948, z, a * Math.PI / 4);
     vcyl(0.022, 0.026, 0.035, M.dark, -6.235, 0.78, z + 0.1, 10).rotation.z = Math.PI / 2;  // ツマミ
   });
+
+  /* ===== 高精細化: バックスプラッシュ・レンジフード・吊戸棚・ケトル・水切りかご・生活雑貨 ===== */
+  // --- タイルのバックスプラッシュ（白サブウェイタイル＋目地をキャンバスで生成） ---
+  const tcv = document.createElement("canvas");
+  tcv.width = 128; tcv.height = 128;
+  const tc = tcv.getContext("2d");
+  tc.fillStyle = "#c9c4b8"; tc.fillRect(0, 0, 128, 128);              // 目地（グレー）
+  tc.fillStyle = "#e6e2d8";                                          // タイル（オフホワイト）
+  const th = 32, tw = 64;
+  for (let row = 0; row * th < 128; row++) {
+    const off = (row % 2) * (tw / 2);                               // レンガ積み（半枚ずらし）
+    for (let cxp = -tw; cxp < 128 + tw; cxp += tw) {
+      tc.fillRect(cxp + off + 1.5, row * th + 1.5, tw - 3, th - 3);
+    }
+  }
+  const tileTex = new THREE.CanvasTexture(tcv);
+  tileTex.colorSpace = THREE.SRGBColorSpace;
+  tileTex.wrapS = tileTex.wrapT = THREE.RepeatWrapping;
+  tileTex.repeat.set(8, 2.4);
+  const tileMat = new THREE.MeshStandardMaterial({ map: tileTex, roughness: 0.45, metalness: 0.0 });
+  // 壁(x≈-7.9)の内側に薄板を立てる。天板(0.885)から高さ0.62、カウンタ長手方向(z)に沿わせる
+  const splash = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 0.62), tileMat);
+  splash.position.set(-7.88, 1.2, 3.4); splash.rotation.y = Math.PI / 2; scene.add(splash);
+
+  // --- レンジフード（コンロ z≈2.55 の上。ステンレスの台形フード＋底面＋前縁） ---
+  // 環境マップが無い暗室では高metalが黒く沈むため、metalnessを抑えて拡散光を拾わせる
+  const hoodMat = new THREE.MeshStandardMaterial({ color: 0xc4c7cb, roughness: 0.5, metalness: 0.25 });
+  // 傾いた前面パネル（下広がり）。壁寄せしてやや小型化
+  const hoodFront = rbox(0.42, 0.24, 0.88, hoodMat, -7.42, 1.7, 2.55, 0, 0.01, 2);
+  hoodFront.rotation.z = 0.5;                                        // 手前下がりに傾ける
+  vbox(0.5, 0.36, 0.9, hoodMat, -7.66, 1.98, 2.55);                 // フード上部の箱
+  vbox(0.56, 0.05, 0.92, new THREE.MeshStandardMaterial({ color: 0x3a3d40, roughness: 0.7 }), -7.62, 1.55, 2.55);  // 底面（吸込口）
+  vcyl(0.05, 0.05, 0.05, M.dark, -7.62, 1.54, 2.55, 12).rotation.x = Math.PI / 2;  // 照明/ファンの丸
+
+  // --- 吊戸棚（シンク側 z≈4.6 の上。白い扉2枚＋バー取っ手） ---
+  vbox(0.42, 0.62, 1.3, M.melamine, -7.66, 1.95, 4.55);             // 箱
+  [[4.9, 4.98], [4.22, 4.3]].forEach(([hinge, hz]) => {
+    vbox(0.02, 0.56, 0.62, M.melamine, -7.44, 1.95, hz, 0.02);     // 扉
+  });
+  vbox(0.02, 0.24, 0.02, M.steel, -7.43, 1.78, 4.35);              // 取っ手
+  vbox(0.02, 0.24, 0.02, M.steel, -7.43, 1.78, 4.75);
+
+  // --- ケトル（奥バーナー z=2.85。丸い胴＋注ぎ口＋ハンドル＋つまみ） ---
+  const kettle = vcyl(0.11, 0.13, 0.17, M.metal, -7.05, 1.02, 2.85, 16);
+  vcyl(0.115, 0.09, 0.05, M.metal, -7.05, 1.13, 2.85, 16);          // 肩
+  vcyl(0.04, 0.05, 0.03, M.dark, -7.05, 1.18, 2.85, 12);           // 蓋つまみ
+  const spout = vcyl(0.018, 0.032, 0.14, M.metal, -6.9, 1.08, 2.85, 10);  // 注ぎ口
+  spout.rotation.z = -0.7;
+  const kHandle = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.014, 8, 16, Math.PI), M.dark);
+  kHandle.position.set(-7.05, 1.2, 2.85); kHandle.rotation.x = Math.PI / 2; scene.add(kHandle);
+
+  // --- 水切りかご（シンク手前 z≈3.55。ワイヤー枠＋皿2枚を立てる＋伏せマグ） ---
+  const wire = new THREE.MeshStandardMaterial({ color: 0x9a9ea3, roughness: 0.4, metalness: 0.6 });
+  vbox(0.34, 0.02, 0.5, wire, -7.05, 0.905, 3.55);                 // 受け皿
+  // 側面ワイヤー（細い縦桟を数本）
+  for (let i = -2; i <= 2; i++) vbox(0.012, 0.14, 0.012, wire, -7.05 + i * 0.07, 0.98, 3.32);
+  for (let i = -2; i <= 2; i++) vbox(0.012, 0.14, 0.012, wire, -7.05 + i * 0.07, 0.98, 3.78);
+  // 立てた皿2枚（薄い円盤を縦に）
+  [3.48, 3.62].forEach((pz, i) => {
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.015, 20), M.ceramic);
+    plate.position.set(-7.05, 1.02, pz); plate.rotation.x = 0.05 + i * 0.02; scene.add(plate);
+  });
+  // 伏せたマグ
+  vcyl(0.045, 0.05, 0.09, M.ceramic, -6.9, 0.95, 3.55, 14);
+
+  // --- 生活雑貨: 食器用洗剤ボトル＋スポンジ（シンク左）、まな板（立てかけ） ---
+  const bottleMat = new THREE.MeshStandardMaterial({ color: 0x2f7d55, roughness: 0.4, metalness: 0.0 });  // 緑の洗剤
+  vcyl(0.032, 0.038, 0.17, bottleMat, -7.2, 0.99, 4.85, 12);        // ボトル胴
+  vcyl(0.014, 0.018, 0.05, M.dark, -7.2, 1.11, 4.85, 8);          // ノズル
+  vbox(0.09, 0.05, 0.06, new THREE.MeshStandardMaterial({ color: 0xd8c24a, roughness: 0.95 }), -6.95, 0.93, 4.7);  // 黄色いスポンジ
+  const board = rbox(0.32, 0.02, 0.24, M.oak, -7.78, 1.06, 4.9, 0, 0.006, 2);  // まな板（壁際に立てかけ）
+  board.rotation.z = Math.PI / 2 - 0.12; board.rotation.y = 0.1;
 }
 // クローゼット（開き戸が、少しだけ開いている）
 {
@@ -639,11 +711,47 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   aoPatch(-1.6, -5.15, 2.4, 1.3);
   vbox(2.0, 2.2, 0.86, new THREE.MeshLambertMaterial({ color: 0x14120f }), -1.6, 1.1, -5.46);
   vbox(0.94, 1.98, 0.04, M.white, -2.1, 1.06, -4.99);
-  vbox(0.94, 1.98, 0.04, M.white, -1.02, 1.06, -4.96, -0.25);
+  vbox(0.94, 1.98, 0.04, M.white, -1.02, 1.06, -4.96, -0.3);   // 右扉は少しだけ開く（闇のスリット＝不穏）
   vbox(0.03, 0.16, 0.03, M.metal, -1.68, 1.06, -4.98);   // 取っ手
-  vbox(0.03, 0.16, 0.03, M.metal, -1.28, 1.06, -4.85);
+  vbox(0.03, 0.16, 0.03, M.metal, -1.30, 1.06, -4.82, -0.3);
   vbox(2.06, 0.1, 0.12, M.woodDark, -1.6, 2.2, -4.98);
   vbox(2.06, 0.05, 0.12, M.woodDark, -1.6, 0.028, -4.98);
+
+  /* ===== 高精細化: 扉の彫り込み＋開いた扉から覗く内部（ハンガーの服・棚・靴） ===== */
+  // 扉の落とし込みパネル（一段暗い矩形を少し手前に）で平板さを解消
+  vbox(0.72, 1.62, 0.012, new THREE.MeshStandardMaterial({ color: 0xbdb7ab, roughness: 0.85 }), -2.1, 1.06, -4.968);
+  const rp = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.62, 0.012), new THREE.MeshStandardMaterial({ color: 0xbdb7ab, roughness: 0.85 }));
+  rp.position.set(-1.02, 1.06, -4.94); rp.rotation.y = -0.3; scene.add(rp);
+  // 内部をごく薄く照らす弱い暖色光（スリットの奥に服/棚の存在が滲む程度）。強度・範囲とも最小
+  const closetGlow = new THREE.PointLight(0xffe0b0, 0.015 * 34, 1.4, 2.6);
+  closetGlow.position.set(-1.55, 1.5, -5.2); closetGlow.castShadow = false; scene.add(closetGlow);
+  // 内部は decorative のみ（solids には積まない＝隠れる動作を邪魔しない）
+  // ハンガーレール（左右に渡した金属パイプ）
+  const rail = vcyl(0.012, 0.012, 1.5, M.metal, -1.6, 1.72, -5.3, 10);
+  rail.rotation.z = Math.PI / 2;
+  // 服（ハンガー＋ミュートカラーの上着）を数着、少し間隔をあけて吊るす
+  const coatCols = [0x3b4652, 0x5a4636, 0x2f3a34, 0x4a3f4f, 0x6a6258];
+  coatCols.forEach((cc, i) => {
+    const hx = -2.2 + i * 0.3;
+    // ハンガーのフック
+    const hook = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.004, 6, 12, Math.PI), M.metal);
+    hook.position.set(hx, 1.74, -5.3); scene.add(hook);
+    // 肩バー
+    vbox(0.2, 0.01, 0.012, M.dark, hx, 1.68, -5.3);
+    // 上着本体（肩から裾へ、わずかに広がる布）
+    const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.62, 8, 1, false, 0, Math.PI * 2),
+      new THREE.MeshStandardMaterial({ color: cc, roughness: 0.9 }));
+    coat.position.set(hx, 1.34, -5.32); coat.scale.z = 0.5;   // 前後に薄く
+    scene.add(coat);
+  });
+  // 上段の棚＋畳んだ毛布/箱
+  vbox(1.7, 0.03, 0.7, M.woodDark, -1.6, 1.98, -5.3);              // 棚板
+  vbox(0.6, 0.16, 0.42, new THREE.MeshStandardMaterial({ color: 0x8a7f6c, roughness: 0.95 }), -1.9, 2.08, -5.3);  // 畳んだ毛布
+  vbox(0.5, 0.28, 0.4, M.cardboard, -1.15, 2.14, -5.3);           // 段ボール箱
+  // 床の靴（2足ぶんの小箱）と収納ケース
+  vbox(0.24, 0.09, 0.12, M.dark, -2.1, 0.08, -5.15);
+  vbox(0.24, 0.09, 0.12, M.dark, -1.82, 0.08, -5.15);
+  vbox(0.7, 0.3, 0.5, new THREE.MeshStandardMaterial({ color: 0x33373b, roughness: 0.6 }), -1.0, 0.18, -5.3);  // 半透明収納風の暗いケース
 }
 // タンス（オーク3段チェスト。天板が張り出し、脚・引き出し・取っ手まで作り込む）
 {
