@@ -57,18 +57,22 @@ python3 -m http.server 8765   # リポジトリルートで
 
 ## 3. 外部アセットの制約（重要）
 
-- この実行環境（サンドボックス）のネットワークポリシーでは **ambientCG / Poly Haven に直接到達できない**（`curl`が0バイト/タイムアウトで失敗する）。CC0のPBRテクスチャセットを使う方針自体は生きているが、取得はここではできない。
-- **`raw.githubusercontent.com` は到達可能**。そのため今回の床材は three.js公式リポジトリの `examples/textures/hardwood2_*.jpg`（MITライセンス）を使った。`assets/textures/hardwood2_{diffuse,bump,roughness}.jpg` として保存済み。
-- **ユーザーへの依頼事項**: 畳・漆喰壁・布のCC0 PBRセット（ambientCGで `Tatami`, `Plaster017`, `Fabric` あたりが候補）をローカルでダウンロードし、`assets/textures/` にコミットしてもらえれば、次のセッションで即座にマテリアルへ組み込める。2K解像度・diffuse+normal+roughness の3枚組が理想（`normalFromTex()` を使わず本物のnormalMapに差し替えられる）。
+- クラウドのサンドボックス実行環境のネットワークポリシーでは **ambientCG / Poly Haven に直接到達できない**（`curl`が0バイト/タイムアウトで失敗する）。CC0のPBRテクスチャセットを使う方針自体は生きているが、そちらの環境では取得できない。
+- **`raw.githubusercontent.com` は到達可能**。そのため床材は three.js公式リポジトリの `examples/textures/hardwood2_*.jpg`（MITライセンス）を使った。`assets/textures/hardwood2_{diffuse,bump,roughness}.jpg` として保存済み。
+- **壁・畳・布のPBR化は完了済み**（2026-08-15、ローカル環境でambientCGへ直接到達して取得）。採用素材：
+  - 壁 → `PaintedPlaster017`（無地グレーの漆喰、微細なひび。廃墟感の強い候補〈PaintedPlaster007/009/014〉は「まだ人が住んでいる普通の家」という世界観に合わないため除外）
+  - 畳 → `Tatami005`（畳縁の格子まで含む実写）
+  - 布 → `Fabric001`（無地リネン/コットン、しわ感あり。布団・座布団・カーテン等 `M.fabric` 全用途に使用）
+  - いずれも ambientCG（CC0）。2Kソースをplaywright+Chromium(Canvas)でリサイズ・再圧縮し、`assets/textures/{plaster017,tatami005,fabric001}_{diffuse,normal,roughness}.jpg` として1024px・JPEG品質0.8〜0.85で保存（合計約1.8MB）。`normalMap`はNormalGL版（three.jsはOpenGL規約）。
+  - `src/game.js` に `loadPBRSet(baseName, rx, ry)` ヘルパーを追加し、`M.wall` / `M.tatami` / `M.fabric` で使用。対応する旧プロシージャル定義（`wallTex`/`tatamiTex`/`fabricTex`、および `normalFromTex()` 呼び出し）は削除済み。`woodTex`/`ceilTex`/`fusumaTex`等、他のプロシージャルテクスチャは変更なし。
 
 ## 4. 既知の未解決事項・次にやること（優先順）
 
-1. **壁・畳・布のPBR化**：上記アセット投入待ち。効果が一番大きい。
-2. **AO（アンビエントオクルージョン）**：`vendor/three/addons/postprocessing/GTAOPass.js` は同梱済みで未使用。接地感が大きく向上するはずだが、GPU負荷とのトレードオフを実機で見てから判断すべき。
-3. **怪人「カクシン様」のモデル強化**：現状 `makeMonster()` はほぼ円柱＋Canvas顔テクスチャのまま（`src/game.js` 内で検索）。部屋の質感が上がった分、相対的に一番の粗になっている。glTFモデル差し替え候補（`vendor/three/addons/loaders/GLTFLoader.js` は同梱済み、未配線）。
-4. **`src/game.js` のファイル分割**：1700行の単一ファイルなので、そろそろ `render.js` / `game-logic.js` / `content.js`（ANOMS・DOCSPECS等のデータ）くらいには割ってもいい規模。急ぎではない。
-5. **フレームレート実測**：実機（ユーザーのPC）でのFPS計測がまだ。重ければ `bloomPass` の解像度を下げる、`shadow.mapSize` を1024→512に落とす等の調整枠を用意すること。
-6. **市役所END（未実装、README参照）**：グラフィックスと直接関係ないが、ゲーム内容側の積み残し。
+1. **AO（アンビエントオクルージョン）**：`vendor/three/addons/postprocessing/GTAOPass.js` は同梱済みで未使用。接地感が大きく向上するはずだが、GPU負荷とのトレードオフを実機で見てから判断すべき。
+2. **怪人「カクシン様」のモデル強化**：現状 `makeMonster()` はほぼ円柱＋Canvas顔テクスチャのまま（`src/game.js` 内で検索）。部屋の質感が上がった分、相対的に一番の粗になっている。glTFモデル差し替え候補（`vendor/three/addons/loaders/GLTFLoader.js` は同梱済み、未配線）。
+3. **`src/game.js` のファイル分割**：1700行の単一ファイルなので、そろそろ `render.js` / `game-logic.js` / `content.js`（ANOMS・DOCSPECS等のデータ）くらいには割ってもいい規模。急ぎではない。
+4. **フレームレート実測**：実機（ユーザーのPC）でのFPS計測がまだ。重ければ `bloomPass` の解像度を下げる、`shadow.mapSize` を1024→512に落とす等の調整枠を用意すること。
+5. **市役所END（未実装、README参照）**：グラフィックスと直接関係ないが、ゲーム内容側の積み残し。
 
 ## 5. デプロイ・運用メモ
 

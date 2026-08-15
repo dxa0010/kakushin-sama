@@ -326,29 +326,6 @@ const floorTex = makeTex(256, 256, (c, w, h) => {
   }
   speckle(c, w, h, 300, "20,12,6", 0.15);
 }, 5, 4);
-const tatamiTex = makeTex(256, 256, (c, w, h) => {
-  c.fillStyle = "#6d6647"; c.fillRect(0, 0, w, h);
-  for (let y = 0; y < h; y += 3) {
-    c.strokeStyle = `rgba(48,44,26,${0.22 + Math.random() * 0.2})`;
-    c.lineWidth = 1;
-    c.beginPath(); c.moveTo(0, y + 0.5); c.lineTo(w, y + 0.5); c.stroke();
-  }
-  speckle(c, w, h, 400, "180,170,110", 0.12);
-  c.strokeStyle = "#3a3524"; c.lineWidth = 8; c.strokeRect(0, 0, w, h);
-  c.strokeStyle = "#2c2818"; c.lineWidth = 2; c.strokeRect(4, 4, w - 8, h - 8);
-}, 4, 3);
-const wallTex = makeTex(256, 256, (c, w, h) => {
-  c.fillStyle = "#736d63"; c.fillRect(0, 0, w, h);
-  speckle(c, w, h, 900, "255,250,240", 0.05);
-  speckle(c, w, h, 900, "30,28,24", 0.06);
-  for (let i = 0; i < 8; i++) {
-    const x = Math.random() * w;
-    const g = c.createLinearGradient(x, 0, x, h);
-    g.addColorStop(0, "rgba(40,36,30,0)");
-    g.addColorStop(1, `rgba(40,36,30,${0.05 + Math.random() * 0.08})`);
-    c.fillStyle = g; c.fillRect(x, 0, 6 + Math.random() * 18, h);
-  }
-}, 2, 1);
 const ceilTex = makeTex(128, 128, (c, w, h) => {
   c.fillStyle = "#45423c"; c.fillRect(0, 0, w, h);
   speckle(c, w, h, 500, "20,18,16", 0.1);
@@ -364,11 +341,6 @@ const woodTex = makeTex(128, 128, (c, w, h) => {
     c.stroke();
   }
 }, 1, 1);
-const fabricTex = makeTex(128, 128, (c, w, h) => {
-  c.fillStyle = "#3c3a52"; c.fillRect(0, 0, w, h);
-  speckle(c, w, h, 1200, "90,88,120", 0.1);
-  speckle(c, w, h, 600, "16,15,26", 0.12);
-}, 2, 2);
 const fusumaTex = makeTex(128, 256, (c, w, h) => {
   c.fillStyle = "#b6ac96"; c.fillRect(0, 0, w, h);
   speckle(c, w, h, 500, "90,80,60", 0.05);
@@ -430,7 +402,7 @@ function normalFromTex(srcTex, strength = 1.2) {
   return t;
 }
 
-/* ---------- 実写テクスチャ（three.js examples, MIT） ---------- */
+/* ---------- 実写テクスチャ（three.js examples / ambientCG, MIT / CC0） ---------- */
 const texLoader = new THREE.TextureLoader();
 function loadTex(url, srgb, rx, ry) {
   const t = texLoader.load(url);
@@ -440,22 +412,39 @@ function loadTex(url, srgb, rx, ry) {
   t.repeat.set(rx, ry);
   return t;
 }
+// diffuse/normal/roughness の3枚組を一括ロード（ambientCG命名規則: {name}_{diffuse,normal,roughness}.jpg）
+function loadPBRSet(baseName, rx, ry) {
+  return {
+    map:          loadTex(`./assets/textures/${baseName}_diffuse.jpg`, true, rx, ry),
+    normalMap:    loadTex(`./assets/textures/${baseName}_normal.jpg`, false, rx, ry),
+    roughnessMap: loadTex(`./assets/textures/${baseName}_roughness.jpg`, false, rx, ry),
+  };
+}
 
 /* ---------- materials (PBR) ---------- */
 const M = {
-  wall:   new THREE.MeshStandardMaterial({ map: wallTex, normalMap: normalFromTex(wallTex, 0.7), roughness: 0.95 }),
+  wall:   new THREE.MeshStandardMaterial({
+    ...loadPBRSet("plaster017", 4.6, 1.8),
+    color: 0x8a8578, roughness: 0.92,
+  }),
   floor:  new THREE.MeshStandardMaterial({
     map: loadTex("./assets/textures/hardwood2_diffuse.jpg", true, 3.2, 4.4),
     bumpMap: loadTex("./assets/textures/hardwood2_bump.jpg", false, 3.2, 4.4),
     roughnessMap: loadTex("./assets/textures/hardwood2_roughness.jpg", false, 3.2, 4.4),
     color: 0x87705a, bumpScale: 0.9, roughness: 0.8, metalness: 0.0,
   }),
-  tatami: new THREE.MeshStandardMaterial({ map: tatamiTex, normalMap: normalFromTex(tatamiTex, 1.8), roughness: 0.88 }),
+  tatami: new THREE.MeshStandardMaterial({
+    ...loadPBRSet("tatami005", 2.6, 2.0),
+    color: 0xb0a878, roughness: 0.85,
+  }),
   ceil:   new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.96 }),
   wood:   new THREE.MeshStandardMaterial({ map: woodTex, normalMap: normalFromTex(woodTex, 1.4), roughness: 0.58 }),
   woodDark: new THREE.MeshStandardMaterial({ map: woodTex, color: 0x8a8378, roughness: 0.6 }),
   dark:   new THREE.MeshStandardMaterial({ color: 0x2e2a33, roughness: 0.78 }),
-  fabric: new THREE.MeshStandardMaterial({ map: fabricTex, normalMap: normalFromTex(fabricTex, 2.0), roughness: 0.97 }),
+  fabric: new THREE.MeshStandardMaterial({
+    ...loadPBRSet("fabric001", 1.6, 1.6),
+    color: 0x4a4762, roughness: 0.95,
+  }),
   white:  new THREE.MeshStandardMaterial({ color: 0xcfc9bd, roughness: 0.85 }),
   metal:  new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.32, metalness: 0.85 }),
   fusuma: new THREE.MeshStandardMaterial({ map: fusumaTex, normalMap: normalFromTex(fusumaTex, 1.2), roughness: 0.9 }),

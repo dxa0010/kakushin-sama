@@ -19,7 +19,7 @@
 index.html                 エントリ（HTML/CSS/DOM、importmap）
 src/game.js                ゲーム本体（ロジック＋レンダリング）
 vendor/three/              Three.js r185 本体＋addons（postprocessing等）
-assets/textures/           実写テクスチャ（three.js examples由来、MIT）
+assets/textures/           実写テクスチャ（three.js examples由来のMIT素材＋ambientCG由来のCC0素材）
 .github/workflows/         GitHub Pages 自動デプロイ
 ```
 
@@ -124,7 +124,7 @@ e-Tax送信のリトライ地獄（偽物を名指しで却下）は健在。加
 - ACESフィルミックトーンマッピング＋ポストプロセス（ブルーム／ビネット／フィルムグレイン／色収差、自作シェーダーパス1本にまとめて軽量化）
 - 全マテリアルをMeshStandardMaterialへ移行し、プロシージャルテクスチャの輝度から法線マップを自動生成。RoomEnvironmentによる弱いIBLで金属・光沢面に反射
 - 床のみ実写PBRテクスチャ（three.js examples由来、MIT）に置換し、暗い飴色にステイン
-- 壁・畳・布は引き続きプロシージャルCanvasテクスチャ（実写化はCC0アセット待ち。詳細は `docs/HANDOFF.md`）
+- 壁・畳・布も実写PBR化済み（ambientCG由来のCC0、PaintedPlaster017 / Tatami005 / Fabric001。diffuse+normal+roughnessの3枚組）
 
 ### 実装済み（v6まで）
 
@@ -144,7 +144,6 @@ e-Tax送信のリトライ地獄（偽物を名指しで却下）は健在。加
 
 ### 未実装（TODO）
 
-- 壁・畳・布のPBR化（CC0テクスチャの投入待ち。効果が最も大きい残作業）
 - AO（GTAOPassをvendor同梱済み、未配線。GPU負荷とのトレードオフを実機で要検証）
 - 怪人本体のモデル強化（現状はほぼ円柱＋Canvas顔テクスチャ。部屋の質感が上がった分、相対的に一番の粗）
 - 市役所END（マイナ暗証番号3回ミス分岐）
@@ -179,7 +178,7 @@ e-Tax送信のリトライ地獄（偽物を名指しで却下）は健在。加
 - **v4 思考中心のゲーム性へ転換**：8番出口を参照点に核を再設計。書類の真贋を見抜く検分システムを本編に据え、常時徘徊していた怪人を前触れ付きの訪問イベントへ変更。異変8種を実装。
 - **v5 周回プレイの仕組み**：異変プールを16種に倍増し、正しく見抜いた異変を図鑑としてlocalStorageに永続化。リザルトに答え合わせ表示、判定ランク、高難度モード「青色申告」を追加。
 - **v6 部屋のビジュアルをリアル寄りに全面作り込み**：Canvasによるプロシージャルテクスチャ（畳・フローリング・漆喰壁・ふすま・夜景）と家具のディテール化を実施。当たり判定・ゲームバランスは不変。
-- **v7 グラフィックス基盤刷新（現行）**：Three.js r128→r185へ更新し単一HTMLをES modules構成に分割。全光源のシャドウマッピング（PCFSoft）、ACESフィルミックトーンマッピング、ポストプロセス（ブルーム・ビネット・フィルムグレイン・色収差）、マテリアルのPBR化（MeshStandardMaterial＋プロシージャル法線マップ自動生成）、床の実写テクスチャ化（hardwood2、three.js examples/MIT）。GitHub Pages公開開始。
+- **v7 グラフィックス基盤刷新（現行）**：Three.js r128→r185へ更新し単一HTMLをES modules構成に分割。全光源のシャドウマッピング（PCFSoft）、ACESフィルミックトーンマッピング、ポストプロセス（ブルーム・ビネット・フィルムグレイン・色収差）、マテリアルのPBR化（MeshStandardMaterial＋プロシージャル法線マップ自動生成）、床の実写テクスチャ化（hardwood2、three.js examples/MIT）。続けて壁・畳・布も実写PBR化（PaintedPlaster017 / Tatami005 / Fabric001、ambientCG/CC0）。GitHub Pages公開開始。
 
 ## 次のステップ候補・未解決の論点
 
