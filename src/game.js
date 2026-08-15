@@ -344,21 +344,50 @@ const woodTex = makeTex(128, 128, (c, w, h) => {
     c.stroke();
   }
 }, 1, 1);
-const nightTex = makeTex(256, 128, (c, w, h) => {
+const nightTex = makeTex(512, 256, (c, w, h) => {
+  // 夜空のグラデーション（天頂は濃紺、地平は街明かりで温かく霞む）
   const g = c.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, "#0a1226"); g.addColorStop(1, "#1a2338");
+  g.addColorStop(0, "#070c1c"); g.addColorStop(0.6, "#111a30"); g.addColorStop(1, "#2a2f42");
   c.fillStyle = g; c.fillRect(0, 0, w, h);
-  c.fillStyle = "#05070f"; c.globalAlpha = 0.85;
-  for (let i = 0; i < 9; i++) {
-    c.fillRect(i * 30 - 5, h - 20 - Math.random() * 30, 14 + Math.random() * 24, 60);
+  // 星（小さな点を散らす。地平付近は街明かりに負けるので上空のみ）
+  for (let i = 0; i < 120; i++) {
+    const x = Math.random() * w, y = Math.random() * h * 0.5;
+    c.fillStyle = `rgba(255,255,240,${0.2 + Math.random() * 0.6})`;
+    const s = Math.random() < 0.15 ? 2 : 1;
+    c.fillRect(x, y, s, s);
+  }
+  // 月＋淡いハロー（月明かりのにじみ）
+  const mx = w * 0.72, my = h * 0.24, mr = 20;
+  const halo = c.createRadialGradient(mx, my, mr * 0.6, mx, my, mr * 3.2);
+  halo.addColorStop(0, "rgba(230,226,205,0.35)"); halo.addColorStop(1, "rgba(230,226,205,0)");
+  c.fillStyle = halo; c.beginPath(); c.arc(mx, my, mr * 3.2, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#e8e4d0"; c.beginPath(); c.arc(mx, my, mr, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#0c1225"; c.beginPath(); c.arc(mx + mr * 0.32, my - mr * 0.28, mr * 0.86, 0, Math.PI * 2); c.fill();
+  // 遠景ビル（3層に分け、奥ほど暗く霞ませて奥行きを出す）
+  const layers = [
+    { col: "#0c1424", top: 0.50, alpha: 0.7, step: 46, jitH: 34, jitW: 30 },
+    { col: "#0a1120", top: 0.58, alpha: 0.85, step: 38, jitH: 40, jitW: 24 },
+    { col: "#06090f", top: 0.66, alpha: 1.0, step: 30, jitH: 48, jitW: 18 },
+  ];
+  for (const L of layers) {
+    c.globalAlpha = L.alpha; c.fillStyle = L.col;
+    for (let x = -10; x < w + 10; x += L.step) {
+      const bh = h * (1 - L.top) + Math.random() * L.jitH;
+      const bw = 16 + Math.random() * L.jitW;
+      c.fillRect(x, h - bh, bw, bh + 5);
+    }
   }
   c.globalAlpha = 1;
-  for (let i = 0; i < 40; i++) {
-    c.fillStyle = `rgba(220,200,140,${0.15 + Math.random() * 0.45})`;
-    c.fillRect(Math.random() * w, h * 0.55 + Math.random() * h * 0.4, 2, 2);
+  // 窓明かり（最前面ビルの帯に格子状の点。色と明るさをばらけさせる）
+  // ブルームで白い玉に膨らまないよう最大輝度を抑える。
+  for (let i = 0; i < 150; i++) {
+    const warm = Math.random() < 0.75;
+    const a = 0.15 + Math.random() * 0.30;
+    c.fillStyle = warm ? `rgba(200,168,96,${a})` : `rgba(130,158,200,${a})`;
+    const x = Math.floor(Math.random() * w / 7) * 7 + 2;
+    const y = h * 0.62 + Math.random() * h * 0.36;
+    c.fillRect(x, y, 3, 2);
   }
-  c.fillStyle = "#e8e4d0"; c.beginPath(); c.arc(w * 0.72, h * 0.26, 11, 0, Math.PI * 2); c.fill();
-  c.fillStyle = "#0a1226"; c.beginPath(); c.arc(w * 0.755, h * 0.235, 9.5, 0, Math.PI * 2); c.fill();
 });
 const aoTex = makeTex(128, 128, (c, w, h) => {
   const g = c.createRadialGradient(w / 2, h / 2, 8, w / 2, h / 2, w / 2);
@@ -1048,18 +1077,61 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(0.05, 0.04, 0.16, M.metal, 7.9, 1.02, -4.82);
   vbox(0.05, 0.3, 0.06, M.dark, 7.92, 1.85, -5.15);   // ドアクローザー的な影
 }
-// 窓（月と、遠い街）＋カーテン
+// 窓（月と、遠い街）＋ひだ付きカーテン
 {
-  vbox(0.06, 1.2, 1.74, M.woodDark, -7.96, 1.72, -2.6);
+  const WX = -7.96, WY = 1.72, WZ = -2.6;   // 窓中心（西壁, +x向き）
+  // 夜景（ガラスの奥。壁のわずか手前に置く）
   const night = new THREE.Mesh(new THREE.PlaneGeometry(1.56, 1.02),
     new THREE.MeshBasicMaterial({ map: nightTex }));
   night.rotation.y = Math.PI / 2;
-  night.position.set(-7.91, 1.72, -2.6); scene.add(night);
-  vbox(0.03, 1.02, 0.03, M.metal, -7.9, 1.72, -2.6);
-  const rod = vcyl(0.018, 0.018, 2.6, M.metal, -7.84, 2.42, -2.6, 8);
+  night.position.set(WX + 0.05, WY, WZ); scene.add(night);
+  // ガラス（夜景の手前。反射は控えめにして点光源のスペキュラ玉が出ないようにする）
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.56, 1.02),
+    new THREE.MeshStandardMaterial({ color: 0x141d30, roughness: 0.5, metalness: 0.0,
+      transparent: true, opacity: 0.10 }));
+  glass.rotation.y = Math.PI / 2; glass.position.set(WX + 0.075, WY, WZ); scene.add(glass);
+  // 木枠のケーシング（上下左右の見付け＋外周を一段太く）
+  const frameM = M.woodDark;
+  const HW = 0.85, HH = 0.58;                // 窓開口の半幅・半高
+  vbox(0.10, 0.09, HW * 2 + 0.18, frameM, WX + 0.02, WY + HH + 0.04, WZ);  // 上枠
+  vbox(0.10, 0.09, HW * 2 + 0.18, frameM, WX + 0.02, WY - HH - 0.04, WZ);  // 下枠（この上に窓台）
+  vbox(0.10, HH * 2 + 0.18, 0.09, frameM, WX + 0.02, WY, WZ - HW - 0.04);  // 左枠
+  vbox(0.10, HH * 2 + 0.18, 0.09, frameM, WX + 0.02, WY, WZ + HW + 0.04);  // 右枠
+  // 窓台（下枠の前に張り出す）＋エプロン
+  vbox(0.20, 0.05, HW * 2 + 0.30, frameM, WX + 0.06, WY - HH - 0.09, WZ);  // 窓台（sill）
+  vbox(0.12, 0.10, HW * 2 + 0.10, frameM, WX + 0.03, WY - HH - 0.16, WZ);  // エプロン
+  // 十字の桟（縦1＋横1で4分割。細い木桟）
+  vbox(0.04, HH * 2, 0.035, frameM, WX + 0.045, WY, WZ);   // 縦桟
+  vbox(0.04, 0.035, HW * 2, frameM, WX + 0.045, WY, WZ);   // 横桟
+  // カーテンレール＋端のフィニアル
+  const rod = vcyl(0.02, 0.02, HW * 2 + 0.5, M.metal, WX + 0.16, WY + HH + 0.14, WZ, 10);
   rod.rotation.x = Math.PI / 2;
-  vbox(0.09, 1.5, 0.5, M.fabric, -7.85, 1.68, -3.55);
-  vbox(0.09, 1.5, 0.42, M.fabric, -7.85, 1.68, -1.72);
+  for (const s of [-1, 1]) {
+    vcyl(0.035, 0.035, 0.05, M.metal, WX + 0.16, WY + HH + 0.14, WZ + s * (HW + 0.27), 10)
+      .rotation.x = Math.PI / 2;
+  }
+  // ひだ付きカーテン：縦の半円柱を並べて布のドレープを作る
+  function pleatedCurtain(zStart, zEnd, folds, gatherAt) {
+    const top = WY + HH + 0.12, len = 1.30;
+    const span = zEnd - zStart;
+    for (let i = 0; i < folds; i++) {
+      const t = i / (folds - 1);
+      const z = zStart + span * t;
+      // 束ねる側ほど山が深く、開く側ほど浅い（gatherAt: 0=zStart側で束ねる, 1=zEnd側）
+      const depth = 0.05 + 0.06 * (1 - Math.abs(t - gatherAt));
+      const fold = new THREE.Mesh(
+        new THREE.CylinderGeometry(depth, depth, len, 8, 1, false, Math.PI * 0.15, Math.PI * 0.7),
+        M.fabric);
+      fold.position.set(WX + 0.16 + depth * 0.5, top - len / 2, z);
+      fold.rotation.y = Math.PI;      // 山（凸側）を部屋側(+x)へ向ける
+      scene.add(fold);
+    }
+    // 上端のヘッダー（ひだをまとめる帯）
+    vbox(0.10, 0.10, Math.abs(span) + 0.12, M.fabric, WX + 0.17, top - 0.02, (zStart + zEnd) / 2);
+  }
+  // 左右のカーテン（外側で束ね、中央寄りが開いて夜景が覗く）
+  pleatedCurtain(WZ - HW - 0.10, WZ - 0.30, 7, 0.0);   // 左パネル（左端で束ねる）
+  pleatedCurtain(WZ + 0.30, WZ + HW + 0.10, 7, 1.0);   // 右パネル（右端で束ねる）
 }
 // 玄関の郵便物の山
 for (let i = 0; i < 7; i++) {
