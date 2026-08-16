@@ -33,8 +33,16 @@ const ITEMS = [
   { id: "password", short: "パスワード", x:  7.0, z:  2.0, y: 1.55,
     gag: "e-Taxパスワードのメモ。『いつもの』と書いてある。どれだ。" },
 ];
-const FAKE = { x: 2.5, z: 5.0, y: 0.35, taken: false,
-  gag: "ふるさと納税の証明書……いや、これはワンストップ特例で提出済みだった。紙くずだ。" };
+// 無駄なアイテム（ダミー）：本物と紛らわしくするため、見た目（色）は本物と統一している
+// （マーカーの色で本物/ハズレを見分けられてしまうと成立しないため）。バリエーション3種。
+const FAKES = [
+  { x: 2.5, z: 5.0, y: 0.35, taken: false,
+    gag: "ふるさと納税の証明書……いや、これはワンストップ特例で提出済みだった。紙くずだ。" },
+  { x: -4.3, z: -3.3, y: 0.35, taken: false,
+    gag: "医療費控除の明細書……よく見たら去年の日付だった。もう使えない。" },
+  { x: 0.3, z: 2.6, y: 0.35, taken: false,
+    gag: "領収書の束——中身は全部、深夜の牛丼屋のものだった。" },
+];
 let got = 0;
 
 /* ---------- 書類の中身と異変（真贋判定の核） ---------- */
@@ -1412,18 +1420,20 @@ const itemMeshes = {};
 function makeGlow(x, y, z, color) {
   const grp = new THREE.Group();
   const core = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.085),                     // アイコンを小さく（0.13→0.085）
-    new THREE.MeshLambertMaterial({ color: 0xd8cba8, emissive: color })   // コアも少し落ち着かせる
+    new THREE.OctahedronGeometry(0.021),                      // 存在感をさらに抑える（0.085→1/4）
+    new THREE.MeshLambertMaterial({ color: 0xd8cba8, emissive: color, emissiveIntensity: 0.75 })
   );
   grp.add(core);
-  const l = new THREE.PointLight(color, 0.34 * 3.2, 1.5, 2);  // 周囲を照らす明かりを暗く（0.8→0.34）・レンジも大幅短縮（2.6→1.5）で布への広い反射を抑える
+  const l = new THREE.PointLight(color, 0.22 * 3.2, 1.0, 2);  // 明かりもさらに減光（0.34→0.22）・レンジ短縮（1.5→1.0）
   grp.add(l);
   grp.position.set(x, y, z);
   scene.add(grp);
   return grp;
 }
-ITEMS.forEach(it => { itemMeshes[it.id] = makeGlow(it.x, it.y + 0.35, it.z, 0xd9a441); });
-const fakeMesh = makeGlow(FAKE.x, FAKE.y + 0.35, FAKE.z, 0x7fa8d9);
+// 本物・ダミー共通の色（見た目で真贋がバレないよう統一。※真贋は拾って中身を見て判断させる）
+const ITEM_MARK_COLOR = 0xd9a441;
+ITEMS.forEach(it => { itemMeshes[it.id] = makeGlow(it.x, it.y + 0.35, it.z, ITEM_MARK_COLOR); });
+const fakeMeshes = FAKES.map(f => makeGlow(f.x, f.y + 0.35, f.z, ITEM_MARK_COLOR));
 
 /* ---------- 壁のポスター（前触れ演出用） ---------- */
 function makePosterTex(bad) {
@@ -1519,55 +1529,35 @@ function makeMonster() {
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.185, 16, 16), scalp);
   head.position.set(0, 1.87, 0.05); head.scale.set(1.0, 1.12, 1.05); g.add(head);
 
-  // --- ホッケーマスク（+z 面に配置）。キャンバスで通気孔・赤シェブロン・目/口スリットを描く ---
-  const mcv = document.createElement("canvas");
-  mcv.width = 256; mcv.height = 320;
-  const mc = mcv.getContext("2d");
-  mc.fillStyle = "#9c9070"; mc.fillRect(0, 0, 256, 320);            // 骨色（暗めのクリーム＝強い照明下でも発光しにくい）
-  // 経年の汚れ（薄い斑）
-  mc.fillStyle = "rgba(74,62,42,0.30)";
-  for (let i = 0; i < 40; i++) {
-    const rx = 30 + Math.abs(Math.sin(i * 12.9) * 196);
-    const ry = 30 + Math.abs(Math.cos(i * 7.7) * 260);
-    mc.beginPath(); mc.arc(rx, ry, 3 + (i % 4), 0, Math.PI * 2); mc.fill();
+  // --- 顔＝紙の通知書プレート（+z 面に配置）。ユーザー要望で「前の顔」（ホッケーマスク導入前の
+  // デザイン）に戻した。文言だけ更新：「源泉徴収票」→「重加算税」（仮装・隠蔽への懲罰的な追徴税で、
+  // 確定申告ホラーというテーマに直球で刺さるので採用）。以前は素の円柱ボディに直接貼っていたが、
+  // 今の頭部球（半径0.185・z scale 1.05＝前面 z≈0.244）より少し前に置いて食い込みを避ける。
+  const fcv = document.createElement("canvas");
+  fcv.width = 256; fcv.height = 320;
+  const fc = fcv.getContext("2d");
+  fc.fillStyle = "#e8e4d8"; fc.fillRect(0, 0, 256, 320);
+  fc.strokeStyle = "#555"; fc.lineWidth = 2;
+  fc.strokeRect(10, 10, 236, 300);
+  fc.fillStyle = "#222";
+  fc.font = "bold 26px serif"; fc.textAlign = "center";
+  fc.fillText("重加算税", 128, 46);
+  fc.font = "11px sans-serif";
+  for (let r = 0; r < 6; r++) {
+    fc.strokeStyle = "#888"; fc.lineWidth = 1;
+    fc.strokeRect(20, 66 + r * 40, 216, 34);
   }
-  // 目穴（2つ）と口穴
-  mc.fillStyle = "#0a0806";
-  mc.beginPath(); mc.ellipse(92, 138, 20, 14, 0, 0, Math.PI * 2); mc.fill();
-  mc.beginPath(); mc.ellipse(164, 138, 20, 14, 0, 0, Math.PI * 2); mc.fill();
-  mc.beginPath(); mc.ellipse(128, 232, 34, 12, 0, 0, Math.PI * 2); mc.fill(); // 口
-  // 通気孔クラスタ（三角配置の小さな黒丸）
-  mc.fillStyle = "#12100c";
-  const vent = (cx2, cy2) => { mc.beginPath(); mc.arc(cx2, cy2, 4.5, 0, Math.PI * 2); mc.fill(); };
-  vent(128, 78); vent(112, 96); vent(144, 96);                       // 額の三角
-  vent(128, 186); vent(112, 200); vent(144, 200);                    // 鼻下
-  vent(70, 188); vent(186, 188);                                     // 頬
-  // 赤い三角シェブロン（額中央から左右へ）
-  mc.fillStyle = "#a61d1d";
-  const chevron = (cx2, cy2, w2, h2, dir) => {
-    mc.beginPath(); mc.moveTo(cx2, cy2); mc.lineTo(cx2 + dir * w2, cy2 + h2 * 0.5);
-    mc.lineTo(cx2 + dir * w2 * 0.5, cy2 + h2); mc.closePath(); mc.fill();
-  };
-  chevron(128, 40, 26, 30, -1); chevron(128, 40, 26, 30, 1);         // 額のV
-  chevron(108, 250, 18, 26, -1); chevron(148, 250, 18, 26, 1);       // 顎の左右
-  const maskTex = new THREE.CanvasTexture(mcv);
-  maskTex.colorSpace = THREE.SRGBColorSpace;
-  // マスク本体は半球シェル状（頭の前面に張り付く）
-  const maskGeo = new THREE.SphereGeometry(0.205, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.62);
-  const mask = new THREE.Mesh(
-    maskGeo,
-    // roughnessを上げmetalnessゼロ＝ブルーム閾値0.9で滲まない、樹脂っぽいマット面
-    new THREE.MeshStandardMaterial({ map: maskTex, roughness: 0.78, metalness: 0.0 })
+  fc.fillStyle = "#111";
+  fc.fillRect(52, 130, 42, 30);   // 目
+  fc.fillRect(162, 130, 42, 30);  // 目
+  const faceTex = new THREE.CanvasTexture(fcv);
+  faceTex.colorSpace = THREE.SRGBColorSpace;
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.34, 0.43),
+    new THREE.MeshBasicMaterial({ map: faceTex })
   );
-  // 半球の開口を +z（正面）へ向ける：デフォルトは +y 開口なので x軸 -90°、さらに少し上向き
-  // 頭に合わせ 1.95→1.91。z方向に潰して（scale.z<1）オーブではなく顔型の平たいマスクに
-  mask.position.set(0, 1.88, 0.08);
-  mask.rotation.x = Math.PI * 0.5 + 0.06;
-  mask.scale.set(1.02, 1.05, 0.82);
-  g.add(mask);
-  // マスク周りの革ストラップ（頭の側面〜後ろ）
-  const strap = new THREE.Mesh(new THREE.TorusGeometry(0.185, 0.018, 6, 16), strapM);
-  strap.position.set(0, 1.88, 0.02); strap.rotation.y = Math.PI / 2; g.add(strap);
+  face.position.set(0, 1.87, 0.27);
+  g.add(face);
 
   // === 腕（左右）。太めで大柄。右腕(+x)を下ろしマチェーテ、左腕はやや前へ ===
   // 左腕（-x）：肩→上腕→前腕→拳
@@ -1602,8 +1592,7 @@ function makeMonster() {
   g.add(macheteGrp);
 
   // 頭部アセンブリの参照（将来のエフェクト用に保持）
-  g.userData.face = head;
-  g.userData.mask = mask;
+  g.userData.face = face;
 
   scene.add(g);
   return g;
@@ -1884,10 +1873,10 @@ function findNear() {
     const d = Math.hypot(ply.x - it.x, ply.z - it.z);
     if (d < 1.45) cand.push({ d, kind: "item", ref: it });
   }});
-  if (!FAKE.taken) {
-    const d = Math.hypot(ply.x - FAKE.x, ply.z - FAKE.z);
-    if (d < 1.45) cand.push({ d, kind: "fake", ref: FAKE });
-  }
+  FAKES.forEach((f, idx) => { if (!f.taken) {
+    const d = Math.hypot(ply.x - f.x, ply.z - f.z);
+    if (d < 1.45) cand.push({ d, kind: "fake", ref: f, idx });
+  }});
   const dd = Math.hypot(ply.x - 6.5, ply.z - (-2.0));
   if (dd < 1.6) cand.push({ d: dd, kind: "desk" });
   const dc = Math.hypot(ply.x - CLOSET.x, ply.z - CLOSET.z);
@@ -1917,9 +1906,10 @@ function tryInteract() {
     if (mob.active && mob.mode === "chase") { subtitle("それどころじゃない！", 1.6); return; }
     openInspect(nearTarget.ref);
   } else if (nearTarget.kind === "fake") {
-    FAKE.taken = true;
-    scene.remove(fakeMesh);
-    notice(FAKE.gag);
+    const f = nearTarget.ref;
+    f.taken = true;
+    scene.remove(fakeMeshes[nearTarget.idx]);
+    notice(f.gag);
     beep(240, 0.3, "sawtooth", 0.08, 120);
   } else if (nearTarget.kind === "desk") {
     if (got < 5) {
@@ -2276,7 +2266,7 @@ function frame(now) {
       m.children[0].rotation.y = t * 1.4;
       m.position.y += Math.sin(t * 2.2) * 0.0009;
     }
-    fakeMesh.children[0].rotation.y = t * 1.4;
+    fakeMeshes.forEach(m => { m.children[0].rotation.y = t * 1.4; });
 
     drawMinimap();
 
@@ -2328,7 +2318,7 @@ $("startBtn").addEventListener("click", () => {
 });
 
 /* debug hook (テスト用) */
-window.__dbg = { ply, mob, visit, ITEMS, openInspect, enterVisit, startOmen, ending, save, runLog,
+window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOmen, ending, save, runLog,
   monster, spawnMonster,   // 検証用: 怪人の直接制御
   st: () => state, gm: () => gameMin, setMin: v => { gameMin = v; },
   setMode: m => { mode = m; } };
