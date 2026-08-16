@@ -1210,8 +1210,9 @@ for (let i = 0; i < 7; i++) {
 // 壁掛け時計（プロシージャル。針メッシュ自体をゲーム内時刻と同期回転）
 let lastWallMin = -1;
 const clockHands = { minute: null, hour: null, second: null };
+// 秒針の音を時計の位置から鳴らすため、ブロックの外に出してある（clockTickUpdate が使う）
+const clx = 1.4, cly = 2.1, clz = -5.9;   // 中央壁の少し手前
 {
-  const clx = 1.4, cly = 2.1, clz = -5.9;   // 中央壁の少し手前
   // --- 文字盤テクスチャ（数字・分目盛り・メーカー刻印・経年のくすみ） ---
   const faceTex = makeTex(512, 512, (c, w, h) => {
     const cx = w / 2, cy = h / 2, R = w * 0.47;
@@ -2176,13 +2177,68 @@ function monsterUpdate(dt) {
   if (stepAcc > 1.1) {
     stepAcc = 0;
     const vol = Math.max(0, 0.4 - pd * 0.03);
-    // body をわずかに揺らして、同じ音の連打に聞こえないようにする
-    if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z), body: 68 + Math.random() * 9 });
+    // body を揺らして、同じ音の連打に聞こえないようにする。
+    // 【320付近から下げすぎないこと】body はブラウンノイズを通すローパスの上限で、
+    // 下げると帯域が狭くなって音高が立ち、バスドラ感が戻る（v16のコメント参照）。
+    if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z), body: 300 + Math.random() * 55 });
   }
   // 接近ビネット
   if (state === "PLAY") {
     $("vignette").style.opacity = pd < 3.5 ? (1 - pd/3.5) * 0.85 : 0;
   }
+  heartbeatUpdate(pd);
+}
+
+/* ---------- 心音（怪人が近いほど速く・大きく） ----------
+ * 【なぜ距離で速さを変えるか】音量だけで近さを表すと、プレイヤーは音量つまみの
+ * 大小と区別できない。速さは絶対的なので、環境やヘッドフォンに依らず「近い」と伝わる。
+ * 隠れている間もあえて鳴らす。隠れて息を止めている最中こそ、自分の心臓だけが聞こえる。
+ * 定位はしない（自分の心臓なので中央）。
+ *
+ * 【dt ではなく実時間で刻む】秒針と同じ理由。dt は Math.min(0.05, ...) で頭打ちなので、
+ * 20fps を下回るとゲーム全体がスローモーションになり、dt で積算すると心拍も一緒に
+ * 遅くなってしまう。心拍の間隔は「怪人との距離」の関数であって描画性能の関数ではない。
+ * 弱いGPUのノートPCで緊張感のテンポが崩れるのは明確に間違いなので、実時間を使う。
+ * （距離そのものは dt 駆動なので、低fpsでは怪人の接近が遅くなる。それは正しい挙動） */
+let hbAt = 0;
+const HB_RANGE = 6.5;          // これより遠いと鳴らさない
+function heartbeatUpdate(pd) {   // dt は取らない（実時間で刻むため）
+  const now = performance.now() / 1000;
+  if (state !== "PLAY" && state !== "INSPECT") { hbAt = 0; return; }
+  if (!mob.active || pd > HB_RANGE) { hbAt = 0; return; }
+  if (!hbAt) { hbAt = now; return; }
+  const near = 1 - Math.min(1, pd / HB_RANGE);      // 0（遠い）〜1（密着）
+  // 間隔 1.15秒（遠い）→ 0.42秒（密着）。実際の心拍と同じ範囲に収めて生々しさを出す
+  const interval = 1.15 - near * 0.73;
+  if (now - hbAt < interval) return;
+  hbAt = now;
+  heartbeat(0.12 + near * 0.33);
+}
+
+/* ---------- 壁掛け時計の秒針 ----------
+ * 【1秒はゲーム内時間ではなく実時間で刻む】ゲーム内時間は MIN_PER_SEC 倍で流れるので、
+ * ゲーム内の秒に合わせると刻みが速すぎて時計に聞こえない（ただのノイズの連打になる）。
+ * 時計の音は「時間が経っている」という体感を作るための環境音なので、実時間で刻む。
+ * そのため dt ではなく performance.now() を使う。clockUpdate は e-Tax 中に dt を 0.4倍で
+ * 呼ばれるが、**秒針がそれに引きずられて遅くなってはいけない**。
+ *
+ * 定位と減衰は時計の実際の位置（clx, clz）から計算する。壁のどこで鳴っているか分かるので、
+ * 部屋の空間把握そのものの手掛かりになる。
+ * 前触れ（clockGlitch）中は刻みを崩す。見た目が壊れているのに音が正確だと嘘になる。 */
+let tickAt = 0, tickTock = false;
+function clockTickUpdate() {     // dt は取らない（実時間で刻むため）
+  const now = performance.now() / 1000;
+  if (!tickAt) { tickAt = now; return; }
+  // 故障中は 0.45〜1.6秒のばらつき。正常時はきっちり1秒
+  const interval = clockGlitch ? 0.45 + Math.random() * 1.15 : 1.0;
+  if (now - tickAt < interval) return;
+  tickAt = now;
+  tickTock = !tickTock;
+  const d = Math.hypot(ply.x - clx, ply.z - clz);
+  // 距離減衰。時計の真下（約1m）で0.13、部屋の反対側（約9m）でほぼ無音
+  const vol = Math.max(0, 0.15 - d * 0.016);
+  if (vol <= 0.005) return;
+  clockTick(tickTock, vol, { pan: panFor(clx, clz) });
 }
 
 /* ---------- clock & events ---------- */
@@ -2204,6 +2260,7 @@ function clockUpdate(dt) {
     lastWallMin = Math.floor(gameMin);
     drawWallClock(clockGlitch);
   }
+  clockTickUpdate();
 
   if (gameMin >= 21*60+30 && !flags.n2130) {
     flags.n2130 = true;

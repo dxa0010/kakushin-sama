@@ -162,47 +162,70 @@ export function thump(vol = 0.5, opts = {}) {
   beep(180, 0.05, "square", vol * 0.3, null, opts);
 }
 
-/* ---------- 足音（v15で「鈍い」音に調整） ----------
- * 実際の足音は
- *   (a) 靴底が床に当たる広帯域のクリック  (b) 床が響く低い胴体
- * の2層でできているので、そう組む。（v13以前は70Hzの正弦波1本で「ブーン」だった）
+/* ---------- 足音（v16で「芯を抜いた」） ----------
  *
- * 【鈍さは何で決まるか】v14 は click=1400Hz・ゲイン vol*0.5・立ち上がり0秒 で、
- * 「コツッ」という硬い革靴の音だった。鈍い（＝厚手のスリッパで絨毯を踏むような）音に
- * するために効いたのは、下の3つ。周波数を下げるだけでは足りない：
- *   1. クリックの帯域を下げる（1400→900Hz）
- *   2. **その上にローパスを重ねて上を閉じる**（tone=1800Hz）。bandpass の Q は 0.7 と
- *      緩いので裾が高域まで伸びており、これを塞がないと下げても硬さが残る。
- *   3. **立ち上がりに4msの傾斜をつける**。ゼロ秒アタックは物理的にありえない
- *      不連続で、それ自体が「硬さ」として聞こえる。ここが体感差は一番大きかった。
- * さらにクリックを相対的に下げ（0.5→0.30）、胴体を長く低くして重心を下げている。
+ * 【最重要：オシレーターを1つも使わないこと】
+ * v14/v15 は胴体を「正弦波を 72Hz→46Hz に下降させる」で作っていた。これは**バスドラム
+ * （TR-808キック）の合成方法そのまま**で、どれだけローパスを重ねてクリックを削っても
+ * 「ドッ」というバスドラ感が消えなかった。原因はフィルタではなく**音源に確定した音高が
+ * あること**。正弦波は単一の周波数にエネルギーが集中するので、耳は必ずそこに「芯」を聴く。
+ * 下降スイープはさらに悪く、キックの最も分かりやすい署名である。
+ * → 3層すべてノイズにした。ノイズは音高を持たないので、原理的に芯が立たない。
+ * **ここに音程のある音源を足すと、バスドラ感が即座に戻る。**
  *
- * opts: { pan, click（クリックの帯域Hz）, tone（上を閉じるHz）, body（胴体Hz）, bus } */
+ * 【次の罠：狭い帯域のノイズにも音高がある】
+ * 正弦波を消したあと「もっと鈍く」しようとしてローパスを 2〜4段重ねて 130Hz で切ったら、
+ * **芯が戻った**。狭帯域ノイズは局所的に周期波形になるので、耳は音高を聴いてしまう
+ * （実測：自己相関のピークが 0.70、さらに 70Hz まで絞ると 0.89 まで悪化した。
+ * 正弦波が 1.00 なので、ほとんど正弦波と同じ扱いになっていた）。
+ * → **段数を1段に減らし、カットオフを上げて帯域を広く取る**のが正解だった。
+ * 総当たりで測った結論は「ブラウンノイズ＋lowpass(320Hz) 1段」で、自己相関 0.275。
+ * **鈍くしたくてカットオフを下げたり段数を増やしたりすると、必ず芯が戻る。**
+ * 暗さはブラウンノイズ自体の -6dB/oct の傾きが担っており、急峻なフィルタは要らない。
+ *
+ * 【層の役割】
+ *   (a) 胴体 … ブラウンノイズ＋緩いローパス1段。20Hz〜800Hz に広く分布するので
+ *              音高が立たず、かつノートPCの内蔵スピーカー（150Hz以下は出ない）でも聞こえる
+ *   (b) 擦れ … 靴底や布が床をこする成分。ごく小さく乗せる
+ *
+ * 【鈍さに効くもの（実測した順）】
+ *   1. 立ち上がりに傾斜をつける。ゼロ秒アタックは物理的にありえない不連続で、
+ *      それ自体が「硬さ」として聞こえる
+ *   2. 擦れ層の bandpass の上をローパスで閉じる（Q が緩いと裾が高域まで伸びている）
+ *   3. 擦れ層の帯域と音量を下げる
+ * 【1と2と3はやってよい。低域層を狭くするのは駄目】——これが v16 で学んだ区別。
+ *
+ * opts: { pan, body（胴体の上限Hz）, click（擦れの帯域Hz）, tone（擦れの上限Hz）, bus } */
 export function footstep(vol = 0.35, opts = {}) {
   if (!AC) return;
   const t = AC.currentTime;
-  // (a) クリック：帯域を絞ったうえで、さらにローパスで上を閉じる
+  // ノイズバッファの読み出し位置を毎回ずらす。**これが無いと全ての足音が波形レベルで
+  // 完全に同一になり**、「同じ音の連打」として人工的に聞こえる（2秒バッファを共有しているため）
+  const jit = () => Math.random() * 1.4;
+
+  // (a) 胴体：ブラウンノイズ＋**ローパス1段だけ**。段数を増やすと芯が戻る（上記参照）
+  const nb = noiseSource(false, "brown");
+  const blp = filterChain("lowpass", opts.body ?? 320, 1, 0.5);
+  const bg = AC.createGain();
+  bg.gain.setValueAtTime(0.0001, t);
+  bg.gain.exponentialRampToValueAtTime(vol * 1.15, t + 0.018);   // 18ms のアタック
+  bg.gain.exponentialRampToValueAtTime(0.0005, t + 0.21);
+  nb.connect(blp.input); blp.output.connect(bg);
+  panned(bg, opts.pan, opts.bus);
+  nb.start(t, jit()); nb.stop(t + 0.25);
+
+  // (b) 擦れ：帯域を絞ったうえで、さらにローパスで上を閉じる
   const n = noiseSource(false);
   const bp = AC.createBiquadFilter();
-  bp.type = "bandpass"; bp.frequency.value = opts.click ?? 900; bp.Q.value = 0.7;
-  const lp = filterChain("lowpass", opts.tone ?? 1800, 2, 0.5);
+  bp.type = "bandpass"; bp.frequency.value = opts.click ?? 700; bp.Q.value = 0.6;
+  const lp = filterChain("lowpass", opts.tone ?? 1200, 2, 0.5);
   const ng = AC.createGain();
   ng.gain.setValueAtTime(0.0001, t);
-  ng.gain.exponentialRampToValueAtTime(vol * 0.30, t + 0.004);   // 4ms のアタック＝鈍さの主因
-  ng.gain.exponentialRampToValueAtTime(0.0005, t + 0.05);
+  ng.gain.exponentialRampToValueAtTime(vol * 0.16, t + 0.007);
+  ng.gain.exponentialRampToValueAtTime(0.0005, t + 0.055);
   n.connect(bp); bp.connect(lp.input); lp.output.connect(ng);
   panned(ng, opts.pan, opts.bus);
-  n.start(t); n.stop(t + 0.08);
-  // (b) 胴体：低い正弦をわずかに下降させる。v14 より低く長く（82→72Hz, 130→165ms）
-  const o = AC.createOscillator(), og = AC.createGain();
-  o.type = "sine"; o.frequency.setValueAtTime(opts.body ?? 72, t);
-  o.frequency.exponentialRampToValueAtTime(46, t + 0.15);
-  og.gain.setValueAtTime(0.0001, t);
-  og.gain.exponentialRampToValueAtTime(vol, t + 0.008);
-  og.gain.exponentialRampToValueAtTime(0.0005, t + 0.165);
-  o.connect(og);
-  panned(og, opts.pan, opts.bus);
-  o.start(t); o.stop(t + 0.19);
+  n.start(t, jit()); n.stop(t + 0.09);
 }
 
 /* ---------- 心音（接近時の緊張） ----------
@@ -242,7 +265,9 @@ export function clockTick(tock = false, vol = 0.12, opts = {}) {
   g.gain.exponentialRampToValueAtTime(0.0005, t + 0.028);
   n.connect(bp); bp.connect(g);
   panned(g, opts.pan, opts.bus);
-  n.start(t); n.stop(t + 0.05);
+  // 読み出し位置を毎回ずらす。**1秒ごとに鳴るものが波形レベルで完全に同一だと**、
+  // 足音以上にはっきり「サンプルの再生」と分かってしまう（共有バッファのため）
+  n.start(t, Math.random() * 1.9); n.stop(t + 0.05);
 }
 
 /* =====================================================================
