@@ -99,6 +99,21 @@ function noiseBuffer(seconds = 2, type = "white") {
       last = (last + 0.02 * w) / 1.02;
       d[i] = last * 3.5;
     }
+  } else if (type === "pink") {
+    /* ピンクノイズ（-3dB/oct）。ホワイトとブラウンの中間。
+     * 【なぜ必要か】足音の中域層を暗くしたいとき、ローパスを急峻にすると帯域が狭まって
+     * 音高が立つ（v16で踏んだ罠）。ピンクノイズなら**帯域幅を保ったまま**高域を落とせる。
+     * 実装は Paul Kellett の近似フィルタ。係数の意味は個別には無く、全体で
+     * -3dB/oct に合うよう決められた定数なので、いじらないこと。 */
+    let b0=0, b1=0, b2=0, b3=0, b4=0, b5=0, b6=0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886*b0 + w*0.0555179; b1 = 0.99332*b1 + w*0.0750759;
+      b2 = 0.96900*b2 + w*0.1538520; b3 = 0.86650*b3 + w*0.3104856;
+      b4 = 0.55000*b4 + w*0.5329522; b5 = -0.7616*b5 - w*0.0168980;
+      d[i] = (b0+b1+b2+b3+b4+b5+b6 + w*0.5362) * 0.11;
+      b6 = w * 0.115926;
+    }
   } else {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   }
@@ -183,19 +198,33 @@ export function thump(vol = 0.5, opts = {}) {
  * **鈍くしたくてカットオフを下げたり段数を増やしたりすると、必ず芯が戻る。**
  * 暗さはブラウンノイズ自体の -6dB/oct の傾きが担っており、急峻なフィルタは要らない。
  *
+ * 【v17：「ペタペタ感」を出すために中域層を作り直した】
+ * v16 の中域層は **狭い bandpass（Q=0.6、中心700Hz）** で、これは靴底が床をこする
+ * 「擦れ／コツ」の音だった。実聴では「硬さの上限」を最低（500Hz）まで下げて
+ * この層を潰した状態が最良と判断された——実測すると、その設定ではエネルギーの
+ * **96.4% が 250Hz 未満**、中域はわずか 3.6% で、擦れ層は事実上鳴っていなかった。
+ * つまり「狭い帯域の中域」は足音として要らない、というのが実聴の結論。
+ *
+ * 一方で欲しいのは「ペタペタ」＝素足やスリッパが硬い床を叩く音であり、これには
+ * 中域のエネルギーが必要になる。矛盾しているように見えるが、**別の音**である：
+ *   - 擦れ／コツ … 狭帯域（bandpass Q高め）＝乾いた「シュッ」「カツッ」。要らない
+ *   - ペタ      … **広帯域の短い破裂**＝柔らかいものが面を叩く音。これが欲しい
+ * → 中域層を bandpass から **highpass + lowpass の緩い1段ずつ（約2オクターブ幅）** に
+ *   変えた。低域層で学んだのと同じ「幅が音高を殺す」が、ここでは同時に
+ *   「シュッ」を「ペタ」に変える働きをする。
+ *
+ * 【ペタペタ感の核は帯域ではなく減衰の速さ】
+ * 柔らかいもの（皮膚・ゴム）が当たると床はすぐ制振されるので、余韻が残らない。
+ * 余韻が長いと同じ帯域でも「ドスッ」に聞こえる。だから中域層は 55ms 前後で切る。
+ * 迷ったら **`snap` を短くするのが一番ペタペタに効く**。
+ *
  * 【層の役割】
- *   (a) 胴体 … ブラウンノイズ＋緩いローパス1段。20Hz〜800Hz に広く分布するので
- *              音高が立たず、かつノートPCの内蔵スピーカー（150Hz以下は出ない）でも聞こえる
- *   (b) 擦れ … 靴底や布が床をこする成分。ごく小さく乗せる
+ *   (a) 胴体 … ブラウンノイズ＋緩いローパス1段。床が叩かれた重み。音高が立たない
+ *   (b) ペタ … 広い中域の短い破裂。素足が床を叩く本体。`peta` で量を決める
  *
- * 【鈍さに効くもの（実測した順）】
- *   1. 立ち上がりに傾斜をつける。ゼロ秒アタックは物理的にありえない不連続で、
- *      それ自体が「硬さ」として聞こえる
- *   2. 擦れ層の bandpass の上をローパスで閉じる（Q が緩いと裾が高域まで伸びている）
- *   3. 擦れ層の帯域と音量を下げる
- * 【1と2と3はやってよい。低域層を狭くするのは駄目】——これが v16 で学んだ区別。
- *
- * opts: { pan, body（胴体の上限Hz）, click（擦れの帯域Hz）, tone（擦れの上限Hz）, bus } */
+ * opts: { pan, bus,
+ *         body（胴体の上限Hz）, peta（ペタの量 0〜1.2）,
+ *         tone（ペタの上限Hz＝明るさ）, snap（ペタの減衰ms＝ペタペタ感） } */
 export function footstep(vol = 0.35, opts = {}) {
   if (!AC) return;
   const t = AC.currentTime;
@@ -205,27 +234,35 @@ export function footstep(vol = 0.35, opts = {}) {
 
   // (a) 胴体：ブラウンノイズ＋**ローパス1段だけ**。段数を増やすと芯が戻る（上記参照）
   const nb = noiseSource(false, "brown");
-  const blp = filterChain("lowpass", opts.body ?? 320, 1, 0.5);
+  const blp = filterChain("lowpass", opts.body ?? 300, 1, 0.5);
   const bg = AC.createGain();
   bg.gain.setValueAtTime(0.0001, t);
-  bg.gain.exponentialRampToValueAtTime(vol * 1.15, t + 0.018);   // 18ms のアタック
-  bg.gain.exponentialRampToValueAtTime(0.0005, t + 0.21);
+  bg.gain.exponentialRampToValueAtTime(vol * 1.1, t + 0.014);
+  // 【余韻を v16 の 210ms から詰めた】長いと同じ帯域でも「ドスッ」に寄る
+  bg.gain.exponentialRampToValueAtTime(0.0005, t + 0.115);
   nb.connect(blp.input); blp.output.connect(bg);
   panned(bg, opts.pan, opts.bus);
-  nb.start(t, jit()); nb.stop(t + 0.25);
+  nb.start(t, jit()); nb.stop(t + 0.15);
 
-  // (b) 擦れ：帯域を絞ったうえで、さらにローパスで上を閉じる
-  const n = noiseSource(false);
-  const bp = AC.createBiquadFilter();
-  bp.type = "bandpass"; bp.frequency.value = opts.click ?? 700; bp.Q.value = 0.6;
-  const lp = filterChain("lowpass", opts.tone ?? 1200, 2, 0.5);
-  const ng = AC.createGain();
-  ng.gain.setValueAtTime(0.0001, t);
-  ng.gain.exponentialRampToValueAtTime(vol * 0.16, t + 0.007);
-  ng.gain.exponentialRampToValueAtTime(0.0005, t + 0.055);
-  n.connect(bp); bp.connect(lp.input); lp.output.connect(ng);
-  panned(ng, opts.pan, opts.bus);
-  n.start(t, jit()); n.stop(t + 0.09);
+  // (b) ペタ：highpass と lowpass を1段ずつで**広い**帯域を作る。
+  // bandpass（狭い）にすると「シュッ」という擦れに戻ってペタペタ感が消える
+  const peta = opts.peta ?? 0.55;
+  if (peta > 0.002) {
+    const snap = (opts.snap ?? 55) / 1000;
+    // 【ピンクノイズを使う理由】ホワイトだと重心が 1355Hz まで上がって「紙が擦れる」音に
+    // 近づいた（実測）。ローパスを急峻にすれば下がるが、それは帯域を狭めるので音高が立つ。
+    // ピンク（-3dB/oct）なら**幅を保ったまま**暗くできる。これが v16 の教訓の応用。
+    const n = noiseSource(false, "pink");
+    const hp = filterChain("highpass", 260, 1, 0.5);
+    const lp = filterChain("lowpass", opts.tone ?? 850, 1, 0.5);
+    const ng = AC.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(vol * peta, t + 0.004);  // 柔らかい当たり（4ms）
+    ng.gain.exponentialRampToValueAtTime(0.0005, t + snap);
+    n.connect(hp.input); hp.output.connect(lp.input); lp.output.connect(ng);
+    panned(ng, opts.pan, opts.bus);
+    n.start(t, jit()); n.stop(t + snap + 0.03);
+  }
 }
 
 /* ---------- 心音（接近時の緊張） ----------

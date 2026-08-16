@@ -2177,10 +2177,11 @@ function monsterUpdate(dt) {
   if (stepAcc > 1.1) {
     stepAcc = 0;
     const vol = Math.max(0, 0.4 - pd * 0.03);
-    // body を揺らして、同じ音の連打に聞こえないようにする。
-    // 【320付近から下げすぎないこと】body はブラウンノイズを通すローパスの上限で、
-    // 下げると帯域が狭くなって音高が立ち、バスドラ感が戻る（v16のコメント参照）。
-    if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z), body: 300 + Math.random() * 55 });
+    // body と snap を1歩ごとに揺らして、同じ音の連打に聞こえないようにする。
+    // 【body を 300 付近から下げすぎないこと】ブラウンノイズを通すローパスの上限なので、
+    // 下げると帯域が狭くなって音高が立ち、バスドラ感が戻る（audio.js のコメント参照）。
+    if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z),
+      body: 290 + Math.random() * 60, snap: 48 + Math.random() * 16 });
   }
   // 接近ビネット
   if (state === "PLAY") {
