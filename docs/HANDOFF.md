@@ -285,3 +285,4 @@ node shot_items.mjs desk clock bed    # 対象を絞って撮影 → C:/tmp/<nam
 - `main` ブランチはまだ存在しない（このリポジトリは `claude/artifact-review-anha8j` 一本で運用中）。`.github/workflows/deploy-pages.yml` は `main` と `claude/artifact-review-anha8j` の両方へのpushをトリガにしてある。
 - GitHub Pages の有効化はリポジトリ設定で一度だけ手動操作が必要だった（`Settings → Pages → Source: GitHub Actions`）。これは完了済み。以後は自動。
 - ワークフローの `actions/configure-pages@v5` は `enablement: true` を明示しないと、Pages未設定リポジトリでは "Get Pages site failed" で落ちる（ハマったポイント。修正済みだが、他プロジェクトに流用するときも要注意）。
+hook debounce test A Sun Aug 16 14:46:13     2026
