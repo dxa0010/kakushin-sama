@@ -138,6 +138,10 @@
 
   /* ---------- title mode select ---------- */
   #modeSel { display: flex; gap: 12px; margin-bottom: 24px; }
+  #volRow { display: flex; align-items: center; gap: 10px; margin-bottom: 22px;
+            font-size: 0.72rem; letter-spacing: 0.1em; color: #9a927c; }
+  #volRow input[type=range] { width: 150px; accent-color: #b0a77c; cursor: pointer; }
+  #volVal { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
   .mbtn { padding: 10px 22px; font-size: 0.85rem; letter-spacing: 0.12em; }
   .mbtn.sel { border-color: #b0a77c; color: #fff; }
   .mbtn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -260,8 +264,13 @@
     <button id="modeWhite" class="btn mbtn sel">白色申告</button>
     <button id="modeBlue" class="btn mbtn">青色申告</button>
   </div>
+  <div id="volRow">
+    <span>音量</span>
+    <input id="volSlider" type="range" min="0" max="100" step="5" value="80">
+    <span id="volVal">80%</span>
+  </div>
   <button id="startBtn" class="btn">開 始</button>
-  <div class="ctrl">移動：WASD ／ 視点：マウス ／ 調べる：E またはクリック<br>スマホ：左スティック移動 ／ 右スティック視点 ／ ボタンで調べる<br><br>書類は拾う前に検分できる。偽物には一箇所だけ「ありえない」がある。<br>偽物のまま送信すると、審査で却下され──あれが、来る。<br>怪人は常には居ない。だが、部屋の異変は前触れだ。クローゼットには隠れられる。</div>
+  <div class="ctrl">移動：WASD ／ 視点：マウス ／ 調べる：E またはクリック ／ ミュート：M<br>スマホ：左スティック移動 ／ 右スティック視点 ／ ボタンで調べる<br><br>書類は拾う前に検分できる。偽物には一箇所だけ「ありえない」がある。<br>偽物のまま送信すると、審査で却下され──あれが、来る。<br>怪人は常には居ない。だが、部屋の異変は前触れだ。クローゼットには隠れられる。</div>
   <div id="meta"></div>
 </div>
 

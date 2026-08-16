@@ -118,9 +118,9 @@ function loadSave() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (s && typeof s === "object")
-      return Object.assign({ found: {}, endings: {}, runs: 0, bestRank: "" }, s);
+      return Object.assign({ found: {}, endings: {}, runs: 0, bestRank: "", audio: null }, s);
   } catch (e) {}
-  return { found: {}, endings: {}, runs: 0, bestRank: "" };
+  return { found: {}, endings: {}, runs: 0, bestRank: "", audio: null };
 }
 const save = loadSave();
 function persistSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
@@ -1695,6 +1695,10 @@ const keys = {};
 addEventListener("keydown", e => {
   keys[e.code] = true;
   if (e.code === "KeyE") tryInteract();
+  if (e.code === "KeyM") {
+    const m = toggleMute();
+    notice(m ? "🔇 ミュート" : `🔈 音量 ${Math.round(audioPrefs.vol * 100)}%`, 1.4);
+  }
   if (e.code === "Escape") {
     if (state === "INSPECT") closeInspect();
     else if (state === "ETAX") closeEtax();
@@ -1788,32 +1792,101 @@ function los(ax, az, bx, bz) {
   return true;
 }
 
-/* ---------- audio ---------- */
-let AC = null, droneNodes = null;
+/* ---------- audio ----------
+ * 【v14で構造を入れ替えた】以前は各音が音量をハードコードして AC.destination に直結しており、
+ * 全体音量もミュートも実装できなかった。現在は必ず下記のバスを経由する：
+ *
+ *   AC.destination
+ *     └─ masterGain … ユーザー音量 × ミュート
+ *          ├─ BUS.amb   … 環境音（ドローン等）。常時鳴り続けるもの
+ *          ├─ BUS.sfx   … 効果音（beep/thump/足音）。単発のもの
+ *          └─ BUS.voice … 怪人の声など
+ *
+ * **新しい音を足すときは必ず BUS.* のどれかに繋ぐこと。** destination に直結すると
+ * 音量調整とミュートの効かない音が生まれる（v13以前がまさにその状態だった）。
+ */
+let AC = null, droneNodes = null, masterGain = null;
+const BUS = { amb: null, sfx: null, voice: null };
+const audioPrefs = Object.assign({ vol: 0.8, muted: false }, save.audio || {});
+
 function audioInit() {
   AC = new (window.AudioContext || window.webkitAudioContext)();
-  const g = AC.createGain(); g.gain.value = 0.05; g.connect(AC.destination);
+  masterGain = AC.createGain();
+  masterGain.gain.value = audioPrefs.muted ? 0 : audioPrefs.vol;
+  masterGain.connect(AC.destination);
+  for (const k of Object.keys(BUS)) {
+    BUS[k] = AC.createGain();
+    BUS[k].gain.value = 1;
+    BUS[k].connect(masterGain);
+  }
+  // 通奏低音のドローン。52Hz と 54.7Hz の差から約2.7Hzのうなりが生じ、
+  // ゆっくりした脈動になる。**2本の周波数差が本体**なので片方だけ変えないこと。
+  const g = AC.createGain(); g.gain.value = 0.05; g.connect(BUS.amb);
   const mk = f => { const o = AC.createOscillator(); o.type = "sine"; o.frequency.value = f; o.connect(g); o.start(); return o; };
   droneNodes = { g, o1: mk(52), o2: mk(54.7) };
 }
-function beep(freq, dur = 0.12, type = "sine", vol = 0.18, glideTo = null) {
+
+// タブ切り替え・モバイルの復帰で AudioContext が suspended のまま無音になるのを防ぐ
+addEventListener("visibilitychange", () => {
+  if (AC && !document.hidden && AC.state === "suspended") AC.resume().catch(() => {});
+});
+
+function applyAudioPrefs() {
+  if (masterGain) masterGain.gain.value = audioPrefs.muted ? 0 : audioPrefs.vol;
+  save.audio = { vol: audioPrefs.vol, muted: audioPrefs.muted };
+  persistSave();
+}
+function setVolume(v) { audioPrefs.vol = Math.max(0, Math.min(1, v)); audioPrefs.muted = false; applyAudioPrefs(); }
+function toggleMute() { audioPrefs.muted = !audioPrefs.muted; applyAudioPrefs(); return audioPrefs.muted; }
+
+// opts: { pan: -1..1（左右。省略時は中央）, bus: "sfx"|"amb"|"voice" }
+function beep(freq, dur = 0.12, type = "sine", vol = 0.18, glideTo = null, opts = {}) {
   if (!AC) return;
   const o = AC.createOscillator(), g = AC.createGain();
   o.type = type; o.frequency.value = freq;
   if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, AC.currentTime + dur);
   g.gain.setValueAtTime(vol, AC.currentTime);
   g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + dur);
-  o.connect(g); g.connect(AC.destination);
+  o.connect(g);
+  const dest = BUS[opts.bus || "sfx"] || BUS.sfx;
+  if (opts.pan !== undefined && AC.createStereoPanner) {
+    const p = AC.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, opts.pan));
+    g.connect(p); p.connect(dest);
+  } else {
+    g.connect(dest);
+  }
   o.start(); o.stop(AC.currentTime + dur + 0.02);
 }
 function thump(vol = 0.5) { beep(58, 0.28, "sine", vol, 40); beep(180, 0.05, "square", vol*0.3); }
+
+// ワールド座標(wx,wz)の音源が、プレイヤーから見て左右どちらに聞こえるかを -1..1 で返す。
+// カメラの正面は `dir = (-sin(yaw), *, -cos(yaw))`（frame() の dir 計算と同じ定義）。
+// 右手ベクトルは正面をY軸まわりに-90°回した (x,z)→(-z,x) なので **(cos(yaw), -sin(yaw))**。
+// 音源方向をこれに射影した値がそのまま左右の定位量になる。
+// 【符号に注意】ここを逆にすると全ての音が左右反対に鳴り、しかも「なんとなく変」程度にしか
+// 感じられないので気付きにくい。yaw=0（-z向き）のとき、右手側 +x にある音源が +1 になるのが正しい。
+// 真横で±1、正面・真後ろで0。真後ろが中央に来るのは StereoPanner の原理的な限界だが、
+// 距離減衰と併せれば「どちら側に居るか」は十分伝わる。
+function panFor(wx, wz) {
+  const dx = wx - ply.x, dz = wz - ply.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.001) return 0;
+  const rx = Math.cos(ply.yaw), rz = -Math.sin(ply.yaw);   // 右手方向
+  return Math.max(-1, Math.min(1, (dx * rx + dz * rz) / len));
+}
 function stopDrone() { if (droneNodes) { droneNodes.g.gain.linearRampToValueAtTime(0.0001, AC.currentTime + 1.5); } }
 
 /* ---------- speech ---------- */
+// SpeechSynthesis は WebAudio のグラフ外で鳴るため masterGain を通らない。
+// ミュート・音量がユーザーの意図どおり効くよう、ここで手動で反映させる。
+// （ja-JP音声が無い環境では無音になる。字幕が唯一の伝達手段になるので消さないこと）
 function speak(text) {
   try {
+    if (audioPrefs.muted) return;
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "ja-JP"; u.rate = 0.82; u.pitch = 0.4; u.volume = 0.9;
+    u.lang = "ja-JP"; u.rate = 0.82; u.pitch = 0.4;
+    u.volume = 0.9 * audioPrefs.vol;
     speechSynthesis.speak(u);
   } catch (e) { /* no speech — subtitle only */ }
 }
@@ -2152,12 +2225,14 @@ function monsterUpdate(dt) {
 
   monster.position.set(mob.x, 0, mob.z);
   monster.lookAt(ply.x, 0, ply.z); // 顔は常にこちらを向く
-  // footsteps
+  // footsteps（v14で左右の定位を追加）
+  // 【なぜ重要か】隠れて怪人の位置を推測するのがこのゲームの核なのに、v13までは
+  // 距離減衰だけで方向が分からず、音が情報として機能していなかった。
   stepAcc += dt * sp;
   if (stepAcc > 1.1) {
     stepAcc = 0;
     const vol = Math.max(0, 0.4 - pd * 0.03);
-    if (vol > 0.01) beep(70 + Math.random()*8, 0.09, "sine", vol);
+    if (vol > 0.01) beep(70 + Math.random()*8, 0.09, "sine", vol, null, { pan: panFor(mob.x, mob.z) });
   }
   // 接近ビネット
   if (state === "PLAY") {
@@ -2312,6 +2387,17 @@ $("modeBlue").addEventListener("click", () => {
   $("modeBlue").classList.add("sel"); $("modeWhite").classList.remove("sel");
 });
 
+/* ---------- 音量スライダー（タイトル画面） ---------- */
+{
+  const sl = $("volSlider"), lab = $("volVal");
+  const paint = () => {
+    sl.value = String(Math.round(audioPrefs.vol * 100));
+    lab.textContent = audioPrefs.muted ? "ミュート" : `${Math.round(audioPrefs.vol * 100)}%`;
+  };
+  paint();   // 保存された設定を復元して表示
+  sl.addEventListener("input", () => { setVolume(Number(sl.value) / 100); paint(); });
+}
+
 /* ---------- start ---------- */
 $("startBtn").addEventListener("click", () => {
   MIN_PER_SEC = MODES[mode].mps;
@@ -2331,4 +2417,7 @@ $("startBtn").addEventListener("click", () => {
 window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOmen, ending, save, runLog,
   monster, spawnMonster,   // 検証用: 怪人の直接制御
   st: () => state, gm: () => gameMin, setMin: v => { gameMin = v; },
-  setMode: m => { mode = m; } };
+  setMode: m => { mode = m; },
+  // 検証用: 音は耳で聞けないので、グラフと実出力を数値で確認できるように公開する
+  audio: { AC: () => AC, master: () => masterGain, BUS: () => BUS,
+           panFor, setVolume, toggleMute, prefs: () => audioPrefs } };
