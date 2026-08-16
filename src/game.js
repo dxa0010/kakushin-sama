@@ -9,7 +9,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 // 音の生成エンジン（ゲーム非依存。tools/audio-lab.html から単体試聴できる）
 import * as Audio from "./audio.js";
-const { beep, thump, footstep, heartbeat, clockTick, stopDrone, speak,
+const { beep, thump, footstep, heartbeat, clockTick, speak,
         setVolume, toggleMute, audioPrefs } = Audio;
 /* ============================================================
    確定申告からは逃げられない — prototype
@@ -1803,19 +1803,17 @@ function los(ax, az, bx, bz) {
  * （import と分割代入はファイル冒頭にある。const は巻き上げられないため、
  *   ここに置くとこれより前の行から beep 等を参照できなくなる）
  */
-let ambience = null;   // 環境音のハンドル（雨・部屋鳴り・冷蔵庫）
+let ambience = null;   // 環境音のハンドル（部屋鳴り・冷蔵庫）
 
 // 設定の永続化はゲーム側の責務（audio.js が localStorage を触ると試聴ツールが
 // ゲームのセーブを書き換えてしまうため）
 Audio.setOnPrefsChange(p => { save.audio = p; persistSave(); });
 
+// 【環境音は生活音だけ】v14ではドローン（52/54.7Hzのうなり）も敷いていたが、実聴の結果
+// 「合成音が鳴っている」と分かってしまうので外した。部屋鳴り＋冷蔵庫の2つだけの方が
+// 静かで、23:00に冷蔵庫が止まったときの落差も大きい。雨も窓の晴れた夜空と矛盾するため無し。
 function audioInit() {
   Audio.audioInit(save.audio || undefined);
-  Audio.startDrone(0.05);
-  // 【雨は意図的に鳴らしていない】窓の夜景テクスチャ(nightTex)は星と三日月が
-  // はっきり見える晴れた夜空なので、雨音を足すと画と矛盾する。雨を使いたいなら
-  // 先に nightTex を曇天／雨天に描き直すこと。生成関数は Audio.startRain() に在り、
-  // tools/audio-lab.html で試聴できる。
   ambience = {
     room: Audio.startRoomTone(),
     fridge: Audio.startFridge({ cycle: true }),
@@ -2058,7 +2056,8 @@ const EDS = {
 function ending(key) {
   if (state === "END") return;
   state = "END";
-  stopDrone();
+  // エンディング中は環境音を全部落とす（結末の文章を静かに読ませる）
+  if (ambience) { for (const h of Object.values(ambience)) if (h) h.stop(1.5); ambience = null; }
   try { speechSynthesis.cancel(); } catch (e) {}
   let rankLine = "";
   const firstRefund = key === "refund" && !save.endings.refund;
@@ -2177,7 +2176,8 @@ function monsterUpdate(dt) {
   if (stepAcc > 1.1) {
     stepAcc = 0;
     const vol = Math.max(0, 0.4 - pd * 0.03);
-    if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z), body: 76 + Math.random() * 10 });
+    // body をわずかに揺らして、同じ音の連打に聞こえないようにする
+    if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z), body: 68 + Math.random() * 9 });
   }
   // 接近ビネット
   if (state === "PLAY") {
@@ -2224,10 +2224,16 @@ function clockUpdate(dt) {
   }
   if (gameMin >= 23*60 && !flags.n2300) {
     flags.n2300 = true; phase = 3;
-    stopDrone();
+    // 【23:00は「音が減る」演出】v14まではドローンを止めていたが、ドローン自体を廃止したので
+    // 生活音を落とす形に変えた。冷蔵庫を止めるだけだと cycle:true の停止中に当たった場合に
+    // 何も起きないので、常時鳴っている部屋鳴りも同時に絞る。これで必ず落差が出る。
+    if (ambience) {
+      if (ambience.fridge) { ambience.fridge.stop(2.0); ambience.fridge = null; }
+      if (ambience.room) ambience.room.set("vol", 0.018);
+    }
     if (!mob.active && visit.state !== "omen") applyLights(1);
     if (visit.state === "none" && !mob.active) visit.nextAt = Math.min(visit.nextAt, gameMin + 2);
-    notice("23:00 ── 音楽が、消えた。<br>あと1時間しかない。");
+    notice("23:00 ── 冷蔵庫が、止まった。<br>部屋が、静かになりすぎた。あと1時間しかない。");
   }
   if (gameMin >= 23*60 + 59) ending("late");
 }

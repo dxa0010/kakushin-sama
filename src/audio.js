@@ -16,9 +16,17 @@
  *
  *   AC.destination
  *     └─ masterGain … ユーザー音量 × ミュート
- *          ├─ BUS.amb   … 環境音（雨・部屋鳴り・冷蔵庫・ドローン）。鳴り続けるもの
- *          ├─ BUS.sfx   … 効果音（beep/thump/足音/秒針）。単発のもの
+ *          ├─ BUS.amb   … 環境音（部屋鳴り・冷蔵庫）。鳴り続けるもの
+ *          ├─ BUS.sfx   … 効果音（beep/thump/足音/秒針/心音）。単発のもの
  *          └─ BUS.voice … 怪人の声
+ *
+ * 【v15で雨とドローンを削除した】どちらも実装・実測済みだったが、実聴の結果として
+ * 不採用になった。理由を残しておく：
+ *   - 雨   … 窓の夜景テクスチャが「星と三日月の晴れた夜空」なので、そもそも画と
+ *            矛盾していて鳴らせなかった（v14でも呼んでいない）。
+ *   - ドローン … 52/54.7Hz のうなりで不安を煽る意図だったが、「合成音が鳴っている」
+ *            とはっきり分かってしまい、生活音（部屋鳴り＋冷蔵庫）だけの方が静かで怖い。
+ * 復活させたくなったら git log で v14 以前の audio.js を見ること。
  * ===================================================================== */
 
 export let AC = null;
@@ -31,7 +39,6 @@ export const audioPrefs = { vol: 0.8, muted: false };
 export let onPrefsChange = null;
 export function setOnPrefsChange(fn) { onPrefsChange = fn; }
 
-let droneNodes = null;
 const running = new Set();   // 停止し忘れ防止のため、鳴っているループを把握しておく
 
 /* ---------- 初期化 ---------- */
@@ -155,33 +162,47 @@ export function thump(vol = 0.5, opts = {}) {
   beep(180, 0.05, "square", vol * 0.3, null, opts);
 }
 
-/* ---------- 足音（v14で作り直し） ----------
- * 旧実装は 70Hz のサイン波1本で、床を踏む「コツ」という成分が無く
- * 「ブーン」としか鳴っていなかった。実際の足音は
+/* ---------- 足音（v15で「鈍い」音に調整） ----------
+ * 実際の足音は
  *   (a) 靴底が床に当たる広帯域のクリック  (b) 床が響く低い胴体
- * の2層でできているので、そう組む。 */
+ * の2層でできているので、そう組む。（v13以前は70Hzの正弦波1本で「ブーン」だった）
+ *
+ * 【鈍さは何で決まるか】v14 は click=1400Hz・ゲイン vol*0.5・立ち上がり0秒 で、
+ * 「コツッ」という硬い革靴の音だった。鈍い（＝厚手のスリッパで絨毯を踏むような）音に
+ * するために効いたのは、下の3つ。周波数を下げるだけでは足りない：
+ *   1. クリックの帯域を下げる（1400→900Hz）
+ *   2. **その上にローパスを重ねて上を閉じる**（tone=1800Hz）。bandpass の Q は 0.7 と
+ *      緩いので裾が高域まで伸びており、これを塞がないと下げても硬さが残る。
+ *   3. **立ち上がりに4msの傾斜をつける**。ゼロ秒アタックは物理的にありえない
+ *      不連続で、それ自体が「硬さ」として聞こえる。ここが体感差は一番大きかった。
+ * さらにクリックを相対的に下げ（0.5→0.30）、胴体を長く低くして重心を下げている。
+ *
+ * opts: { pan, click（クリックの帯域Hz）, tone（上を閉じるHz）, body（胴体Hz）, bus } */
 export function footstep(vol = 0.35, opts = {}) {
   if (!AC) return;
   const t = AC.currentTime;
-  // (a) クリック：ノイズを中高域だけ通して、ごく短い減衰をかける
+  // (a) クリック：帯域を絞ったうえで、さらにローパスで上を閉じる
   const n = noiseSource(false);
   const bp = AC.createBiquadFilter();
-  bp.type = "bandpass"; bp.frequency.value = opts.click ?? 1400; bp.Q.value = 0.9;
+  bp.type = "bandpass"; bp.frequency.value = opts.click ?? 900; bp.Q.value = 0.7;
+  const lp = filterChain("lowpass", opts.tone ?? 1800, 2, 0.5);
   const ng = AC.createGain();
-  ng.gain.setValueAtTime(vol * 0.5, t);
-  ng.gain.exponentialRampToValueAtTime(0.0005, t + 0.055);
-  n.connect(bp); bp.connect(ng);
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(vol * 0.30, t + 0.004);   // 4ms のアタック＝鈍さの主因
+  ng.gain.exponentialRampToValueAtTime(0.0005, t + 0.05);
+  n.connect(bp); bp.connect(lp.input); lp.output.connect(ng);
   panned(ng, opts.pan, opts.bus);
   n.start(t); n.stop(t + 0.08);
-  // (b) 胴体：低い正弦をわずかに下降させる
+  // (b) 胴体：低い正弦をわずかに下降させる。v14 より低く長く（82→72Hz, 130→165ms）
   const o = AC.createOscillator(), og = AC.createGain();
-  o.type = "sine"; o.frequency.setValueAtTime(opts.body ?? 82, t);
-  o.frequency.exponentialRampToValueAtTime(52, t + 0.12);
-  og.gain.setValueAtTime(vol, t);
-  og.gain.exponentialRampToValueAtTime(0.0005, t + 0.13);
+  o.type = "sine"; o.frequency.setValueAtTime(opts.body ?? 72, t);
+  o.frequency.exponentialRampToValueAtTime(46, t + 0.15);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+  og.gain.exponentialRampToValueAtTime(0.0005, t + 0.165);
   o.connect(og);
   panned(og, opts.pan, opts.bus);
-  o.start(t); o.stop(t + 0.15);
+  o.start(t); o.stop(t + 0.19);
 }
 
 /* ---------- 心音（接近時の緊張） ----------
@@ -227,75 +248,6 @@ export function clockTick(tock = false, vol = 0.12, opts = {}) {
 /* =====================================================================
  * ループする環境音。すべて handle を返す：{ stop(), set(name, value) }
  * ===================================================================== */
-
-/* ---------- 通奏低音のドローン ----------
- * 52Hz と 54.7Hz の差から約2.7Hzのうなり（ビート）が生じ、ゆっくりした脈動になる。
- * **2本の周波数差が本体**なので、片方だけ変えるとこの効果は消える。 */
-export function startDrone(vol = 0.05) {
-  if (!AC) return null;
-  const g = AC.createGain(); g.gain.value = vol; g.connect(BUS.amb);
-  const mk = f => { const o = AC.createOscillator(); o.type = "sine"; o.frequency.value = f; o.connect(g); o.start(); return o; };
-  droneNodes = { g, o1: mk(52), o2: mk(54.7) };
-  const h = {
-    stop(fade = 1.5) { g.gain.linearRampToValueAtTime(0.0001, AC.currentTime + fade); running.delete(h); },
-    set(k, v) { if (k === "vol") g.gain.value = v; },
-  };
-  running.add(h);
-  return h;
-}
-// 23:00 の「音楽が、消えた」演出用。**片道で、復帰させる手段は用意していない**
-export function stopDrone() { if (droneNodes) droneNodes.g.gain.linearRampToValueAtTime(0.0001, AC.currentTime + 1.5); }
-
-/* ---------- 雨 ----------
- * 2層で作る：
- *   body … ノイズを低めで切った「ザー」という土台
- *   hiss … 高域を通した「シャー」という粒立ち
- * さらに非常に遅いLFOで body を揺らして、風で強弱がつく感じを出す。
- * ループ素材と違い、これは永久に同じパターンを繰り返さない。 */
-export function startRain(opts = {}) {
-  if (!AC) return null;
-  // hissHz は「粒立ちの帯域の下端」。上げすぎると雨ではなく砂嵐に寄る（実測で重心を確認しながら決めた）
-  const o = Object.assign({ vol: 0.14, bodyHz: 1400, hissHz: 2800, gust: 0.3 }, opts);
-  const out = AC.createGain(); out.gain.value = o.vol; out.connect(BUS.amb);
-
-  // 土台：ローパスを2段重ねて、上に漏れる高域を落とす
-  const nb = noiseSource();
-  const lp = filterChain("lowpass", o.bodyHz, 2, 0.6);
-  const bodyG = AC.createGain(); bodyG.gain.value = 0.8;
-  nb.connect(lp.input); lp.output.connect(bodyG); bodyG.connect(out); nb.start();
-
-  // 粒立ち：**ハイパスではなくバンドパスにすること。**
-  // ハイパスだとカットオフから上（〜22kHz）が全部通り、ホワイトノイズでは
-  // そこの総エネルギーが土台を圧倒して「砂嵐」になる（実測：重心9825Hz）。
-  // 上を閉じたバンドにして初めて雨の粒に聞こえる。
-  const nh = noiseSource();
-  const hpc = filterChain("highpass", o.hissHz, 2, 0.5);
-  const lpc = filterChain("lowpass", o.hissHz * 1.9, 2, 0.5);   // 上を閉じる
-  const hissG = AC.createGain(); hissG.gain.value = 0.20;
-  nh.connect(hpc.input); hpc.output.connect(lpc.input); lpc.output.connect(hissG);
-  hissG.connect(out); nh.start();
-
-  // 風のうねり：0.06Hz ≒ 17秒周期。気付かれない程度にゆっくり
-  const lfo = AC.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.06;
-  const lfoG = AC.createGain(); lfoG.gain.value = o.gust * 0.7;
-  lfo.connect(lfoG); lfoG.connect(bodyG.gain); lfo.start();
-
-  const h = {
-    stop(fade = 1.2) {
-      out.gain.linearRampToValueAtTime(0.0001, AC.currentTime + fade);
-      setTimeout(() => { try { nb.stop(); nh.stop(); lfo.stop(); } catch (e) {} }, fade * 1000 + 100);
-      running.delete(h);
-    },
-    set(k, v) {
-      if (k === "vol") out.gain.value = v;
-      else if (k === "bodyHz") lp.setFreq(v);
-      else if (k === "hissHz") { hpc.setFreq(v); lpc.setFreq(v * 1.9); }
-      else if (k === "gust") lfoG.gain.value = v * 0.7;
-    },
-  };
-  running.add(h);
-  return h;
-}
 
 /* ---------- 部屋鳴り（room tone） ----------
  * 「無音」は不自然で、逆に安っぽく聞こえる。ほとんど聞こえない低域のノイズを

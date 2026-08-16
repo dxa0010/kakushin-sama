@@ -64,15 +64,10 @@ let started = false, analyser = null;
  * loop:false … 1回鳴らすもの（効果音）
  * params     … スライダーで調整したい値。key は audio.js の handle.set() の名前と一致させる
  * ---------------------------------------------------------------------- */
+/* 【雨とドローンはv15で廃止した】実聴の結果、雨は窓の「晴れた夜空」テクスチャと矛盾し、
+ * ドローンは合成音だと分かってしまったため。生成関数ごと audio.js から消してあるので、
+ * ここにパネルを足しても動かない。復活させたいときは git log で v14 の audio.js を見ること。 */
 const PANELS = [
-  { id: "rain", title: "雨", loop: true, desc: "低域の「ザー」と高域の「シャー」の2層＋17秒周期の風のうねり。ループ素材と違い同じパターンを繰り返さない。",
-    start: o => A.startRain(o),
-    params: [
-      { key: "vol", label: "音量", min: 0, max: 40, val: 14, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
-      { key: "bodyHz", label: "土台の太さ", min: 300, max: 4000, val: 1400, fmt: v => v + " Hz" },
-      { key: "hissHz", label: "粒立ち", min: 1200, max: 8000, val: 2800, fmt: v => v + " Hz" },
-      { key: "gust", label: "風のうねり", min: 0, max: 100, val: 30, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
-    ] },
   { id: "room", title: "部屋鳴り", loop: true, desc: "ほとんど聞こえない低域のノイズ。完全な無音は不自然で安っぽく聞こえるので、静けさに実体を与えるために敷く。単体ではほぼ何も聞こえないのが正常。",
     start: o => A.startRoomTone(o),
     params: [
@@ -85,16 +80,14 @@ const PANELS = [
       { key: "vol", label: "音量", min: 0, max: 30, val: 6, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
       { key: "baseHz", label: "うなりの高さ", min: 50, max: 240, val: 118, fmt: v => v + " Hz" },
     ] },
-  { id: "drone", title: "通奏低音（ドローン）", loop: true, desc: "52Hz と 54.7Hz の差から約2.7Hzのうなりが生じ、ゆっくり脈動する。2本の周波数差が本体なので片方だけ変えると効果が消える。23:00に消えて「音楽が、消えた」を演出する。",
-    start: o => A.startDrone(o.vol),
-    params: [ { key: "vol", label: "音量", min: 0, max: 20, val: 5, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" } ] },
 
-  { id: "footstep", title: "足音", loop: false, desc: "靴底が当たる広帯域のクリック＋床が響く低い胴体の2層。旧実装は70Hzの正弦波1本で「ブーン」としか鳴らなかった。パンを振ると左右に定位する。",
-    fire: o => A.footstep(o.vol, { pan: o.pan, click: o.click, body: o.body }),
+  { id: "footstep", title: "足音", loop: false, desc: "靴底が当たるクリック＋床が響く低い胴体の2層。v15で鈍い音に調整した（クリックを900Hzまで下げ、上をローパスで閉じ、立ち上がりに4msの傾斜を入れた）。もっと鈍くしたいなら「硬さの上限」を下げるのが一番効く。パンを振ると左右に定位する。",
+    fire: o => A.footstep(o.vol, { pan: o.pan, click: o.click, tone: o.tone, body: o.body }),
     params: [
       { key: "vol", label: "音量", min: 0, max: 100, val: 35, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
-      { key: "click", label: "クリックの高さ", min: 400, max: 4000, val: 1400, fmt: v => v + " Hz" },
-      { key: "body", label: "胴体の低さ", min: 40, max: 160, val: 82, fmt: v => v + " Hz" },
+      { key: "click", label: "クリックの高さ", min: 200, max: 3000, val: 900, fmt: v => v + " Hz" },
+      { key: "tone", label: "硬さの上限", min: 500, max: 6000, val: 1800, fmt: v => v + " Hz" },
+      { key: "body", label: "胴体の低さ", min: 40, max: 160, val: 72, fmt: v => v + " Hz" },
       { key: "pan", label: "左右", min: -100, max: 100, val: 0, scale: 0.01, fmt: v => v === 0 ? "中央" : (v < 0 ? "左 " : "右 ") + Math.abs(v*100).toFixed(0) + "%" },
     ] },
   { id: "heartbeat", title: "心音", loop: false, desc: "lub-dub の2拍。1拍目を強く、2拍目をやや弱く短く。怪人の接近に応じて鳴らす想定。",
