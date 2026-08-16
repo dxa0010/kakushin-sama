@@ -1321,7 +1321,7 @@ const fixtureMats = [];
 const moon = new THREE.PointLight(0x7f95c8, 0.3 * PT_SCALE * 0.6, 7, 2);
 moon.position.set(-7.3, 1.8, -2.6);
 scene.add(moon);
-const flash = new THREE.SpotLight(0xfff0cf, 9, 15, Math.PI/5.2, 0.7, 1.6);
+const flash = new THREE.SpotLight(0xfff0cf, 1.5, 15, Math.PI/5.2, 0.7, 1.6);   // 目線の懐中電灯。明るすぎたので 9→1.5 に減光
 flash.castShadow = true;
 flash.shadow.mapSize.set(2048, 2048);
 flash.shadow.bias = -0.002;
