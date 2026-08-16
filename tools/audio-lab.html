@@ -1,0 +1,209 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>音の試聴台 ── 確定申告からは逃げられない</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 28px 32px 60px; background: #0b0b0d; color: #ddd6c4;
+         font: 14px/1.7 "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+  h1 { font-size: 1.15rem; letter-spacing: .1em; margin: 0 0 4px; color: #e8e0c8; }
+  .lead { color: #8a8474; font-size: .8rem; margin-bottom: 22px; max-width: 62em; }
+  .lead b { color: #b0a77c; }
+  section { border: 1px solid #2a2a2e; border-radius: 6px; padding: 16px 18px; margin-bottom: 16px;
+            background: #101013; }
+  h2 { font-size: .85rem; letter-spacing: .12em; margin: 0 0 3px; color: #b0a77c; }
+  .desc { font-size: .74rem; color: #7d786a; margin-bottom: 12px; }
+  button { background: #17171b; border: 1px solid #45454e; color: #ddd6c4; padding: 7px 16px;
+           border-radius: 4px; cursor: pointer; font: inherit; font-size: .8rem; margin-right: 8px; }
+  button:hover { border-color: #b0a77c; color: #fff; }
+  button.on { background: #2d2a1e; border-color: #b0a77c; color: #fff; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 7px 0; font-size: .76rem; color: #9a927c; }
+  .row label { min-width: 8.5em; }
+  .row input[type=range] { width: 210px; accent-color: #b0a77c; }
+  .row output { min-width: 5em; font-variant-numeric: tabular-nums; color: #c9c1a5; }
+  /* 【sticky にしないこと】以前 position:sticky にしていたが、MASTER が縦に大きい
+     （波形キャンバス込みで200px超）ため、スクロールすると直下のセクションの見出しと
+     スライダーを覆い隠してしまった。素直に通常フローに置く。 */
+  #master { background: #131318; border-color: #45454e; }
+  canvas { display: block; width: 100%; height: 90px; background: #08080a;
+           border: 1px solid #26262b; border-radius: 4px; margin-top: 10px; }
+  .hint { font-size: .72rem; color: #6e6a5e; margin-top: 10px; }
+  code { color: #b0a77c; font-size: .95em; }
+</style>
+
+<h1>音の試聴台</h1>
+<div class="lead">
+  <code>src/audio.js</code> の音を1つずつ鳴らして確かめるための開発用ツール。ゲーム本体は起動しない。<br>
+  すべて WebAudio のランタイム合成で、音声ファイルは1つも使っていない。<br>
+  <b>スライダーで好みの値に合わせたら、その数値を伝えてください。</b>そのまま既定値に反映します。
+</div>
+
+<section id="master">
+  <h2>MASTER</h2>
+  <div class="desc">最初に「開始」を押すこと（ブラウザの自動再生ポリシーのため、ユーザー操作なしでは音が出ない）</div>
+  <button id="btnStart">▶ 開始</button>
+  <button id="btnStopAll">■ 全部止める</button>
+  <div class="row">
+    <label>全体音量</label>
+    <input type="range" id="mVol" min="0" max="100" value="80">
+    <output id="mVolV">80%</output>
+  </div>
+  <canvas id="scope"></canvas>
+  <div class="hint">上：波形　下：スペクトル（左=低音 右=高音）</div>
+</section>
+
+<div id="panels"></div>
+
+<script type="module">
+import * as A from "../src/audio.js";
+
+const $ = id => document.getElementById(id);
+let started = false, analyser = null;
+
+/* ---- 試聴パネルの定義 ---------------------------------------------------
+ * loop:true  … start/stop するもの（環境音）
+ * loop:false … 1回鳴らすもの（効果音）
+ * params     … スライダーで調整したい値。key は audio.js の handle.set() の名前と一致させる
+ * ---------------------------------------------------------------------- */
+const PANELS = [
+  { id: "rain", title: "雨", loop: true, desc: "低域の「ザー」と高域の「シャー」の2層＋17秒周期の風のうねり。ループ素材と違い同じパターンを繰り返さない。",
+    start: o => A.startRain(o),
+    params: [
+      { key: "vol", label: "音量", min: 0, max: 40, val: 14, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
+      { key: "bodyHz", label: "土台の太さ", min: 300, max: 4000, val: 1400, fmt: v => v + " Hz" },
+      { key: "hissHz", label: "粒立ち", min: 1200, max: 8000, val: 2800, fmt: v => v + " Hz" },
+      { key: "gust", label: "風のうねり", min: 0, max: 100, val: 30, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
+    ] },
+  { id: "room", title: "部屋鳴り", loop: true, desc: "ほとんど聞こえない低域のノイズ。完全な無音は不自然で安っぽく聞こえるので、静けさに実体を与えるために敷く。単体ではほぼ何も聞こえないのが正常。",
+    start: o => A.startRoomTone(o),
+    params: [
+      { key: "vol", label: "音量", min: 0, max: 30, val: 5, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
+      { key: "cutHz", label: "カットオフ", min: 80, max: 900, val: 240, fmt: v => v + " Hz" },
+    ] },
+  { id: "fridge", title: "冷蔵庫のうなり", loop: true, desc: "基音＋倍音＋機械のざらつき。ゲーム本編では cycle:true で数十秒おきに運転/停止する（生活感が出る）。ここでは常時鳴らす。",
+    start: o => A.startFridge(o),
+    params: [
+      { key: "vol", label: "音量", min: 0, max: 30, val: 6, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
+      { key: "baseHz", label: "うなりの高さ", min: 50, max: 240, val: 118, fmt: v => v + " Hz" },
+    ] },
+  { id: "drone", title: "通奏低音（ドローン）", loop: true, desc: "52Hz と 54.7Hz の差から約2.7Hzのうなりが生じ、ゆっくり脈動する。2本の周波数差が本体なので片方だけ変えると効果が消える。23:00に消えて「音楽が、消えた」を演出する。",
+    start: o => A.startDrone(o.vol),
+    params: [ { key: "vol", label: "音量", min: 0, max: 20, val: 5, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" } ] },
+
+  { id: "footstep", title: "足音", loop: false, desc: "靴底が当たる広帯域のクリック＋床が響く低い胴体の2層。旧実装は70Hzの正弦波1本で「ブーン」としか鳴らなかった。パンを振ると左右に定位する。",
+    fire: o => A.footstep(o.vol, { pan: o.pan, click: o.click, body: o.body }),
+    params: [
+      { key: "vol", label: "音量", min: 0, max: 100, val: 35, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
+      { key: "click", label: "クリックの高さ", min: 400, max: 4000, val: 1400, fmt: v => v + " Hz" },
+      { key: "body", label: "胴体の低さ", min: 40, max: 160, val: 82, fmt: v => v + " Hz" },
+      { key: "pan", label: "左右", min: -100, max: 100, val: 0, scale: 0.01, fmt: v => v === 0 ? "中央" : (v < 0 ? "左 " : "右 ") + Math.abs(v*100).toFixed(0) + "%" },
+    ] },
+  { id: "heartbeat", title: "心音", loop: false, desc: "lub-dub の2拍。1拍目を強く、2拍目をやや弱く短く。怪人の接近に応じて鳴らす想定。",
+    fire: o => A.heartbeat(o.vol, {}),
+    params: [ { key: "vol", label: "音量", min: 0, max: 100, val: 50, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" } ] },
+  { id: "tick", title: "時計の秒針", loop: false, desc: "短いノイズを狭い帯域で切り出す。ゲーム内時計と同期させる想定。tick と tock を交互に鳴らすと「カチ・コチ」になる。",
+    fire: o => { A.clockTick(false, o.vol); setTimeout(() => A.clockTick(true, o.vol), 600); },
+    params: [ { key: "vol", label: "音量", min: 0, max: 60, val: 12, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" } ] },
+  { id: "thump", title: "衝撃音（thump）", loop: false, desc: "前触れ演出と e-Tax 却下時に鳴る低い衝撃音。",
+    fire: o => A.thump(o.vol),
+    params: [ { key: "vol", label: "音量", min: 0, max: 100, val: 50, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" } ] },
+];
+
+/* ---- パネル生成 ---- */
+const panels = $("panels");
+const state = {};   // id -> { handle, vals }
+
+for (const p of PANELS) {
+  state[p.id] = { handle: null, vals: {} };
+  const sec = document.createElement("section");
+  const btn = `<button data-act="${p.loop ? "toggle" : "fire"}" data-id="${p.id}">${p.loop ? "▶ 鳴らす" : "♪ 1回鳴らす"}</button>`;
+  sec.innerHTML = `<h2>${p.title}</h2><div class="desc">${p.desc}</div>${btn}`;
+  for (const q of p.params) {
+    state[p.id].vals[q.key] = q.val * (q.scale || 1);
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<label>${q.label}</label>
+      <input type="range" min="${q.min}" max="${q.max}" value="${q.val}" data-id="${p.id}" data-key="${q.key}" data-scale="${q.scale || 1}">
+      <output>${q.fmt(q.val * (q.scale || 1))}</output>`;
+    const inp = row.querySelector("input"), out = row.querySelector("output");
+    inp.addEventListener("input", () => {
+      const v = Number(inp.value) * (q.scale || 1);
+      state[p.id].vals[q.key] = v;
+      out.textContent = q.fmt(v);
+      const h = state[p.id].handle;
+      if (h && h.set) h.set(q.key, v);      // ループ中はリアルタイムに反映
+    });
+    sec.appendChild(row);
+  }
+  panels.appendChild(sec);
+}
+
+/* ---- 操作 ---- */
+function ensureStarted() {
+  if (started) return true;
+  A.audioInit({ vol: Number($("mVol").value) / 100, muted: false });
+  analyser = A.AC.createAnalyser();
+  analyser.fftSize = 2048;
+  A.masterGain.connect(analyser);
+  started = true;
+  $("btnStart").textContent = "● 動作中";
+  $("btnStart").classList.add("on");
+  draw();
+  return true;
+}
+
+$("btnStart").addEventListener("click", ensureStarted);
+$("btnStopAll").addEventListener("click", () => {
+  A.stopAll();
+  for (const id in state) state[id].handle = null;
+  document.querySelectorAll('button[data-act="toggle"]').forEach(b => {
+    b.classList.remove("on"); b.textContent = "▶ 鳴らす";
+  });
+});
+$("mVol").addEventListener("input", e => {
+  $("mVolV").textContent = e.target.value + "%";
+  if (started) A.setVolume(Number(e.target.value) / 100);
+});
+
+panels.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  ensureStarted();
+  const id = b.dataset.id, p = PANELS.find(x => x.id === id), st = state[id];
+  if (b.dataset.act === "fire") { p.fire(st.vals); return; }
+  if (st.handle) {
+    st.handle.stop(0.25); st.handle = null;
+    b.classList.remove("on"); b.textContent = "▶ 鳴らす";
+  } else {
+    st.handle = p.start({ ...st.vals });
+    b.classList.add("on"); b.textContent = "■ 止める";
+  }
+});
+
+/* ---- 波形＋スペクトル表示 ---- */
+const cv = $("scope"), cx = cv.getContext("2d");
+function draw() {
+  requestAnimationFrame(draw);
+  if (!analyser) return;
+  const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
+  cx.clearRect(0, 0, w, h);
+  // 波形（上半分）
+  const td = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(td);
+  cx.strokeStyle = "#b0a77c"; cx.lineWidth = 1; cx.beginPath();
+  for (let i = 0; i < w; i++) {
+    const v = td[Math.floor(i / w * td.length)];
+    const y = h * 0.25 - v * h * 0.22;
+    i ? cx.lineTo(i, y) : cx.moveTo(i, y);
+  }
+  cx.stroke();
+  // スペクトル（下半分）
+  const fd = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(fd);
+  cx.fillStyle = "#4a6a8a";
+  const n = Math.floor(fd.length * 0.55);          // 高域は使わないので切る
+  for (let i = 0; i < w; i++) {
+    const v = fd[Math.floor(i / w * n)] / 255;
+    cx.fillRect(i, h - v * h * 0.46, 1, v * h * 0.46);
+  }
+  cx.strokeStyle = "#26262b"; cx.beginPath(); cx.moveTo(0, h * 0.5); cx.lineTo(w, h * 0.5); cx.stroke();
+}
+</script>
