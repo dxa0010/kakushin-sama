@@ -1465,7 +1465,7 @@ const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.3), posterMat);
 poster.position.set(-3.4, 1.7, -5.97);
 scene.add(poster);
 
-/* ---------- 怪人「ジェイソン」（13日の金曜日オマージュ） ---------- */
+/* ---------- 怪人「カクシン様」 ---------- */
 // グループの正面はローカル +z（mob更新で monster.lookAt(ply) するため、
 // マスク面は必ず +z を向くように組む）。全高 ≈ 2.05m の大柄・前傾姿勢。
 function makeMonster() {

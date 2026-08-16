@@ -21,7 +21,13 @@ src/game.js                ゲーム本体（ロジック＋レンダリング�
 vendor/three/              Three.js r185 本体＋addons（postprocessing、RoundedBoxGeometry等）
 assets/textures/           実写テクスチャ（three.js examples由来のMIT素材＋ambientCG由来のCC0素材）
 .github/workflows/         GitHub Pages 自動デプロイ
+docs/HANDOFF.md            開発引き継ぎ資料（技術メモ）
+THIRD-PARTY-NOTICES.md     第三者アセットのライセンス表示
 ```
+
+同梱している第三者アセット（Three.js とテクスチャ）の帰属表示は
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) にまとめてあります。
+**アセットを追加・差し替えたときは同ファイルの更新が必要です**（MIT素材は著作権表示の保持が再配布の条件）。
 
 プッシュするだけで GitHub Actions が Pages へ自動デプロイします。ローカル確認は `python3 -m http.server` などの静的サーバでOK（ES modules のため `file://` 直開きは不可）。
 
