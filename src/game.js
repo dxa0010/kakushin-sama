@@ -447,24 +447,34 @@ function loadTex(url, srgb, rx, ry) {
   t.repeat.set(rx, ry);
   return t;
 }
-// diffuse/normal/roughness の3枚組を一括ロード（ambientCG命名規則: {name}_{diffuse,normal,roughness}.jpg）
-function loadPBRSet(baseName, rx, ry) {
+// diffuse/normal/roughness の3枚組を一括ロード（ambientCG命名規則: {name}_{diffuse,normal,roughness}）
+//
+// 【拡張子について】既定は webp。v13でテクスチャを再圧縮し、読み込み量を 15.8MB → 4.1MB に落とした。
+// ただし **plaster017 / fabric001 / hardwood2_diffuse は .jpg のまま残してある**。この3つは
+// 初期バッチで既に適正な品質（q0.8〜0.85相当）で圧縮済みで、webp化しても縮まないか逆に増える
+// （実測: fabric001_normal は webp q0.82 でちょうど元と同サイズ）。ここを無理に webp 化すると
+// 再エンコードによる世代劣化を受けるだけで得がない。**「全部 webp に統一したい」という理由で
+// 変換し直さないこと。** 逆に後期バッチ（fabric049/leather030/cardboard001/metal063/
+// concrete034/plastic011）は実質無圧縮に近い状態で入っていたので、webp化で 1/5 以下になった。
+function loadPBRSet(baseName, rx, ry, ext = "webp") {
   return {
-    map:          loadTex(`./assets/textures/${baseName}_diffuse.jpg`, true, rx, ry),
-    normalMap:    loadTex(`./assets/textures/${baseName}_normal.jpg`, false, rx, ry),
-    roughnessMap: loadTex(`./assets/textures/${baseName}_roughness.jpg`, false, rx, ry),
+    map:          loadTex(`./assets/textures/${baseName}_diffuse.${ext}`, true, rx, ry),
+    normalMap:    loadTex(`./assets/textures/${baseName}_normal.${ext}`, false, rx, ry),
+    roughnessMap: loadTex(`./assets/textures/${baseName}_roughness.${ext}`, false, rx, ry),
   };
 }
 
 /* ---------- materials (PBR) ---------- */
 const M = {
   wall:   new THREE.MeshStandardMaterial({
-    ...loadPBRSet("plaster017", 4.6, 1.8),
+    ...loadPBRSet("plaster017", 4.6, 1.8, "jpg"),   // jpgのまま（理由は loadPBRSet のコメント）
     color: 0x8a8578, roughness: 0.92,
   }),
   floor:  new THREE.MeshStandardMaterial({
+    // 床は最も目に付く面なので拡散マップは jpg のまま（webp化しても14%しか縮まない）。
+    // バンプはグレースケールで劣化が見えないため webp 化した（115KB→32KB）。
     map: loadTex("./assets/textures/hardwood2_diffuse.jpg", true, 3.2, 4.4),
-    bumpMap: loadTex("./assets/textures/hardwood2_bump.jpg", false, 3.2, 4.4),
+    bumpMap: loadTex("./assets/textures/hardwood2_bump.webp", false, 3.2, 4.4),
     // 【roughnessMap を意図的に外している】hardwood2_roughness.jpg は板面がかなり
     // 低ラフネス（つや有り）で、three.js は roughness に**乗算**するため、roughness を
     // 1.0 まで上げても板目に沿った細い白い鏡面の筋が残る（実測：0.92 も 1.0 も筋が出る）。
@@ -478,7 +488,7 @@ const M = {
   woodDark: new THREE.MeshStandardMaterial({ map: woodTex, color: 0x8a8378, roughness: 0.6 }),
   dark:   new THREE.MeshStandardMaterial({ color: 0x2e2a33, roughness: 0.78 }),
   fabric: new THREE.MeshStandardMaterial({
-    ...loadPBRSet("fabric001", 1.6, 1.6),
+    ...loadPBRSet("fabric001", 1.6, 1.6, "jpg"),   // jpgのまま（理由は loadPBRSet のコメント）
     color: 0x4a4762, roughness: 0.95,
   }),
   white:  new THREE.MeshStandardMaterial({ color: 0xcfc9bd, roughness: 0.85 }),
@@ -494,7 +504,7 @@ const M = {
   mattress: new THREE.MeshStandardMaterial({ color: 0xd6d0c0, roughness: 0.92 }),                   // マットレス・枕の生成り
   sheet:    new THREE.MeshStandardMaterial({ color: 0xcfc7b6, roughness: 0.9 }),                    // 敷きシーツ（少しグレイッシュ）
   blanket:  new THREE.MeshStandardMaterial({
-    ...loadPBRSet("fabric001", 1.2, 1.2),
+    ...loadPBRSet("fabric001", 1.2, 1.2, "jpg"),   // 同上
     color: 0xa89478, roughness: 0.96,                                                               // 掛け布団: くすんだオートミール茶（白いシーツと差をつけつつ暗すぎない）
   }),
   pillow:   new THREE.MeshStandardMaterial({ color: 0xe4ddcc, roughness: 0.9 }),                    // 枕（マットレスより明るい白）

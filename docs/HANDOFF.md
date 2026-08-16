@@ -77,6 +77,49 @@ python3 -m http.server 8765   # リポジトリルートで
   - いずれも ambientCG（CC0）。2Kソースをplaywright+Chromium(Canvas)でリサイズ・再圧縮し、`assets/textures/{plaster017,tatami005,fabric001}_{diffuse,normal,roughness}.jpg` として1024px・JPEG品質0.8〜0.85で保存（合計約1.8MB）。`normalMap`はNormalGL版（three.jsはOpenGL規約）。
   - `src/game.js` に `loadPBRSet(baseName, rx, ry)` ヘルパーを追加し、`M.wall` / `M.tatami` / `M.fabric` で使用。対応する旧プロシージャル定義（`wallTex`/`tatamiTex`/`fabricTex`、および `normalFromTex()` 呼び出し）は削除済み。`woodTex`/`ceilTex`/`fusumaTex`等、他のプロシージャルテクスチャは変更なし。
 
+### テクスチャの圧縮方針（v13。初回ロード 15.8MB → 4.1MB）
+
+**後期に追加したPBRセット6種が、実質ほぼ無圧縮の状態で入っていた**（1024×1024で1.6MB＝約12bpp、
+JPEG品質98相当）。ここをWebP化して**読み込み量を74%削減**した。解像度は一切変えていない。
+
+| 対象 | 形式 | 品質 | 理由 |
+|---|---|---|---|
+| `fabric049` `leather030` `cardboard001` `metal063` `concrete034` `plastic011` の `_normal` | **WebP** | 0.92 | 法線は光の向きを決めるので誤差が陰影に直結する。最も高品質を維持 |
+| 同6種の `_diffuse` | **WebP** | 0.90 | 色は目に付きやすい |
+| 同6種の `_roughness` | **WebP** | 0.80 | **全て完全なグレースケール（RGB偏差0を実測）**。スカラー変調でしかなく誤差が見えない |
+| `hardwood2_bump` | **WebP** | 0.80 | グレースケール。115KB→32KB |
+| `plaster017` `fabric001`（各3枚）、`hardwood2_diffuse` | **JPEG据置** | — | 下記 |
+
+**JPEGのまま残した3つを、統一のためにWebP化し直さないこと。** 初期バッチは既に適正品質
+（q0.8〜0.85相当）で圧縮されており、**WebP化しても縮まないか逆に増える**。実測値：
+
+```
+fabric001_normal   435KB → webp q0.82 で 435KB（ちょうど同サイズ）/ q0.86 で 514KB（増加）
+plaster017_normal  176KB → webp q0.82 で 169KB（ほぼ変わらず）
+hardwood2_diffuse  404KB → webp q0.90 で 348KB（14%しか減らない。床は最も目に付く面なので据置）
+```
+
+つまり初期バッチは既に圧縮の最適点にあり、ここを縮めるには**再エンコードによる世代劣化**を
+受け入れるしかない。得が無いのでやらない。`loadPBRSet()` の第4引数 `ext` で切り替えている
+（既定 `"webp"`、この3つだけ `"jpg"` を明示）。
+
+**知っておくと良いこと**：`metal063_normal` と `plastic011_normal` は変換後3KB / 6KBになるが、
+これは壊れているのではない。**元から中立値(128,128,255)付近のほぼ平坦な法線マップ**で
+（実測：R範囲125〜129、標準偏差0.63）、凹凸情報を持っていない。870KBかけて定数まわりの
+JPEGノイズを保存していただけだった。この2つは法線マップとして実質機能していないので、
+質感を上げたいなら**圧縮を戻すのではなく、ambientCGから別の素材を取り直すべき**。
+
+**未使用のまま残っているファイル**：`tatami005_*`（3枚・683KB、v8の洋室化で不要に）と
+`hardwood2_roughness.jpg`（143KB、v10で意図的に外した）。**ブラウザは参照されていない
+ファイルを取得しないので、これらは初回ロードには一切影響しない**（リポジトリ容量のみ）。
+消しても構わないが、急ぐ理由はない。
+
+**再変換が必要になったときの手順**：ローカルにImageMagick等が無かったため、変換は
+Playwright + Chromium の Canvas（`toDataURL("image/webp", q)`）で行った。スクリプトは
+セクション9の検証ハーネスと同じ運用（`C:/tmp` に置いてnpmグローバルの `node_modules` から実行）。
+なお**より高品質な原本が必要になったら、現在のJPEGを再圧縮するのではなく ambientCG から
+2Kソースを取り直すこと**（CC0なので自由に再取得できる。リポジトリには1K版しか無い）。
+
 ## 4. 家具の高精細プロシージャル化・洋室化（v8）
 
 ### 方針転換の経緯（重要）
