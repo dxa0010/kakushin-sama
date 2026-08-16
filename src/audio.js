@@ -222,9 +222,38 @@ export function thump(vol = 0.5, opts = {}) {
  *   (a) 胴体 … ブラウンノイズ＋緩いローパス1段。床が叩かれた重み。音高が立たない
  *   (b) ペタ … 広い中域の短い破裂。素足が床を叩く本体。`peta` で量を決める
  *
+ * 【v18：既定値を実聴で確定した】ユーザーが試聴台で決めた値をそのまま既定にしてある：
+ * body=120 / peta=0.12 / snap=25ms / tone=720Hz。**ペタは 12% と非常に小さい。**
+ * v17 の既定（55%）から見ると「ペタを足す」のではなく「暗い胴体に**気配として**混ぜる」
+ * 使い方で、素足の柔らかい当たりはこの薄さで成立するという判断。**大きくしないこと。**
+ * body=120 は「狭帯域ノイズには音高がある」として v16 で避けた領域だが、
+ * 実測で芯が許容範囲に収まることを確認して採用している（数値は HANDOFF.md 参照）。
+ *
+ * 【v18：1歩ごとにばらつかせる（`vary`）】
+ * ばらつきの実装をここに置いてゲーム側に置かないのは、試聴台とゲームでばらつき方が
+ * 食い違うと**試聴で決めた音が本編で鳴らない**ため。`vary` は 0〜1 の強さで、
+ * **既定は 0（完全に固定）**。試聴台で正確な値を聴くには固定が必要なので、
+ * ばらつきは呼び出し側が明示的に有効にする。
+ *
+ * 【測定で分かった重要な事実：音の物理量はもともと大きく散っている】
+ * 20発撃って測ると、**vary=0 の時点でピーク振幅の変動係数が既に 30%**（範囲 0.027〜0.083）、
+ * 重心も 296〜923Hz に散っていた。ノイズバッファの読み出し位置がランダムなためで、
+ * ブラウンノイズはランダムウォークなので**読み出し位置が違うと局所的な振幅が大きく違う**。
+ * つまり「同じ音の連打に聞こえる」のは、音量や帯域が揃っているせいでは**ない**。
+ * 実際 vary=1 にしてもピークの変動係数は 30.8% で、統計的に区別できなかった
+ * （±22%の一様ジッタは変動係数 12.7% 相当で、元からある 30% に埋もれる）。
+ * → **効いているのはパラメータのばらつきより「鳴る間隔のばらつき」の方**という読みで、
+ *   間隔の崩しはゲーム側（`stepGap`）に入れてある。ここのジッタは補助と考えること。
+ * → それでも `peta` のばらつきは意味がある。5%〜19% の間で「ペタが聴こえる歩」と
+ *   「胴体だけの歩」が入れ替わるので、**音量の差ではなく音色の差**として出る。
+ * → **ジッタを広げるときは、元からある 30% より広くしないと数値には出ない。**
+ *   逆に言えば「測っても差が出ない」ことと「聴いて差が無い」ことは別なので、
+ *   最終判断は必ず試聴台の「6歩続けて」で耳で行うこと。
+ *
  * opts: { pan, bus,
  *         body（胴体の上限Hz）, peta（ペタの量 0〜1.2）,
- *         tone（ペタの上限Hz＝明るさ）, snap（ペタの減衰ms＝ペタペタ感） } */
+ *         tone（ペタの上限Hz＝明るさ）, snap（ペタの減衰ms＝ペタペタ感）,
+ *         vary（1歩ごとのばらつき 0〜1。既定0＝固定） } */
 export function footstep(vol = 0.35, opts = {}) {
   if (!AC) return;
   const t = AC.currentTime;
@@ -232,29 +261,46 @@ export function footstep(vol = 0.35, opts = {}) {
   // 完全に同一になり**、「同じ音の連打」として人工的に聞こえる（2秒バッファを共有しているため）
   const jit = () => Math.random() * 1.4;
 
+  /* ばらつき。vary=1 で基準値の ±pct の範囲に散らす。
+   * 中心をずらさない（対称にする）のが重要：片側だけに振ると実聴で決めた音そのものが
+   * 変わってしまい、「ばらつかせた」のではなく「別の音にした」ことになる。 */
+  const vary = Math.max(0, Math.min(1, opts.vary ?? 0));
+  const wob = (base, pct) => base * (1 + (Math.random() * 2 - 1) * pct * vary);
+
+  // 音量。1歩ごとの体重の乗り方に相当する
+  vol = wob(vol, 0.30);
+
   // (a) 胴体：ブラウンノイズ＋**ローパス1段だけ**。段数を増やすと芯が戻る（上記参照）
   const nb = noiseSource(false, "brown");
-  const blp = filterChain("lowpass", opts.body ?? 300, 1, 0.5);
+  // 【body のばらつきは ±18% まで】120Hz なら 98〜142Hz。下に振ると帯域が狭まって
+  // 音高が立つ側だが、実測では 110Hz で芯 0.486・134Hz で 0.515 と 120Hz 単独（0.602）を
+  // 上回らないので、この幅なら悪化しない。**これ以上広げるなら測り直すこと。**
+  const blp = filterChain("lowpass", wob(opts.body ?? 120, 0.18), 1, 0.5);
   const bg = AC.createGain();
   bg.gain.setValueAtTime(0.0001, t);
   bg.gain.exponentialRampToValueAtTime(vol * 1.1, t + 0.014);
   // 【余韻を v16 の 210ms から詰めた】長いと同じ帯域でも「ドスッ」に寄る
-  bg.gain.exponentialRampToValueAtTime(0.0005, t + 0.115);
+  const bdec = wob(0.115, 0.20);
+  bg.gain.exponentialRampToValueAtTime(0.0005, t + bdec);
   nb.connect(blp.input); blp.output.connect(bg);
   panned(bg, opts.pan, opts.bus);
-  nb.start(t, jit()); nb.stop(t + 0.15);
+  nb.start(t, jit()); nb.stop(t + bdec + 0.04);
 
   // (b) ペタ：highpass と lowpass を1段ずつで**広い**帯域を作る。
   // bandpass（狭い）にすると「シュッ」という擦れに戻ってペタペタ感が消える
-  const peta = opts.peta ?? 0.55;
+  // 【peta のばらつきは広く取る（±55%）】既定 12% に対して 5〜19% に振れる。
+  // これは音量の差ではなく**音色の差**として出る（ペタが聴こえる歩と胴体だけの歩が
+  // 入れ替わる）ので、元からある振幅のばらつき 30% に埋もれない唯一のジッタ
+  const peta = wob(opts.peta ?? 0.12, 0.55);
   if (peta > 0.002) {
-    const snap = (opts.snap ?? 55) / 1000;
+    const snap = wob((opts.snap ?? 25) / 1000, 0.32);
+    const tone = wob(opts.tone ?? 720, 0.16);
     // 【ピンクノイズを使う理由】ホワイトだと重心が 1355Hz まで上がって「紙が擦れる」音に
     // 近づいた（実測）。ローパスを急峻にすれば下がるが、それは帯域を狭めるので音高が立つ。
     // ピンク（-3dB/oct）なら**幅を保ったまま**暗くできる。これが v16 の教訓の応用。
     const n = noiseSource(false, "pink");
     const hp = filterChain("highpass", 260, 1, 0.5);
-    const lp = filterChain("lowpass", opts.tone ?? 850, 1, 0.5);
+    const lp = filterChain("lowpass", tone, 1, 0.5);
     const ng = AC.createGain();
     ng.gain.setValueAtTime(0.0001, t);
     ng.gain.exponentialRampToValueAtTime(vol * peta, t + 0.004);  // 柔らかい当たり（4ms）

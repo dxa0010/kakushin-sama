@@ -81,14 +81,15 @@ const PANELS = [
       { key: "baseHz", label: "うなりの高さ", min: 50, max: 240, val: 118, fmt: v => v + " Hz" },
     ] },
 
-  { id: "footstep", title: "足音", loop: false, desc: "<b>v17で中域層を作り直した（ペタペタ感）。</b>v16の中域は狭いbandpassで、これは「擦れ／コツ」という乾いた音だった。実測するとv16で最良と判断された設定はエネルギーの96.4%が250Hz未満・中域3.6%＝擦れ層が事実上鳴っていない状態だった。ペタペタ（素足が硬い床を叩く音）には中域が必要だが、それは<b>広帯域の短い破裂</b>であって狭帯域の擦れではない。だから highpass+lowpass を1段ずつにして約2オクターブ幅にした。中域のエネルギーは v16 の 15% から 62% に上がっている。<br><b>ペタペタ感に一番効くのは「ペタの余韻」を短くすること。</b>柔らかいものが当たると床はすぐ制振されるので余韻が残らない。長いと同じ帯域でも「ドスッ」に寄る。<br>ノイズはピンク（-3dB/oct）を使っている。ホワイトだと重心が1355Hzまで上がって「紙が擦れる」音になり、かといってローパスを急峻にすると帯域が狭まって音高が立つ。ピンクなら幅を保ったまま暗くできる（既定で重心775Hz）。オシレーターは1つも使っていない（音高が立つとバスドラ感が戻るため）。<br>ゲーム本編では1歩ごとに 胴体290〜350Hz・余韻48〜64ms でばらつかせている（同じ音の連打に聞こえないように）。",
-    fire: o => A.footstep(o.vol, { pan: o.pan, body: o.body, peta: o.peta, tone: o.tone, snap: o.snap }),
+  { id: "footstep", title: "足音", loop: false, seq: 6, desc: "<b>v18で既定値を実聴で確定した</b>（body120 / ペタ12% / 余韻25ms / 明るさ720Hz）。ペタは12%と非常に薄く、「ペタを足す」のではなく暗い胴体に<b>気配として混ぜる</b>使い方になっている。<br><b>ばらつきは「♪ 6歩続けて」で確かめること。</b>1回鳴らしただけでは分からない。ばらつきを0にすると固定値の音（＝上のスライダーそのまま）が聴ける。音量のばらつきが一番効く（人間の歩行でも1歩ごとの体重の乗り方が最も変わるため）。ゲーム本編は<b>ばらつき100%</b>で鳴らしており、さらに歩く間隔自体も±15%崩している。<br>中域層は v17 で狭いbandpass（＝乾いた「擦れ／コツ」）から highpass+lowpass 1段ずつの広い帯域（＝柔らかいものが面を叩く「ペタ」）に作り直した。ノイズはピンク（-3dB/oct）。ホワイトだと重心1355Hzで「紙が擦れる」音になり、かといってローパスを急峻にすると帯域が狭まって音高が立つ。ピンクなら幅を保ったまま暗くできる。<br><b>胴体の帯域を下げると芯（音高感）が戻る</b>のは実測で確認済み：自己相関ピークが 320Hz→0.40、200Hz→0.48、150Hz→0.53、<b>120Hz→0.60</b>（純正弦波=1.00、v15のバスドラ足音=0.98）。120Hzは実聴で選ばれた値なので採用しているが、「またバスドラっぽい」と感じたらここを上げるのが最初の一手。オシレーターは1つも使っていない。",
+    fire: o => A.footstep(o.vol, { pan: o.pan, body: o.body, peta: o.peta, tone: o.tone, snap: o.snap, vary: o.vary }),
     params: [
       { key: "vol", label: "音量", min: 0, max: 100, val: 35, scale: 0.01, fmt: v => (v*100).toFixed(0) + "%" },
-      { key: "peta", label: "ペタの量", min: 0, max: 120, val: 55, scale: 0.01, fmt: v => v === 0 ? "無し（胴体のみ）" : (v*100).toFixed(0) + "%" },
-      { key: "snap", label: "ペタの余韻", min: 25, max: 150, val: 55, fmt: v => v + " ms" + (v <= 45 ? "（ペタペタ寄り）" : v >= 110 ? "（ドスッ寄り）" : "") },
-      { key: "tone", label: "ペタの明るさ", min: 500, max: 3000, val: 850, fmt: v => v + " Hz" + (v >= 1500 ? "（紙が擦れる音に寄る）" : "") },
-      { key: "body", label: "胴体の帯域", min: 120, max: 800, val: 300, fmt: v => v + " Hz" + (v < 200 ? "（芯が戻る）" : "") },
+      { key: "vary", label: "ばらつき", min: 0, max: 100, val: 100, scale: 0.01, fmt: v => v === 0 ? "無し（固定）" : (v*100).toFixed(0) + "%（本編は100%）" },
+      { key: "peta", label: "ペタの量", min: 0, max: 120, val: 12, scale: 0.01, fmt: v => v === 0 ? "無し（胴体のみ）" : (v*100).toFixed(0) + "%" },
+      { key: "snap", label: "ペタの余韻", min: 15, max: 150, val: 25, fmt: v => v + " ms" + (v <= 45 ? "（ペタペタ寄り）" : v >= 110 ? "（ドスッ寄り）" : "") },
+      { key: "tone", label: "ペタの明るさ", min: 400, max: 3000, val: 720, fmt: v => v + " Hz" + (v >= 1500 ? "（紙が擦れる音に寄る）" : "") },
+      { key: "body", label: "胴体の帯域", min: 90, max: 800, val: 120, fmt: v => v + " Hz" + (v < 170 ? "（芯が上がる域）" : "") },
       { key: "pan", label: "左右", min: -100, max: 100, val: 0, scale: 0.01, fmt: v => v === 0 ? "中央" : (v < 0 ? "左 " : "右 ") + Math.abs(v*100).toFixed(0) + "%" },
     ] },
   { id: "heartbeat", title: "心音", loop: false, desc: "lub-dub の2拍。1拍目を強く、2拍目をやや弱く短く。<b>v16でゲームに配線した</b>：怪人が6.5m以内に入ると鳴りはじめ、密着すると間隔1.15秒→0.42秒、音量0.12→0.45まで上がる。隠れている間もあえて鳴らす。速さで近さを伝えているのは、音量だけだと音量つまみの大小と区別できないため。<br>これは足音と違い正弦波の下降スイープで作っている（＝バスドラと同じ作り）。心音は lub-dub のリズムで identify されるので成立しているが、足音と同時に鳴ったときに competing に聞こえるなら教えてください。",
@@ -109,7 +110,10 @@ const state = {};   // id -> { handle, vals }
 for (const p of PANELS) {
   state[p.id] = { handle: null, vals: {} };
   const sec = document.createElement("section");
-  const btn = `<button data-act="${p.loop ? "toggle" : "fire"}" data-id="${p.id}">${p.loop ? "▶ 鳴らす" : "♪ 1回鳴らす"}</button>`;
+  let btn = `<button data-act="${p.loop ? "toggle" : "fire"}" data-id="${p.id}">${p.loop ? "▶ 鳴らす" : "♪ 1回鳴らす"}</button>`;
+  /* seq を持つパネルには「続けて鳴らす」を足す。**ばらつきは1回では判断できない**ので、
+   * 足音のようにばらつきを持つ音には連続再生が必須。間隔もゲーム本編と同じように崩す。 */
+  if (p.seq) btn += `<button data-act="seq" data-id="${p.id}">♪ ${p.seq}歩続けて</button>`;
   sec.innerHTML = `<h2>${p.title}</h2><div class="desc">${p.desc}</div>${btn}`;
   for (const q of p.params) {
     state[p.id].vals[q.key] = q.val * (q.scale || 1);
@@ -163,6 +167,15 @@ panels.addEventListener("click", e => {
   ensureStarted();
   const id = b.dataset.id, p = PANELS.find(x => x.id === id), st = state[id];
   if (b.dataset.act === "fire") { p.fire(st.vals); return; }
+  if (b.dataset.act === "seq") {
+    // 間隔もゲーム本編と同じ ±15% で崩す（等間隔だとそれ自体が機械的に聞こえる）
+    let d = 0;
+    for (let i = 0; i < p.seq; i++) {
+      setTimeout(() => p.fire(st.vals), d);
+      d += 480 + Math.random() * 150;
+    }
+    return;
+  }
   if (st.handle) {
     st.handle.stop(0.25); st.handle = null;
     b.classList.remove("on"); b.textContent = "▶ 鳴らす";

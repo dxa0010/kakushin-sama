@@ -147,9 +147,24 @@ function assignCopies() {
   });
 }
 assignCopies();
+/* ---------- 書類背景・異変画像のプリロード ---------- */
+const docImgs = {};
+function preloadDocImg(name, path) {
+  const img = new Image();
+  img.src = path;
+  docImgs[name] = img;
+}
+preloadDocImg("tax", "./assets/textures/doc_tax_base.jpg");
+preloadDocImg("receipt", "./assets/textures/doc_receipt_base.jpg");
+preloadDocImg("myna", "./assets/textures/doc_myna_base.jpg");
+preloadDocImg("memo", "./assets/textures/doc_memo_base.jpg");
+preloadDocImg("curse", "./assets/textures/stamp_curse.jpg");
+preloadDocImg("face", "./assets/textures/monster_face.jpg");
+
 function buildSpec(it) {
   const d = DOCSPECS[it.id];
-  const s = { title: d.title, issuer: d.issuer, rows: d.rows.map(r => [...r]),
+  const kindMap = { shiharai: "tax", iryohi: "receipt", mycard: "myna", reader: "memo", password: "memo" };
+  const s = { id: it.id, kind: kindMap[it.id] || "tax", title: d.title, issuer: d.issuer, rows: d.rows.map(r => [...r]),
               era: "令和7年分", name: PLAYER_NAME, date: "令和8年1月31日",
               stampFlip: false, mirror: false };
   if (it.copy.fake) it.copy.anom.apply(s);
@@ -160,58 +175,110 @@ function drawDoc(spec) {
   c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
   c.textBaseline = "alphabetic";
   c.fillStyle = "#ece7d8"; c.fillRect(0, 0, w, h);
+
+  // --- リアル背景テクスチャの描画 ---
+  const bg = docImgs[spec.kind];
+  if (bg && bg.complete && bg.naturalWidth) {
+    c.drawImage(bg, 0, 0, w, h);
+    // 文字の視認性を高めつつテクスチャの風合いを活かす半透明オーバーレイ
+    c.fillStyle = "rgba(242, 238, 228, 0.40)";
+    c.fillRect(0, 0, w, h);
+  }
+
   if (spec.mirror) { c.translate(w, 0); c.scale(-1, 1); }
   if (spec.blur) { c.shadowColor = "rgba(40,38,30,0.85)"; c.shadowBlur = 3.5; }
+
+  // 異変：透かしの顔
   if (spec.mark) {
-    // 透かし：うっすらと、あの顔
     c.save();
-    c.globalAlpha = 0.07; c.fillStyle = "#1a1815";
-    c.fillRect(w/2 - 70, h/2 - 90, 140, 180);
-    c.globalAlpha = 0.11; c.fillStyle = "#000";
-    c.fillRect(w/2 - 45, h/2 - 40, 32, 24);
-    c.fillRect(w/2 + 13, h/2 - 40, 32, 24);
+    const faceImg = docImgs.face;
+    if (faceImg && faceImg.complete && faceImg.naturalWidth) {
+      c.globalAlpha = 0.22;
+      c.drawImage(faceImg, w/2 - 100, h/2 - 130, 200, 260);
+    } else {
+      c.globalAlpha = 0.07; c.fillStyle = "#1a1815";
+      c.fillRect(w/2 - 70, h/2 - 90, 140, 180);
+      c.globalAlpha = 0.11; c.fillStyle = "#000";
+      c.fillRect(w/2 - 45, h/2 - 40, 32, 24);
+      c.fillRect(w/2 + 13, h/2 - 40, 32, 24);
+    }
     c.restore();
   }
-  c.strokeStyle = "#8a8574"; c.lineWidth = 2; c.strokeRect(14, 14, w - 28, h - 28);
+
+  // 書類の主枠線
+  c.strokeStyle = "rgba(110, 105, 90, 0.75)"; c.lineWidth = 2;
+  c.strokeRect(14, 14, w - 28, h - 28);
+
+  // 異変：朱の呪
   if (spec.ju) {
     c.save();
-    c.translate(54, 54); c.rotate(-0.12);
-    c.globalAlpha = 0.75; c.fillStyle = "#b23b2e";
-    c.font = "34px serif"; c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillText("呪", 0, 0);
+    c.translate(58, 58); c.rotate(-0.12);
+    const curseImg = docImgs.curse;
+    if (curseImg && curseImg.complete && curseImg.naturalWidth) {
+      c.globalAlpha = 0.85;
+      c.drawImage(curseImg, -36, -36, 72, 72);
+    } else {
+      c.globalAlpha = 0.75; c.fillStyle = "#b23b2e";
+      c.font = "34px serif"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillText("呪", 0, 0);
+    }
     c.restore();
   }
+
+  // 題字
   c.fillStyle = "#22201c"; c.textAlign = "center";
-  c.font = "600 32px 'Hiragino Mincho ProN','Yu Mincho',serif";
-  c.fillText(spec.title, w / 2, 78);
-  c.textAlign = "right"; c.font = "15px sans-serif"; c.fillStyle = "#4a463c";
-  c.fillText(spec.era, w - 28, 44);
-  c.textAlign = "left"; c.strokeStyle = "#9a9484"; c.lineWidth = 1;
-  c.strokeRect(26, 106, w - 52, 46);
-  c.font = "14px sans-serif"; c.fillStyle = "#5a564a"; c.fillText("氏名", 38, 134);
+  c.font = "600 30px 'Hiragino Mincho ProN','Yu Mincho',serif";
+  c.fillText(spec.title, w / 2, 74);
+
+  // 年号
+  c.textAlign = "right"; c.font = "14px sans-serif"; c.fillStyle = "#4a463c";
+  c.fillText(spec.era, w - 28, 42);
+
+  // 氏名欄
+  c.textAlign = "left"; c.strokeStyle = "rgba(130, 125, 110, 0.65)"; c.lineWidth = 1;
+  c.fillStyle = "rgba(255, 255, 255, 0.45)";
+  c.fillRect(26, 102, w - 52, 46);
+  c.strokeRect(26, 102, w - 52, 46);
+  c.font = "13px sans-serif"; c.fillStyle = "#5a564a"; c.fillText("氏名", 38, 130);
   c.font = "21px 'Hiragino Mincho ProN','Yu Mincho',serif"; c.fillStyle = "#22201c";
-  c.fillText(spec.name, 120, 136);
+  c.fillText(spec.name, 120, 132);
+
+  // 項目行
   spec.rows.forEach((r, i) => {
-    const y = 172 + i * 60;
-    c.strokeRect(26, y, w - 52, 48);
-    c.font = "13px sans-serif"; c.fillStyle = "#5a564a"; c.fillText(r[0], 38, y + 29);
+    const y = 166 + i * 58;
+    c.fillStyle = "rgba(255, 255, 255, 0.40)";
+    c.fillRect(26, y, w - 52, 46);
+    c.strokeRect(26, y, w - 52, 46);
+    c.font = "13px sans-serif"; c.fillStyle = "#5a564a"; c.fillText(r[0], 38, y + 28);
     c.font = "17px ui-monospace,monospace"; c.fillStyle = "#22201c";
-    c.textAlign = "right"; c.fillText(r[1], w - 40, y + 31); c.textAlign = "left";
+    c.textAlign = "right"; c.fillText(r[1], w - 40, y + 30); c.textAlign = "left";
   });
-  c.font = "14px sans-serif"; c.fillStyle = "#3c3930";
+
+  // 発行元・日付
+  c.font = "13px sans-serif"; c.fillStyle = "#3c3930";
   c.fillText("発行：" + spec.issuer, 30, h - 68);
   c.fillText(spec.date, 30, h - 38);
+
+  // 印鑑・異変印
   c.save();
-  c.translate(w - 80, h - 78);
+  c.translate(w - 78, h - 74);
   if (spec.stampFlip) c.rotate(Math.PI);
-  c.globalAlpha = 0.85; c.strokeStyle = "#b23b2e"; c.lineWidth = 2.4;
-  c.beginPath(); c.arc(0, 0, 30, 0, Math.PI * 2); c.stroke();
   if (spec.stampEye) {
-    c.fillStyle = "#f4f0e6";
-    c.beginPath(); c.ellipse(0, 0, 16, 9, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#1a1815";
-    c.beginPath(); c.arc(0, 0, 4.5, 0, Math.PI * 2); c.fill();
+    const curseImg = docImgs.curse;
+    if (curseImg && curseImg.complete && curseImg.naturalWidth) {
+      c.globalAlpha = 0.95;
+      c.drawImage(curseImg, -34, -34, 68, 68);
+    } else {
+      c.globalAlpha = 0.85; c.strokeStyle = "#b23b2e"; c.lineWidth = 2.4;
+      c.beginPath(); c.arc(0, 0, 30, 0, Math.PI * 2); c.stroke();
+      c.fillStyle = "#f4f0e6";
+      c.beginPath(); c.ellipse(0, 0, 16, 9, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#1a1815";
+      c.beginPath(); c.arc(0, 0, 4.5, 0, Math.PI * 2); c.fill();
+    }
   } else {
+    c.globalAlpha = 0.85; c.strokeStyle = "#b23b2e"; c.lineWidth = 2.4;
+    c.beginPath(); c.arc(0, 0, 30, 0, Math.PI * 2); c.stroke();
     c.fillStyle = "#b23b2e"; c.font = "26px serif"; c.textAlign = "center"; c.textBaseline = "middle";
     c.fillText("印", 0, 2);
   }
@@ -1451,32 +1518,10 @@ ITEMS.forEach(it => { itemMeshes[it.id] = makeGlow(it.x, it.y + 0.35, it.z, ITEM
 const fakeMeshes = FAKES.map(f => makeGlow(f.x, f.y + 0.35, f.z, ITEM_MARK_COLOR));
 
 /* ---------- 壁のポスター（前触れ演出用） ---------- */
-function makePosterTex(bad) {
-  const cv = document.createElement("canvas");
-  cv.width = 192; cv.height = 256;
-  const c = cv.getContext("2d");
-  c.fillStyle = "#ddd6c4"; c.fillRect(0, 0, 192, 256);
-  c.strokeStyle = "#8a8474"; c.lineWidth = 3; c.strokeRect(6, 6, 180, 244);
-  c.textAlign = "center";
-  if (bad) {
-    c.fillStyle = "#7a1f14";
-    c.font = "900 46px sans-serif";
-    c.fillText("納", 96, 66); c.fillText("税", 96, 122);
-    c.fillText("シ", 96, 178); c.fillText("ロ", 96, 234);
-  } else {
-    c.fillStyle = "#2b4a7a";
-    c.font = "bold 26px serif";
-    c.fillText("確定申告", 96, 88); c.fillText("お済みですか", 96, 128);
-    c.font = "13px sans-serif"; c.fillStyle = "#55503f";
-    c.fillText("国税庁", 96, 220);
-  }
-  const t = new THREE.CanvasTexture(cv);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-const posterTexOk = makePosterTex(false), posterTexBad = makePosterTex(true);
-const posterMat = new THREE.MeshLambertMaterial({ map: posterTexOk });
-const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.3), posterMat);
+const posterTexOk = loadTex("./assets/textures/poster_normal.jpg", true);
+const posterTexBad = loadTex("./assets/textures/poster_anom.jpg", true);
+const posterMat = new THREE.MeshStandardMaterial({ map: posterTexOk, roughness: 0.85, metalness: 0.0 });
+const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.27), posterMat);
 poster.position.set(-3.4, 1.7, -5.97);
 scene.add(poster);
 
@@ -1544,32 +1589,16 @@ function makeMonster() {
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.185, 16, 16), scalp);
   head.position.set(0, 1.87, 0.05); head.scale.set(1.0, 1.12, 1.05); g.add(head);
 
-  // --- 顔＝紙の通知書プレート（+z 面に配置）。ユーザー要望で「前の顔」（ホッケーマスク導入前の
-  // デザイン）に戻した。文言だけ更新：「源泉徴収票」→「重加算税」（仮装・隠蔽への懲罰的な追徴税で、
-  // 確定申告ホラーというテーマに直球で刺さるので採用）。以前は素の円柱ボディに直接貼っていたが、
-  // 今の頭部球（半径0.185・z scale 1.05＝前面 z≈0.244）より少し前に置いて食い込みを避ける。
-  const fcv = document.createElement("canvas");
-  fcv.width = 256; fcv.height = 320;
-  const fc = fcv.getContext("2d");
-  fc.fillStyle = "#e8e4d8"; fc.fillRect(0, 0, 256, 320);
-  fc.strokeStyle = "#555"; fc.lineWidth = 2;
-  fc.strokeRect(10, 10, 236, 300);
-  fc.fillStyle = "#222";
-  fc.font = "bold 26px serif"; fc.textAlign = "center";
-  fc.fillText("重加算税", 128, 46);
-  fc.font = "11px sans-serif";
-  for (let r = 0; r < 6; r++) {
-    fc.strokeStyle = "#888"; fc.lineWidth = 1;
-    fc.strokeRect(20, 66 + r * 40, 216, 34);
-  }
-  fc.fillStyle = "#111";
-  fc.fillRect(52, 130, 42, 30);   // 目
-  fc.fillRect(162, 130, 42, 30);  // 目
-  const faceTex = new THREE.CanvasTexture(fcv);
-  faceTex.colorSpace = THREE.SRGBColorSpace;
+  // --- 顔＝紙の通知書プレート（+z 面に配置） ---
+  const faceTex = loadTex("./assets/textures/monster_face.jpg", true);
+  const faceMat = new THREE.MeshStandardMaterial({
+    map: faceTex,
+    roughness: 0.88,
+    metalness: 0.02
+  });
   const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.34, 0.43),
-    new THREE.MeshBasicMaterial({ map: faceTex })
+    new THREE.PlaneGeometry(0.34, 0.45),
+    faceMat
   );
   face.position.set(0, 1.87, 0.27);
   g.add(face);
@@ -2105,7 +2134,7 @@ function ending(key) {
 }
 
 /* ---------- monster AI ---------- */
-let stepAcc = 0;
+let stepAcc = 0, stepGap = 1.1;
 function monsterUpdate(dt) {
   if (!mob.active) {
     if (state === "PLAY") $("vignette").style.opacity = 0;
@@ -2174,14 +2203,17 @@ function monsterUpdate(dt) {
   // 【なぜ重要か】隠れて怪人の位置を推測するのがこのゲームの核なのに、v13までは
   // 距離減衰だけで方向が分からず、音が情報として機能していなかった。
   stepAcc += dt * sp;
-  if (stepAcc > 1.1) {
+  // 【歩幅もばらつかせる】音そのもののばらつき（audio.js の vary）だけでは
+  // **一定間隔で鳴ること自体**が機械的に聞こえる。人間の歩行は等間隔ではないし、
+  // 引きずるような歩き方なら余計に崩れる。次の1歩ごとに閾値を引き直す。
+  if (stepAcc > stepGap) {
     stepAcc = 0;
+    stepGap = 0.95 + Math.random() * 0.3;   // 1.1 を中心に ±15% ほど
     const vol = Math.max(0, 0.4 - pd * 0.03);
-    // body と snap を1歩ごとに揺らして、同じ音の連打に聞こえないようにする。
-    // 【body を 300 付近から下げすぎないこと】ブラウンノイズを通すローパスの上限なので、
-    // 下げると帯域が狭くなって音高が立ち、バスドラ感が戻る（audio.js のコメント参照）。
-    if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z),
-      body: 290 + Math.random() * 60, snap: 48 + Math.random() * 16 });
+    // 【音の値はここに書かない】body / peta / snap / tone は実聴で決めた値が
+    // audio.js の既定になっている。ここで上書きすると試聴台で決めた音と本編がずれるので、
+    // 渡すのは定位と「1歩ごとにばらつかせる」指示だけにする。
+    if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z), vary: 1 });
   }
   // 接近ビネット
   if (state === "PLAY") {
