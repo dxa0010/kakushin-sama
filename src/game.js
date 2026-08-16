@@ -243,7 +243,9 @@ const MAXANISO = renderer.capabilities.getMaxAnisotropy();
 {
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.12;
+  // RoomEnvironment は明るい白スタジオなので、これを上げると床・壁が一律に
+  // 白っぽく底上げされて夜の暗さが死ぬ。0.12→0.06（金属の映り込みは残る程度）。
+  scene.environmentIntensity = 0.06;
 }
 
 /* ---------- post-processing ---------- */
@@ -455,8 +457,13 @@ const M = {
   floor:  new THREE.MeshStandardMaterial({
     map: loadTex("./assets/textures/hardwood2_diffuse.jpg", true, 3.2, 4.4),
     bumpMap: loadTex("./assets/textures/hardwood2_bump.jpg", false, 3.2, 4.4),
-    roughnessMap: loadTex("./assets/textures/hardwood2_roughness.jpg", false, 3.2, 4.4),
-    color: 0x726b62, bumpScale: 0.9, roughness: 0.84, metalness: 0.0,   // グレイッシュな茶（彩度を落とした板色）
+    // 【roughnessMap を意図的に外している】hardwood2_roughness.jpg は板面がかなり
+    // 低ラフネス（つや有り）で、three.js は roughness に**乗算**するため、roughness を
+    // 1.0 まで上げても板目に沿った細い白い鏡面の筋が残る（実測：0.92 も 1.0 も筋が出る）。
+    // 「床が白い反射光で光る」の直接原因だったので、マップを外して一律つや消しにした。
+    // 板の質感は diffuse + bumpMap で足りている。復活させるならJPEG側のレンジを
+    // 0.8〜1.0 に持ち上げてから使うこと。
+    color: 0x726b62, bumpScale: 0.9, roughness: 0.95, metalness: 0.0,   // グレイッシュな茶（彩度を落とした板色）
   }),
   ceil:   new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.96 }),
   wood:   new THREE.MeshStandardMaterial({ map: woodTex, normalMap: normalFromTex(woodTex, 1.4), roughness: 0.58 }),
@@ -1100,36 +1107,46 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(0.05, 0.3, 0.06, M.dark, 7.92, 1.85, -5.15);   // ドアクローザー的な影
 }
 // 窓（月と、遠い街）＋ひだ付きカーテン
+//
+// 【v11: 奥行きの作り直し】旧v10は夜景板(-7.91)とガラス(-7.885)がわずか2.5cmしか
+// 離れておらず、しかも枠(奥行き10cm)が薄かったため、カメラから見ると「夜景の絵が
+// カーテンのすぐ後ろに貼り付いている」ように見えた（ユーザー報告）。
+// 壁の室内面(-8.00)から動かせない一方、カーテンレール側は室内へ押し出す余地がある
+// ので、①枠の奥行きを2倍(10cm→20cm)にして「凹み」自体を深くする、②夜景板を
+// 凹みの最奥(-7.97)まで下げる、③ガラス・桟・カーテンレールは枠の室内側の面に
+// 合わせてまとめて10cm室内へ出す──という3点で、夜景板とガラスの間に18cm、
+// 凹み全体で27cm弱の空気層を作った。ガラス自体の見え方（色・不透明度）は
+// v10のまま（点光源のスペキュラ玉を避けるため意図的に控えめ）。
 {
   const WX = -7.96, WY = 1.72, WZ = -2.6;   // 窓中心（西壁, +x向き）
-  // 夜景（ガラスの奥。壁のわずか手前に置く）
+  // 夜景（凹みの最奥。壁の室内面(-8.00)のすぐ手前に置き、ガラスとの間を大きく空ける）
   const night = new THREE.Mesh(new THREE.PlaneGeometry(1.56, 1.02),
     new THREE.MeshBasicMaterial({ map: nightTex }));
   night.rotation.y = Math.PI / 2;
-  night.position.set(WX + 0.05, WY, WZ); scene.add(night);
-  // ガラス（夜景の手前。反射は控えめにして点光源のスペキュラ玉が出ないようにする）
+  night.position.set(WX - 0.01, WY, WZ); scene.add(night);
+  // ガラス（夜景から18cm手前。反射は控えめにして点光源のスペキュラ玉が出ないようにする）
   const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.56, 1.02),
     new THREE.MeshStandardMaterial({ color: 0x141d30, roughness: 0.5, metalness: 0.0,
       transparent: true, opacity: 0.10 }));
-  glass.rotation.y = Math.PI / 2; glass.position.set(WX + 0.075, WY, WZ); scene.add(glass);
-  // 木枠のケーシング（上下左右の見付け＋外周を一段太く）
+  glass.rotation.y = Math.PI / 2; glass.position.set(WX + 0.175, WY, WZ); scene.add(glass);
+  // 木枠のケーシング（奥行きを20cmに深くして「窓辺の凹み」を作る。上下左右の見付け＋外周を一段太く）
   const frameM = M.woodDark;
   const HW = 0.85, HH = 0.58;                // 窓開口の半幅・半高
-  vbox(0.10, 0.09, HW * 2 + 0.18, frameM, WX + 0.02, WY + HH + 0.04, WZ);  // 上枠
-  vbox(0.10, 0.09, HW * 2 + 0.18, frameM, WX + 0.02, WY - HH - 0.04, WZ);  // 下枠（この上に窓台）
-  vbox(0.10, HH * 2 + 0.18, 0.09, frameM, WX + 0.02, WY, WZ - HW - 0.04);  // 左枠
-  vbox(0.10, HH * 2 + 0.18, 0.09, frameM, WX + 0.02, WY, WZ + HW + 0.04);  // 右枠
-  // 窓台（下枠の前に張り出す）＋エプロン
-  vbox(0.20, 0.05, HW * 2 + 0.30, frameM, WX + 0.06, WY - HH - 0.09, WZ);  // 窓台（sill）
-  vbox(0.12, 0.10, HW * 2 + 0.10, frameM, WX + 0.03, WY - HH - 0.16, WZ);  // エプロン
-  // 十字の桟（縦1＋横1で4分割。細い木桟）
-  vbox(0.04, HH * 2, 0.035, frameM, WX + 0.045, WY, WZ);   // 縦桟
-  vbox(0.04, 0.035, HW * 2, frameM, WX + 0.045, WY, WZ);   // 横桟
-  // カーテンレール＋端のフィニアル
-  const rod = vcyl(0.02, 0.02, HW * 2 + 0.5, M.metal, WX + 0.16, WY + HH + 0.14, WZ, 10);
+  vbox(0.20, 0.09, HW * 2 + 0.18, frameM, WX + 0.07, WY + HH + 0.04, WZ);  // 上枠
+  vbox(0.20, 0.09, HW * 2 + 0.18, frameM, WX + 0.07, WY - HH - 0.04, WZ);  // 下枠（この上に窓台）
+  vbox(0.20, HH * 2 + 0.18, 0.09, frameM, WX + 0.07, WY, WZ - HW - 0.04);  // 左枠
+  vbox(0.20, HH * 2 + 0.18, 0.09, frameM, WX + 0.07, WY, WZ + HW + 0.04);  // 右枠
+  // 窓台（下枠の前に張り出す）＋エプロン（枠の室内側の面に合わせて張り出し量を調整）
+  vbox(0.20, 0.05, HW * 2 + 0.30, frameM, WX + 0.16, WY - HH - 0.09, WZ);  // 窓台（sill）
+  vbox(0.12, 0.10, HW * 2 + 0.10, frameM, WX + 0.13, WY - HH - 0.16, WZ);  // エプロン
+  // 十字の桟（縦1＋横1で4分割。細い木桟。ガラス面に重ねて「ガラスの桟」に見せる）
+  vbox(0.04, HH * 2, 0.035, frameM, WX + 0.175, WY, WZ);   // 縦桟
+  vbox(0.04, 0.035, HW * 2, frameM, WX + 0.175, WY, WZ);   // 横桟
+  // カーテンレール＋端のフィニアル（枠の見付けよりさらに室内側へ出し、窓との間に空間を作る）
+  const rod = vcyl(0.02, 0.02, HW * 2 + 0.5, M.metal, WX + 0.26, WY + HH + 0.14, WZ, 10);
   rod.rotation.x = Math.PI / 2;
   for (const s of [-1, 1]) {
-    vcyl(0.035, 0.035, 0.05, M.metal, WX + 0.16, WY + HH + 0.14, WZ + s * (HW + 0.27), 10)
+    vcyl(0.035, 0.035, 0.05, M.metal, WX + 0.26, WY + HH + 0.14, WZ + s * (HW + 0.27), 10)
       .rotation.x = Math.PI / 2;
   }
   // ひだ付きカーテン：縦の半円柱を並べて布のドレープを作る
@@ -1144,12 +1161,18 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
       const fold = new THREE.Mesh(
         new THREE.CylinderGeometry(depth, depth, len, 8, 1, false, Math.PI * 0.15, Math.PI * 0.7),
         M.fabric);
-      fold.position.set(WX + 0.16 + depth * 0.5, top - len / 2, z);
+      fold.position.set(WX + 0.26 + depth * 0.5, top - len / 2, z);
       fold.rotation.y = Math.PI;      // 山（凸側）を部屋側(+x)へ向ける
+      // 【影キャスト除外】月光スポット(moon)はカーテンのすぐ後ろにあるため、
+      // カーテンに影を落とさせると点光源からの発散で巨大な影になり、床の光溜まりが
+      // 窓の形ではなく細いスリットに潰れる。窓の形はゴボ(moon.map)側で表現するので、
+      // ここは影を落とさない。天井灯から見てもカーテンは壁際で影はほぼ出ない。
+      fold.userData.noShadow = true;
       scene.add(fold);
     }
     // 上端のヘッダー（ひだをまとめる帯）
-    vbox(0.10, 0.10, Math.abs(span) + 0.12, M.fabric, WX + 0.17, top - 0.02, (zStart + zEnd) / 2);
+    vbox(0.10, 0.10, Math.abs(span) + 0.12, M.fabric, WX + 0.27, top - 0.02, (zStart + zEnd) / 2)
+      .userData.noShadow = true;   // 同上
   }
   // 左右のカーテン（外側で束ね、中央寄りが開いて夜景が覗く）
   pleatedCurtain(WZ - HW - 0.10, WZ - 0.30, 7, 0.0);   // 左パネル（左端で束ねる）
@@ -1318,9 +1341,61 @@ const fixtureMats = [];
   fixtureMats.push(fm);
   vcyl(0.15, 0.15, 0.02, fm, x, 2.55, z, 12);
 });
-const moon = new THREE.PointLight(0x7f95c8, 0.3 * PT_SCALE * 0.6, 7, 2);
-moon.position.set(-7.3, 1.8, -2.6);
-scene.add(moon);
+// 月光（窓 → 床）。
+// 【重要】壁に開口は無い（窓は西壁に貼った夜景板＋ガラス板の“絵”）。よって壁の外に
+// 光源を置いても壁で遮られる。また裸のPointLightを室内に置くと「窓際に浮いた電球」に
+// なり、床全体を青白く洗って夜の暗さを壊す（v9まではこれで、床の白い反射光の原因だった）。
+// そこで SpotLight の投影テクスチャ（ゴボ = light.map）で“窓の形”を床に落とす。
+// 桟の十字はゴボ側の模様で表現するので、光源は桟・ガラスより手前（室内側）に置く
+// ＝ 窓まわりのジオメトリに自己遮蔽させない。カーテンだけは光源より前にあるので、
+// castShadow により本物の影を落とす（狙いどおり）。
+const moonGobo = makeTex(256, 256, (c, w, h) => {
+  const ss = (e0, e1, x) => {            // smoothstep
+    const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  const HA = 0.28, HB = 0.23, EDGE = 0.055;   // 窓開口の半幅・半高（UV比）と縁のボケ
+  const MW = 0.013, MS = 0.010;               // 桟の半幅と、そのボケ
+  const img = c.createImageData(w, h);
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const a = px / w - 0.5, b = py / h - 0.5;
+      // 開口のマスク（矩形＋ソフトエッジ）
+      const base = (1 - ss(HA - EDGE, HA + EDGE, Math.abs(a)))
+                 * (1 - ss(HB - EDGE, HB + EDGE, Math.abs(b)));
+      // 十字桟：|a| か |b| が小さいところを暗くする。完全な黒にはしない（回り込み分）
+      const mull = 0.18 + 0.82 * Math.min(
+        ss(MW, MW + MS, Math.abs(a)), ss(MW, MW + MS, Math.abs(b)));
+      // 月は高い位置にあるので、上端をわずかに強くして勾配を作る
+      const grad = 1 - 0.22 * (py / h);
+      const v = Math.round(255 * base * mull * grad);
+      const i = (py * w + px) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+    }
+  }
+  c.putImageData(img, 0, 0);
+});
+// makeTex の既定は RepeatWrapping。ゴボは繰り返すと錐台の外に窓が並んで写るので必ずクランプ。
+moonGobo.wrapS = moonGobo.wrapT = THREE.ClampToEdgeWrapping;
+
+// 【アングルが要】月は高い位置にあるので、光は窓の上端から急角度で差し込ませる。
+// 窓の中心高さ(1.72)から水平寄りに撃つと、床への足跡が奥へ細長く伸びて減衰で消え、
+// 「窓の形」ではなく細い滲みになる（実測済み）。開口上端(2.30)付近から床を狙う。
+const moon = new THREE.SpotLight(0x7f95c8, 5.5, 9, Math.PI / 6, 0.25, 1.0);
+// v11: 窓の奥行きを作り直した際、ガラス・カーテンレールをまとめて10cm室内へ寄せたので、
+// 光源も同じだけ室内へ（-7.80→-7.70）。ガラス(-7.785)より室内側という関係は維持。
+moon.position.set(-7.70, 2.26, -2.6);   // ガラス(-7.785)より室内側。桟・夜景板は背後になる
+moon.map = moonGobo;                     // 窓の形を床へ投影
+moon.castShadow = true;                  // 家具・カーテンが月光を遮る（map投影にも必要）
+moon.shadow.mapSize.set(1024, 1024);
+moon.shadow.bias = -0.0015;
+moon.shadow.normalBias = 0.03;
+moon.shadow.camera.near = 0.05;   // カーテンが光源のすぐ室内側にあるので near は詰めておく
+moon.shadow.camera.far = 9;
+const moonTarget = new THREE.Object3D();
+moonTarget.position.set(-6.4, 0, -2.6);  // 床（壁から約1.4m）を狙う。急角度なので足跡が窓形に収まる
+scene.add(moon, moonTarget);
+moon.target = moonTarget;
 const flash = new THREE.SpotLight(0xfff0cf, 1.5, 15, Math.PI/5.2, 0.7, 1.6);   // 目線の懐中電灯。明るすぎたので 9→1.5 に減光
 flash.castShadow = true;
 flash.shadow.mapSize.set(2048, 2048);
