@@ -164,24 +164,14 @@ function assignCopies() {
   });
 }
 assignCopies();
-/* ---------- 書類背景・異変画像のプリロード ---------- */
-const docImgs = {};
-function preloadDocImg(name, path) {
-  const img = new Image();
-  img.src = path;
-  docImgs[name] = img;
-}
-preloadDocImg("tax", "./assets/textures/doc_tax_base.jpg");
-preloadDocImg("receipt", "./assets/textures/doc_receipt_base.jpg");
-preloadDocImg("myna", "./assets/textures/doc_myna_base.jpg");
-preloadDocImg("memo", "./assets/textures/doc_memo_base.jpg");
-preloadDocImg("curse", "./assets/textures/stamp_curse.jpg");
-preloadDocImg("face", "./assets/textures/monster_face.jpg");
-
+/* 書類の描画は Canvas 手描きに戻してある（v22）。
+   一度は写真ベースの用紙テクスチャ（doc_*.jpg）を背景に敷いたが、紙の柄が
+   項目欄の罫線・文字と干渉して**異変が読めなくなった**。このゲームは「どこか
+   一箇所ありえない」を見抜くのが本編なので、背景の質感より可読性が優先される。
+   assets/textures/doc_*.jpg / stamp_curse.jpg は参照していない（ファイルは残置）。 */
 function buildSpec(it) {
   const d = DOCSPECS[it.id];
-  const kindMap = { shiharai: "tax", iryohi: "receipt", mycard: "myna", reader: "memo", password: "memo" };
-  const s = { id: it.id, kind: kindMap[it.id] || "tax", title: d.title, issuer: d.issuer, rows: d.rows.map(r => [...r]),
+  const s = { title: d.title, issuer: d.issuer, rows: d.rows.map(r => [...r]),
               era: "令和7年分", name: PLAYER_NAME, date: "令和8年1月31日",
               stampFlip: false, mirror: false };
   if (it.copy.fake) it.copy.anom.apply(s);
@@ -192,110 +182,58 @@ function drawDoc(spec) {
   c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
   c.textBaseline = "alphabetic";
   c.fillStyle = "#ece7d8"; c.fillRect(0, 0, w, h);
-
-  // --- リアル背景テクスチャの描画 ---
-  const bg = docImgs[spec.kind];
-  if (bg && bg.complete && bg.naturalWidth) {
-    c.drawImage(bg, 0, 0, w, h);
-    // 文字の視認性を高めつつテクスチャの風合いを活かす半透明オーバーレイ
-    c.fillStyle = "rgba(242, 238, 228, 0.40)";
-    c.fillRect(0, 0, w, h);
-  }
-
   if (spec.mirror) { c.translate(w, 0); c.scale(-1, 1); }
   if (spec.blur) { c.shadowColor = "rgba(40,38,30,0.85)"; c.shadowBlur = 3.5; }
-
-  // 異変：透かしの顔
   if (spec.mark) {
+    // 透かし：うっすらと、あの顔
     c.save();
-    const faceImg = docImgs.face;
-    if (faceImg && faceImg.complete && faceImg.naturalWidth) {
-      c.globalAlpha = 0.22;
-      c.drawImage(faceImg, w/2 - 100, h/2 - 130, 200, 260);
-    } else {
-      c.globalAlpha = 0.07; c.fillStyle = "#1a1815";
-      c.fillRect(w/2 - 70, h/2 - 90, 140, 180);
-      c.globalAlpha = 0.11; c.fillStyle = "#000";
-      c.fillRect(w/2 - 45, h/2 - 40, 32, 24);
-      c.fillRect(w/2 + 13, h/2 - 40, 32, 24);
-    }
+    c.globalAlpha = 0.07; c.fillStyle = "#1a1815";
+    c.fillRect(w/2 - 70, h/2 - 90, 140, 180);
+    c.globalAlpha = 0.11; c.fillStyle = "#000";
+    c.fillRect(w/2 - 45, h/2 - 40, 32, 24);
+    c.fillRect(w/2 + 13, h/2 - 40, 32, 24);
     c.restore();
   }
-
-  // 書類の主枠線
-  c.strokeStyle = "rgba(110, 105, 90, 0.75)"; c.lineWidth = 2;
-  c.strokeRect(14, 14, w - 28, h - 28);
-
-  // 異変：朱の呪
+  c.strokeStyle = "#8a8574"; c.lineWidth = 2; c.strokeRect(14, 14, w - 28, h - 28);
   if (spec.ju) {
     c.save();
-    c.translate(58, 58); c.rotate(-0.12);
-    const curseImg = docImgs.curse;
-    if (curseImg && curseImg.complete && curseImg.naturalWidth) {
-      c.globalAlpha = 0.85;
-      c.drawImage(curseImg, -36, -36, 72, 72);
-    } else {
-      c.globalAlpha = 0.75; c.fillStyle = "#b23b2e";
-      c.font = "34px serif"; c.textAlign = "center"; c.textBaseline = "middle";
-      c.fillText("呪", 0, 0);
-    }
+    c.translate(54, 54); c.rotate(-0.12);
+    c.globalAlpha = 0.75; c.fillStyle = "#b23b2e";
+    c.font = "34px serif"; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText("呪", 0, 0);
     c.restore();
   }
-
-  // 題字
   c.fillStyle = "#22201c"; c.textAlign = "center";
-  c.font = "600 30px 'Hiragino Mincho ProN','Yu Mincho',serif";
-  c.fillText(spec.title, w / 2, 74);
-
-  // 年号
-  c.textAlign = "right"; c.font = "14px sans-serif"; c.fillStyle = "#4a463c";
-  c.fillText(spec.era, w - 28, 42);
-
-  // 氏名欄
-  c.textAlign = "left"; c.strokeStyle = "rgba(130, 125, 110, 0.65)"; c.lineWidth = 1;
-  c.fillStyle = "rgba(255, 255, 255, 0.45)";
-  c.fillRect(26, 102, w - 52, 46);
-  c.strokeRect(26, 102, w - 52, 46);
-  c.font = "13px sans-serif"; c.fillStyle = "#5a564a"; c.fillText("氏名", 38, 130);
+  c.font = "600 32px 'Hiragino Mincho ProN','Yu Mincho',serif";
+  c.fillText(spec.title, w / 2, 78);
+  c.textAlign = "right"; c.font = "15px sans-serif"; c.fillStyle = "#4a463c";
+  c.fillText(spec.era, w - 28, 44);
+  c.textAlign = "left"; c.strokeStyle = "#9a9484"; c.lineWidth = 1;
+  c.strokeRect(26, 106, w - 52, 46);
+  c.font = "14px sans-serif"; c.fillStyle = "#5a564a"; c.fillText("氏名", 38, 134);
   c.font = "21px 'Hiragino Mincho ProN','Yu Mincho',serif"; c.fillStyle = "#22201c";
-  c.fillText(spec.name, 120, 132);
-
-  // 項目行
+  c.fillText(spec.name, 120, 136);
   spec.rows.forEach((r, i) => {
-    const y = 166 + i * 58;
-    c.fillStyle = "rgba(255, 255, 255, 0.40)";
-    c.fillRect(26, y, w - 52, 46);
-    c.strokeRect(26, y, w - 52, 46);
-    c.font = "13px sans-serif"; c.fillStyle = "#5a564a"; c.fillText(r[0], 38, y + 28);
+    const y = 172 + i * 60;
+    c.strokeRect(26, y, w - 52, 48);
+    c.font = "13px sans-serif"; c.fillStyle = "#5a564a"; c.fillText(r[0], 38, y + 29);
     c.font = "17px ui-monospace,monospace"; c.fillStyle = "#22201c";
-    c.textAlign = "right"; c.fillText(r[1], w - 40, y + 30); c.textAlign = "left";
+    c.textAlign = "right"; c.fillText(r[1], w - 40, y + 31); c.textAlign = "left";
   });
-
-  // 発行元・日付
-  c.font = "13px sans-serif"; c.fillStyle = "#3c3930";
+  c.font = "14px sans-serif"; c.fillStyle = "#3c3930";
   c.fillText("発行：" + spec.issuer, 30, h - 68);
   c.fillText(spec.date, 30, h - 38);
-
-  // 印鑑・異変印
   c.save();
-  c.translate(w - 78, h - 74);
+  c.translate(w - 80, h - 78);
   if (spec.stampFlip) c.rotate(Math.PI);
+  c.globalAlpha = 0.85; c.strokeStyle = "#b23b2e"; c.lineWidth = 2.4;
+  c.beginPath(); c.arc(0, 0, 30, 0, Math.PI * 2); c.stroke();
   if (spec.stampEye) {
-    const curseImg = docImgs.curse;
-    if (curseImg && curseImg.complete && curseImg.naturalWidth) {
-      c.globalAlpha = 0.95;
-      c.drawImage(curseImg, -34, -34, 68, 68);
-    } else {
-      c.globalAlpha = 0.85; c.strokeStyle = "#b23b2e"; c.lineWidth = 2.4;
-      c.beginPath(); c.arc(0, 0, 30, 0, Math.PI * 2); c.stroke();
-      c.fillStyle = "#f4f0e6";
-      c.beginPath(); c.ellipse(0, 0, 16, 9, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = "#1a1815";
-      c.beginPath(); c.arc(0, 0, 4.5, 0, Math.PI * 2); c.fill();
-    }
+    c.fillStyle = "#f4f0e6";
+    c.beginPath(); c.ellipse(0, 0, 16, 9, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = "#1a1815";
+    c.beginPath(); c.arc(0, 0, 4.5, 0, Math.PI * 2); c.fill();
   } else {
-    c.globalAlpha = 0.85; c.strokeStyle = "#b23b2e"; c.lineWidth = 2.4;
-    c.beginPath(); c.arc(0, 0, 30, 0, Math.PI * 2); c.stroke();
     c.fillStyle = "#b23b2e"; c.font = "26px serif"; c.textAlign = "center"; c.textBaseline = "middle";
     c.fillText("印", 0, 2);
   }
@@ -633,7 +571,10 @@ const M = {
   screen:   new THREE.MeshStandardMaterial({ color: 0x0b0e14, emissive: 0x3a5f96, emissiveIntensity: 1.7, roughness: 0.5, metalness: 0.0 }),  // 液晶面（青白くはっきり点灯。机の主光源。つや消しで映り込みの白点を抑える）
   ceramic:  new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.35, metalness: 0.0 }),   // マグカップの陶器（少しつや）
   penBody:  new THREE.MeshStandardMaterial({ color: 0x202227, roughness: 0.55 }),                   // ペン軸
-  lampShade:new THREE.MeshStandardMaterial({ color: 0x2b2d33, roughness: 0.6, metalness: 0.2 }),    // デスクライトの傘（黒）
+  // デスクライトの傘（黒）。openEnded のコーンなので DoubleSide が必須。片面だと口を
+  // のぞく角度で内壁も外壁も裏面カリングされ、法線がグレージングする細い帯＝「黒い板」
+  // にしか見えなくなる（撮影で確認）。
+  lampShade:new THREE.MeshStandardMaterial({ color: 0x2b2d33, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide }),
   lampArm:  new THREE.MeshStandardMaterial({ color: 0x3a3c42, roughness: 0.4, metalness: 0.6 }),    // アーム
   form:     new THREE.MeshStandardMaterial({ color: 0xe9e4d6, roughness: 0.96 }),                   // 確定申告フォーム用紙（白めのオフホワイト）
   formInk:  new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.9 }),                    // 用紙の印字（薄い罫線・文字塊）
@@ -736,122 +677,46 @@ vbox(0.34, 0.12, 1.56, M.woodDark, 0, 2.06, 2.75);
 vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
 
 /* ---------- 家具（当たり判定は従来のAABBを維持） ---------- */
-// ベッド（実写PBRの金属フレーム＋乱れた寝具）
+// ベッド（木製プラットフォーム＋寝具）
 {
   solids.push({ x1: -7.5, z1: -5.75, x2: -5.6, z2: -3.7 });
   aoPatch(-6.55, -4.7, 2.2, 2.3);
-  // ロータイプの木製プラットフォームベッド（脚・フレーム・ヘッドボード・すのこ縁）
+  /* 【v22で整理した】v20〜v21 では「布らしさ」を出そうとして、掛け布団のまわりに
+     縁の巻き込み（左右＋足元）・側面へ垂れる布6枚・足元の垂れ・キルトの畝7本・
+     足元でめくれた層・折り返しの端、ヘッドボードの落とし込みパネルと框4本、
+     さらに枕2つ——合わせて 25 個以上の薄い箱を足していた。個々の理屈は通っていたが、
+     並べると寸法の近い箱が何層にも重なり、ベッドが家具ではなく「積み木」に見えた。
+     細部を足すより点数を減らし、フレーム→マットレス→シーツ→掛け布団→枕 の
+     5層が一目で読める状態を優先する。以下は「無いと何が読めなくなるか」で選んだ分だけ。
+     残した部品の数値は当時のまま。撤去した部品が何をしようとしていたか、なぜ
+     足す方向が行き詰まったかは docs/HANDOFF.md セクション13 に全部残してある。 */
   [[-6.98, -5.55], [-6.12, -5.55], [-6.98, -3.85], [-6.12, -3.85]].forEach(([x, z]) =>
     tleg(0.035, 0.028, 0.18, M.steel, x, 0.09, z));
   rbox(0.98, 0.14, 1.96, M.oak, -6.55, 0.25, -4.7, 0, 0.025);            // フレーム
   rbox(0.9, 0.04, 1.88, M.oakDark, -6.55, 0.335, -4.7, 0, 0.012);        // すのこ天端
-  // ヘッドボード（框を室内側へ出し、その内側にパネルを沈める）
-  //
-  // 【v20で直した】旧版はパネルの前面が z=-5.60、縦フレームの前面が z=-5.615 で、
-  // パネルの方が 1.5cm 室内側に出ていた。つまり「落とし込み（=凹み）」という
-  // コメントの意図と逆で、框がパネルの裏に隠れて額縁として機能していなかった。
-  // 框を -5.598 まで出し、パネルを本体前面(-5.625)とほぼ面一に戻して関係を反転させる。
-  // 上下にも桟を入れて四方を框で囲む（1辺でも欠けると凹みに見えない）。
+  // ヘッドボードは本体＋笠木の2枚だけ。落とし込みパネル・縦框・上下桟（計5枚）は
+  // 厚さ 1.6〜7cm の板が同じ場所に重なるので、額縁ではなく段々の壇に見えていた。
   rbox(0.98, 0.58, 0.07, M.oak, -6.55, 0.55, -5.66, 0, 0.02);            // 本体（前面 z=-5.625、y 0.26〜0.84）
-  rbox(0.86, 0.42, 0.016, M.oakDark, -6.55, 0.55, -5.617, 0, 0.006);     // 中央パネル（前面 -5.609、y 0.34〜0.76）
-  [-0.44, 0.44].forEach(zx =>                                            // 縦框（前面 -5.598 ＝ パネルより 1.1cm 手前）
-    vbox(0.06, 0.58, 0.07, M.oak, -6.55 + zx, 0.55, -5.633));
-  rbox(0.86, 0.06, 0.07, M.oak, -6.55, 0.79, -5.633, 0, 0.014);          // 上桟（パネル上端 0.76 に接する）
-  rbox(0.86, 0.06, 0.07, M.oak, -6.55, 0.31, -5.633, 0, 0.014);          // 下桟（パネル下端 0.34 に接する）
   rbox(1.0, 0.06, 0.07, M.oakDark, -6.55, 0.85, -5.633, 0, 0.014);       // 笠木（天端 0.84 にかぶせる）
   // 寝具（角丸で柔らかく。素材ごとに色を分けて“のっぺり白い塊”を回避）
   rbox(0.88, 0.18, 1.84, M.mattress, -6.55, 0.44, -4.7, 0, 0.06, 5);     // マットレス（面取り大きめ＝弾力感）
   rbox(0.86, 0.03, 1.82, M.sheet, -6.55, 0.54, -4.7, 0, 0.03, 3);        // 敷きシーツ（マットレス上端を覆う）
-  // 掛け布団：ふくらんだ本体＋キルトの縫い目＋足側でめくれた層＋折り返した端
-  const duvet = rbox(0.86, 0.2, 1.16, M.blanket, -6.55, 0.62, -4.2, 0.015, 0.09, 5);  // 本体（厚くふくらむ）
-  // キルトの縫い目（掛け布団の天面に細い暗strip。天面より上に出さないと1本も見えない）
-  //
-  // 【v20で直した】旧版は y=0.715 で、掛け布団の天面 0.72 より 5mm 低く完全に埋没していた。
-  // 長さも 0.82／1.08 と、RoundedBox の平らな天面（面取り r=0.09 を除いた ±0.34／±0.49）
-  // より長く、はみ出した端だけが丸まった肩から顔を出して「黒い点線が飛んでいる」
-  // 状態になっていた（撮影で確認）。天面のすぐ上＋平らな範囲に収まる長さへ直す。
-  // 材は M.oakDark ではなく掛け布団と同じ M.blanket を使う。天面より上に出した時点で
-  // 暗色の strip は「布に描かれた黒い格子」として読めてしまい（撮影で確認）、
-  // 絵の中で一番人工的な要素になった。同色の細い畝にして、陰影と AO に任せる。
-  for (let qz = -0.42; qz <= 0.42; qz += 0.28)
-    vbox(0.64, 0.006, 0.010, M.blanket, -6.55, 0.7215, -4.2 + qz);       // 横の畝（天面から 4.5mm）
-  for (let qx = -0.28; qx <= 0.28; qx += 0.28)
-    vbox(0.010, 0.006, 0.94, M.blanket, -6.55 + qx, 0.7215, -4.2);       // 縦の畝
-  rbox(0.82, 0.14, 0.40, M.blanket, -6.52, 0.68, -3.90, -0.06, 0.07, 5); // 足元でめくれてふくらむ層
-  // 頭側で折り返した掛け布団の端（裏地＝シーツ色が見える）
-  //
-  // 【v20で直した】旧版は z=-4.86 で、掛け布団の頭側の縁(-4.78)より 8cm 頭側へ
-  // はみ出していた。はみ出した分は敷きシーツ(上面 0.555)の 12cm 上に何の支えもなく
-  // 浮いており、真横から見ると板が宙に張り付いて見えた。縁に載る位置まで引き戻す。
-  const foldBack = rbox(0.80, 0.055, 0.24, M.sheet, -6.55, 0.735, -4.68, 0.02, 0.025, 4);
-  foldBack.rotation.x = -0.12;
-  /* 側面へ垂れる掛け布団の端（左右）
-     ------------------------------------------------------------------
-     【v20で作り直した】旧版は 0.28×0.5 と 0.22×0.4 のスラブを x=-6.02 / -7.04
-     ——すなわちフレームの x 端そのもの——に置き、y は 0.09〜0.59 だった。つまり
-       フレーム(y 0.18〜0.32) → すのこ(0.315〜0.355) → マットレス(0.35〜0.53)
-     を縦に貫通しており、右側はさらに手前の脚(x=-6.12, z=-3.85)まで突き抜けていた。
-     AOで接触部が暗くなった結果、貫通が絵の上でもはっきり見えるようになった。
-
-     直し方は3点。
-       ① 垂れの起点を作る: マットレス側面の外側へ「縁の巻き込み」を置く。これは
-          y 0.55〜0.65 でフレーム(〜0.32)・マットレス(〜0.53)より上なので、x が
-          重なっても貫通しない。
-       ② 垂れ布はフレームの外側だけを占める薄い板にする（右 x≧-6.06、左 x≦-7.04）。
-       ③ 裾を必ずフレーム天端(0.32)より上で止める。y で交わらなければ z を制限する
-          必要がなく、脚(z -3.85 / -5.55)も避けなくてよい。
-     いずれも「重なっていないこと」を数値で確かめられるように寸法をコメントに残す。
-
-     【さらに v20 で作り直した】最初の修正版は貫通は消えたが、垂れ布が z -4.5〜-4.0 の
-     0.5m しか覆っておらず、撮影すると「布」ではなく側面から突き出した2枚のタブに
-     見えた。掛け布団の overhang は本来その全長に沿って垂れるものなので、③ の
-     気付きに従って掛け布団の z 範囲(-4.78〜-3.62)ほぼ全体に伸ばす。輪郭が完全な
-     長方形になると鞄に見えるため、片側3枚に割って丈を変え、裾を揃えない。
-     上端は全て y=0.591 で巻き込みの中に差し込んで一続きに見せる。
-
-     ただし3枚の間に隙間を空けると、そこから背後のフレーム（暗色）が縦線として覗き、
-     今度は「引き出しが3つ並んでいる」ように見えた（撮影で確認）。z を隣と共有させて
-     連続させ、面取りも 0.010 まで落として継ぎ目を消す。振り角だけ隣と変えてあるので
-     境界には数mmの折れが残り、それが布の畳まれ目として効く。 */
-  rbox(0.10, 0.10, 1.13, M.blanket, -6.07, 0.60, -4.185, 0, 0.045, 4);   // 右: 縁の巻き込み（x -6.12〜-6.02 / y 0.55〜0.65 / z -4.75〜-3.62）
-  const flapR1 = rbox(0.045, 0.24, 0.41, M.blanket, -6.010, 0.469, -4.545, 0, 0.010, 4);
-  flapR1.rotation.z = 0.10;                            // （x -6.044〜-5.976 / 裾 0.347 / z -4.75〜-4.34）
-  const flapR2 = rbox(0.045, 0.22, 0.34, M.blanket, -6.010, 0.480, -4.170, 0, 0.010, 4);
-  flapR2.rotation.z = 0.06;                            // （x -6.041〜-5.979 / 裾 0.369 / z -4.34〜-4.00）
-  const flapR3 = rbox(0.045, 0.25, 0.32, M.blanket, -6.010, 0.465, -3.840, 0, 0.010, 4);
-  flapR3.rotation.z = 0.08;                            // （x -6.043〜-5.977 / 裾 0.338 / z -4.00〜-3.68）
-  rbox(0.09, 0.09, 1.11, M.blanket, -7.025, 0.59, -4.175, 0, 0.04, 4);   // 左: 縁の巻き込み（x -7.07〜-6.98 / y 0.545〜0.635 / z -4.73〜-3.62）
-  const flapL1 = rbox(0.04, 0.24, 0.39, M.blanket, -7.085, 0.470, -4.535, 0, 0.010, 4);
-  flapL1.rotation.z = -0.09;                           // （x -7.116〜-7.054 / 裾 0.348 / z -4.73〜-4.34）
-  const flapL2 = rbox(0.04, 0.22, 0.33, M.blanket, -7.075, 0.480, -4.175, 0, 0.010, 4);
-  flapL2.rotation.z = -0.05;                           // （x -7.100〜-7.050 / 裾 0.369 / z -4.34〜-4.01）
-  // 中央だけ裾を 4〜5cm 上げると、そこから背後のフレームが暗い切り欠きとして覗いて
-  // 「破れ」に見えたので、隣との差を 2cm に詰めた（不揃いは残すが穴には見せない）。
-  const flapL3 = rbox(0.04, 0.23, 0.33, M.blanket, -7.082, 0.475, -3.845, 0, 0.010, 4);
-  flapL3.rotation.z = -0.08;                           // （x -7.111〜-7.053 / 裾 0.359 / z -4.01〜-3.68）
-  /* 足元で左右の巻き込みを繋ぐ（足元から見た時に、左右の巻き込みが「ベッドの手すり」
-     のように独立した2本の棒として見えていた。掛け布団の縁は本来ぐるりと回るので、
-     足元側にも同じ断面を渡して角を閉じる）。
-     足元のふくらみ(z -4.10〜-3.70)より足側に置くので干渉しない。
-     y 0.44〜0.65 はフレーム(〜0.32)・脚(〜0.18)より上なので、z が近くても貫通しない。 */
-  rbox(1.05, 0.10, 0.10, M.blanket, -6.545, 0.60, -3.620, 0, 0.045, 4);  // 足元の巻き込み（x -7.07〜-6.02 / z -3.67〜-3.57）
-  rbox(1.00, 0.16, 0.045, M.blanket, -6.545, 0.52, -3.635, 0, 0.010, 4); // 足元の垂れ（y 0.44〜0.60 / z -3.657〜-3.612）
-  /* 枕2つ（ヘッドボード際に横並び）
-     ------------------------------------------------------------------
-     【v20で作り直した】旧版は幅 0.62 と 0.56 の枕を x=-6.40 / -6.74 に置いていた。
-     中心間が 0.34 しかないので x で 0.25m 重なり、しかも y がほぼ同じ
-     （0.557〜0.683 と 0.546〜0.654）だったため「重ねた」ではなく「同じ体積を
-     共有した」状態で、撮影すると白い板が3枚ずれて生えているように見えた。
-     さらに両端がマットレス(x -6.99〜-6.11)から 4〜5cm はみ出して宙に浮いていた。
-     幅 0.40 ずつの横並びにして中央で 5mm だけ接触させ、どちらも底面を
-     シーツ上面(0.555)に合わせる。使用感は AO の接触影に任せる。 */
-  const pil1 = rbox(0.40, 0.14, 0.36, M.pillow, -6.335, 0.618, -5.36, 0.10, 0.06, 5);
-  const pil2 = rbox(0.40, 0.12, 0.32, M.pillow, -6.765, 0.609, -5.33, -0.12, 0.055, 5);
-  [pil1, pil2].forEach(p => p.scale.y = 0.9);                            // 少しつぶれた枕（高さ 0.126 / 0.108）
-  // 旧版はここに「中央のへこみ」として厚さ 1cm の板を y=0.66 に置いていたが、枕は
-  // 面取り半径が高さの半分まで丸められた pill 形で平らな天面が無く、この板は枕の
-  // 内側に完全に埋没して一度も見えていなかった。AO が枕とシーツ・枕同士の接触を
-  // 暗くするようになったので、板は置かない。
+  /* 掛け布団は1個で済ませる。要点は「厚み」より「マットレスに被っていること」。
+     ・幅 0.96 でマットレス(x -6.99〜-6.11)より片側 3.5cm 外へ出す
+     ・底面 0.515 をマットレス天端 0.53 より 1.5cm 下げ、縁が肩に乗り越えるようにする
+     ・厚みは 0.12（旧 0.20）。0.20 だと側面から見た時に白いマットレスの上へ
+       “2枚目のマットレス”を積んだように見えた（撮影で確認）。布は薄くていい。
+     これで縁の巻き込みと垂れ布（10枚）は要らなくなる。柔らかい物どうしは数cm
+     重ねないと必ず浮くので、マットレス・シーツとの食い込みは意図的。
+     y 0.515〜0.635 はフレーム天端(0.32)・脚(0.18)より上なので x が重なっても貫通しない。
+     足側は z=-3.70 でフレーム端(-3.72)まで。マットレス足元(-3.78)より 8cm 出るぶんが
+     フレームの上に垂れる。頭側は -4.90 で止め、枕(-5.18〜-5.54)との間に敷きシーツの
+     白を 28cm 残す＝「めくったまま寝ていない」状態を、部品を足さずに輪郭で出す。 */
+  rbox(0.96, 0.12, 1.20, M.blanket, -6.55, 0.575, -4.30, 0.015, 0.055, 5);
+  // 枕は1つ（v22）。2つ並べると枕どうしの隙間もヘッドボードとの間も読めず、白い板が
+  // ずれて重なっているだけに見えた。マットレス幅の内側に収め、底面をシーツ上面 0.555 に。
+  const pillow = rbox(0.52, 0.15, 0.36, M.pillow, -6.55, 0.623, -5.36, 0.08, 0.07, 5);
+  pillow.scale.y = 0.9;                                                  // 少しつぶれた枕（高さ 0.135 / y 0.556〜0.691）
 }
 // キッチン（白メラミンの量産ユニット。扉・目地・バー取っ手・蛇口・五徳まで）
 {
@@ -925,34 +790,67 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(0.02, 0.24, 0.02, M.steel, -7.43, 1.78, 4.75);
 
   // --- ケトル（奥バーナー z=2.85。丸い胴＋注ぎ口＋ハンドル＋つまみ） ---
-  const kettle = vcyl(0.11, 0.13, 0.17, M.metal, -7.05, 1.02, 2.85, 16);
-  vcyl(0.115, 0.09, 0.05, M.metal, -7.05, 1.13, 2.85, 16);          // 肩
-  vcyl(0.04, 0.05, 0.03, M.dark, -7.05, 1.18, 2.85, 12);           // 蓋つまみ
-  const spout = vcyl(0.018, 0.032, 0.14, M.metal, -6.9, 1.08, 2.85, 10);  // 注ぎ口
+  // 五徳の天端は輪(torus)の上端 0.957。旧版は胴の中心を 1.02 に置いていたので下端が
+  // 0.935 で、五徳の桟(0.942〜0.954)と輪を 2cm 呑み込んでいた（桟は 0.2m あって胴より
+  // 外に出るため、桟がケトルに突き刺さって見えていた）。0.957 に接地させる。
+  const kettle = vcyl(0.11, 0.13, 0.17, M.metal, -7.05, 1.042, 2.85, 16);   // 胴 y 0.957〜1.127
+  vcyl(0.115, 0.09, 0.05, M.metal, -7.05, 1.147, 2.85, 16);         // 肩 y 1.122〜1.172（胴天端に 5mm 噛ませる）
+  vcyl(0.04, 0.05, 0.03, M.dark, -7.05, 1.182, 2.85, 12);          // 蓋つまみ y 1.167〜1.197
+  const spout = vcyl(0.018, 0.032, 0.14, M.metal, -6.9, 1.102, 2.85, 10);  // 注ぎ口
   spout.rotation.z = -0.7;
+  // 提げ手は胴をまたぐ弧。torus の輪は既定で XY 平面（軸が Z）なので回転は不要。
+  // 旧版は rotation.x=π/2 で輪を水平にしていたため、蓋のまわりに平たい半円が
+  // 浮いているだけに見えていた。両端(x -7.05±0.09, y 1.160)を肩の内側に埋める。
   const kHandle = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.014, 8, 16, Math.PI), M.dark);
-  kHandle.position.set(-7.05, 1.2, 2.85); kHandle.rotation.x = Math.PI / 2; scene.add(kHandle);
+  kHandle.position.set(-7.05, 1.160, 2.85); scene.add(kHandle);      // 頂点 y 1.250（つまみ天端 1.197 の上）
 
-  // --- 水切りかご（シンク手前 z≈3.55。ワイヤー枠＋皿2枚を立てる＋伏せマグ） ---
+  /* --- 水切りかご（シンク手前。ワイヤー枠に皿2枚を立て、脇に伏せマグ） ---
+     旧版は4つ壊れていた（AO 導入後の撮影で発覚）。
+     ① 受け皿を y 0.895〜0.915 に置いていた。天板は rbox(...,0.885,...) なので上面は
+        0.910 で、受け皿が天板に 1.5cm めり込んでいた（中心座標を上面と誤読した型）。
+     ② CylinderGeometry の軸は Y なので、厚み 0.015・半径 0.11 の円柱は「既に水平な円盤」。
+        立てるには rotation.x ≒ π/2 が必要なのに 0.05+i*0.02（約3度）しか与えておらず、
+        「立てた皿」は寝たままだった。
+     ③ その2枚が y 1.02・半径 0.11・z 間隔 0.14 で、互いに 8cm 分めり込んでいた。
+        しかも下端 1.0125 は受け皿天面から 10cm 浮いていた。
+     ④ 伏せマグ（y 0.905〜0.995）が受け皿天面 0.915 を 1cm 貫通していた。
+     縦桟も z 方向ではなく x 方向に並べていたので、皿を立てても挟む隙間が無かった。 */
   const wire = new THREE.MeshStandardMaterial({ color: 0x9a9ea3, roughness: 0.4, metalness: 0.6 });
-  vbox(0.34, 0.02, 0.5, wire, -7.05, 0.905, 3.55);                 // 受け皿
-  // 側面ワイヤー（細い縦桟を数本）
-  for (let i = -2; i <= 2; i++) vbox(0.012, 0.14, 0.012, wire, -7.05 + i * 0.07, 0.98, 3.32);
-  for (let i = -2; i <= 2; i++) vbox(0.012, 0.14, 0.012, wire, -7.05 + i * 0.07, 0.98, 3.78);
-  // 立てた皿2枚（薄い円盤を縦に）
-  [3.48, 3.62].forEach((pz, i) => {
-    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.015, 20), M.ceramic);
-    plate.position.set(-7.05, 1.02, pz); plate.rotation.x = 0.05 + i * 0.02; scene.add(plate);
+  const dpY = 0.930;                                                // 受け皿の天面（＝皿とマグの接地面）
+  vbox(0.34, 0.02, 0.5, wire, -7.05, dpY - 0.01, 3.53);            // 受け皿 x -7.22〜-6.88 / y 0.910〜0.930 / z 3.28〜3.78
+  // 歯（皿を挟む縦桟）を z 方向に5本並べ、上下2本の横桟で繋ぐ。皿は歯と歯の隙間に立つ。
+  const rackZ = [3.36, 3.43, 3.50, 3.57, 3.64];
+  rackZ.forEach((tz) => {
+    [-7.17, -6.93].forEach((tx) => vbox(0.012, 0.14, 0.012, wire, tx, dpY + 0.07, tz));  // 縦桟 y 0.930〜1.070
+    vbox(0.24, 0.010, 0.010, wire, -7.05, dpY + 0.005, tz);       // 底の渡し（皿の座）y 0.930〜0.940
   });
-  // 伏せたマグ
-  vcyl(0.045, 0.05, 0.09, M.ceramic, -6.9, 0.95, 3.55, 14);
+  [-7.17, -6.93].forEach((tx) => {
+    vbox(0.012, 0.012, 0.32, wire, tx, dpY + 0.045, 3.50);        // 下の横桟 z 3.34〜3.66
+    vbox(0.012, 0.012, 0.32, wire, tx, dpY + 0.130, 3.50);        // 上の横桟（縦桟の天端 1.070 の直下）
+  });
+  // 立てた皿2枚。rotation.x = π/2±θ で円盤の面が z に垂直になる。傾き θ での占有半幅は
+  // y: 0.0075|cosφ|+0.11|sinφ|、z: 0.0075|sinφ|+0.11|cosφ|（φ=π/2±θ）。θ=0.10 なら
+  // y 半幅 0.1102 / z 半幅 0.0184 → 中心 y=dpY+0.111 で受け皿に接地し、z は歯の隙間
+  // (0.07) に収まる。隙間を1つ飛ばして置くので皿同士も重ならない。
+  [3.465, 3.605].forEach((pz, i) => {
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.015, 20), M.ceramic);
+    plate.position.set(-7.05, dpY + 0.111, pz);                   // 下端 0.9308（受け皿天面 0.930 に接地）
+    plate.rotation.x = Math.PI / 2 + (i ? -0.10 : 0.10);          // 左右に少し倒して単調さを消す
+    scene.add(plate);
+  });
+  // 伏せたマグ（歯の外側 z 3.67〜3.77 に確保した帯へ。受け皿に接地）
+  vcyl(0.045, 0.05, 0.09, M.ceramic, -7.05, dpY + 0.045, 3.72, 14);
 
   // --- 生活雑貨: 食器用洗剤ボトル＋スポンジ（シンク左）、まな板（立てかけ） ---
+  // ボトル・スポンジ・まな板はいずれも接地面を 5〜10mm 割り込んでいた。ボトルとスポンジは
+  // シンクの中（底板の上面 0.9125）に、まな板は天板の上面 0.910 に載せ直す。
   const bottleMat = new THREE.MeshStandardMaterial({ color: 0x2f7d55, roughness: 0.4, metalness: 0.0 });  // 緑の洗剤
-  vcyl(0.032, 0.038, 0.17, bottleMat, -7.2, 0.99, 4.85, 12);        // ボトル胴
-  vcyl(0.014, 0.018, 0.05, M.dark, -7.2, 1.11, 4.85, 8);          // ノズル
-  vbox(0.09, 0.05, 0.06, new THREE.MeshStandardMaterial({ color: 0xd8c24a, roughness: 0.95 }), -6.95, 0.93, 4.7);  // 黄色いスポンジ
-  const board = rbox(0.32, 0.02, 0.24, M.oak, -7.78, 1.06, 4.9, 0, 0.006, 2);  // まな板（壁際に立てかけ）
+  vcyl(0.032, 0.038, 0.17, bottleMat, -7.2, 0.998, 4.85, 12);        // ボトル胴 y 0.913〜1.083
+  vcyl(0.014, 0.018, 0.05, M.dark, -7.2, 1.105, 4.85, 8);          // ノズル y 1.080〜1.130（胴天端に 3mm 噛ませる）
+  vbox(0.09, 0.05, 0.06, new THREE.MeshStandardMaterial({ color: 0xd8c24a, roughness: 0.95 }), -6.95, 0.938, 4.7);  // 黄色いスポンジ y 0.913〜0.963
+  // まな板は rotation.z = π/2-0.12 で立てるので、y 半幅は hx·sin+hy·cos = 0.16·0.9928+0.01·0.1197
+  // = 0.160。中心を 1.071 に置いて下端 0.911（天板 0.910 の直上）にする。
+  const board = rbox(0.32, 0.02, 0.24, M.oak, -7.78, 1.071, 4.9, 0, 0.006, 2);  // まな板（壁際に立てかけ）
   board.rotation.z = Math.PI / 2 - 0.12; board.rotation.y = 0.1;
 }
 // クローゼット（開き戸が、少しだけ開いている）
@@ -1190,8 +1088,17 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   const cupX = dx - 0.6, cupZ = dz + 0.06;
   vcyl(0.05, 0.045, 0.11, M.ceramic, cupX, top + 0.055, cupZ, 16);           // 胴
   vcyl(0.043, 0.043, 0.02, new THREE.MeshStandardMaterial({ color: 0x241a12, roughness: 0.4 }), cupX, top + 0.1, cupZ, 16);  // 中のコーヒー
+  /* 取っ手。torus の輪は既定で XY 平面（軸が Z）にあり、マグの軸が Y なのでこれが正しい向き。
+     旧版は rotation.y=π/2 で輪を YZ 平面に倒していたため、輪が胴の側面と平行になり、
+     x 方向の厚みが管の 0.008 しか無いまま胴（半径 0.0475）に半分埋まって、
+     「胴に貼り付いた白い板」に見えていた（撮影で確認）。
+     弧は 0〜216°なので、そのままだと +X 中心にならない。-0.6π 回して ±108°の対称な
+     C 字にすると、両端が胴側（-x）を向いた本物のマグ取っ手になる。
+     端点は x offset 0.032cos108° = -0.0099。中心を +0.052 に置けば端は 0.0421 で
+     胴の壁 0.0475 の内側に 5mm 埋まり、外周は 0.092（壁から 4.4cm）まで張り出す。 */
   const handle = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.008, 8, 16, Math.PI * 1.2), M.ceramic);
-  handle.position.set(cupX + 0.05, top + 0.055, cupZ); handle.rotation.y = Math.PI / 2; scene.add(handle);  // 取っ手
+  handle.position.set(cupX + 0.052, top + 0.055, cupZ);
+  handle.rotation.z = -Math.PI * 0.6; scene.add(handle);                     // 取っ手（y は top+0.015〜top+0.095 で胴の高さに収まる）
   // ── ペン立て＋ペン ────────────────────────────────────
   const pcX = dx - 0.68, pcZ = dz + 0.2;
   vcyl(0.035, 0.032, 0.1, M.steel, pcX, top + 0.05, pcZ, 12);                // 筒
@@ -1213,19 +1120,49 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(0.05, 0.001, 0.05, new THREE.MeshStandardMaterial({ color: 0xd9c94a, roughness: 0.9 }), dx + 0.28, top + 0.003, dz + 0.02, 0.3);
   const noteOnBase = vbox(0.05, 0.001, 0.05, new THREE.MeshStandardMaterial({ color: 0xd98fb0, roughness: 0.9 }), dx - 0.09, top + 0.006, mz - 0.04, -0.2);
   noteOnBase.position.y = top + 0.02;
-  // ── デスクライト（アーム＋傘＋暖色の局所光。ホラーの手元の光だまり） ──
-  const laX = dx + 0.62, laZ = dz + 0.2;
+  /* ── デスクライト（アーム＋傘。消灯中の造形だけが仕事） ──
+     旧版は2つ壊れていた。
+     ① アームが XY 平面内でしか曲がらないので、傘は laZ-0.06 = モニタとほぼ同じ z に
+        居座り、傘（半径0.075）とベゼル（x 6.49〜7.21 / z -2.119〜-2.073）が
+        x・y・z すべてで重なっていた＝モニタの左肩に食い込んでいた。
+     ② 傘が openEnded の鋭い円錐＋片面マテリアルだったので、口をのぞく角度では
+        内壁も外壁も裏面カリングで消え、法線がグレージングする細い帯だけが残って
+        「机に立つ黒い板」に見えていた。
+     ①は「1軸で分離できれば他は自由」（ベッドの垂れ布と同じ）で解く。アームを
+     手前(-z)へ振って傘を z -2.49〜-2.27 に置けば、x も y も制限せずにモニタと分かれる。
+     ②は円錐台＋縁の帯＋内側の反射板（BackSide）にして、口が形として読めるようにする。 */
+  const laX = dx + 0.62, laZ = dz + 0.2;                                      // 台座（7.47, -2.10）
   vcyl(0.05, 0.06, 0.02, M.lampArm, laX, top + 0.01, laZ, 12);               // 台座
   const arm1 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.34, 8), M.lampArm);
   arm1.position.set(laX, top + 0.18, laZ); arm1.rotation.z = 0.35; scene.add(arm1);
-  const arm2 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.28, 8), M.lampArm);
-  arm2.position.set(laX - 0.14, top + 0.34, laZ - 0.04); arm2.rotation.z = 1.15; scene.add(arm2);
-  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.11, 16, 1, true), M.lampShade);
-  shade.position.set(laX - 0.3, top + 0.34, laZ - 0.06); shade.rotation.z = -0.7; scene.add(shade);
+  const armTop = new THREE.Vector3(laX - 0.058, top + 0.34, laZ);            // arm1 の上端
+  const headP = new THREE.Vector3(laX - 0.17, top + 0.35, laZ - 0.28);       // 傘の中心（手前へ振る）
+  // arm2 は任意方向なので quaternion で向ける（rotation.z だけでは z 方向へ振れない）
+  const armDir = headP.clone().sub(armTop);
+  const arm2 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, armDir.length(), 8), M.lampArm);
+  arm2.position.copy(armTop).add(headP).multiplyScalar(0.5);
+  arm2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), armDir.clone().normalize());
+  scene.add(arm2);
+  // 傘は円錐台（細い口＝アーム側、広い口＝光の出口）。軸の +Y 側が細い口になる。
+  // 口が向く先を机の天板に取り、その逆向きを傘の軸にする。
+  const lampAim = new THREE.Vector3(dx + 0.2, top, dz - 0.15).sub(headP).normalize();
+  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.085, 0.13, 16, 1, true), M.lampShade);
+  shade.position.copy(headP);
+  shade.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), lampAim.clone().negate());
+  scene.add(shade);
+  // 以下は傘の子にして同じ姿勢を継がせる（親の quaternion を再計算しないで済む）
+  const shadeIn = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.081, 0.124, 16, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0xb6afa1, roughness: 0.75, side: THREE.BackSide }));
+  shade.add(shadeIn);                                                        // 内側の反射板（内壁だけ描く）
+  const shadeRim = new THREE.Mesh(new THREE.CylinderGeometry(0.089, 0.087, 0.014, 16, 1, true), M.lampShade);
+  shadeRim.position.y = -0.062; shade.add(shadeRim);                         // 口の縁（4mm 張り出す帯）
+  const shadeCap = new THREE.Mesh(new THREE.CircleGeometry(0.030, 16), M.lampShade);
+  shadeCap.rotation.x = -Math.PI / 2; shadeCap.position.y = 0.064; shade.add(shadeCap);  // 細い口の蓋
   // デスクライトは消灯（ユーザー要望）。電球は光らない暗いガラス球にし、光源は置かない。
   const lampGlow = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 8),
     new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.5, metalness: 0.1 }));  // 消えた電球（黒っぽい）
-  lampGlow.position.set(laX - 0.32, top + 0.3, laZ - 0.06); scene.add(lampGlow);
+  lampGlow.position.copy(headP).add(lampAim.clone().multiplyScalar(0.045));  // 口の少し内側
+  scene.add(lampGlow);
   // 椅子（座面・背もたれ・5本脚キャスター・ガスシリンダー）
   solids.push({ x1: 6.35, z1: -3.6, x2: 6.85, z2: -3.1 });
   const chx = 6.6, chz = -3.35;
@@ -1674,11 +1611,37 @@ const ITEM_MARK_COLOR = 0xd9a441;
 ITEMS.forEach(it => { itemMeshes[it.id] = makeGlow(it.x, it.y + 0.35, it.z, ITEM_MARK_COLOR); });
 const fakeMeshes = FAKES.map(f => makeGlow(f.x, f.y + 0.35, f.z, ITEM_MARK_COLOR));
 
-/* ---------- 壁のポスター（前触れ演出用） ---------- */
-const posterTexOk = loadTex("./assets/textures/poster_normal.jpg", true);
-const posterTexBad = loadTex("./assets/textures/poster_anom.jpg", true);
-const posterMat = new THREE.MeshStandardMaterial({ map: posterTexOk, roughness: 0.85, metalness: 0.0 });
-const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.27), posterMat);
+/* ---------- 壁のポスター（前触れ演出用） ----------
+   Canvas手描きに戻してある（v22）。写真ポスター（poster_normal/anom.jpg）は
+   絵として濃すぎ、部屋の他の面（プロシージャル生成）と質感が揃わないうえ、
+   前触れの「ポスターが変わった」という差分が読み取りにくかった。
+   ここは情報として読ませる面なので、平坦でも輪郭がはっきりする手描きを採る。 */
+function makePosterTex(bad) {
+  const cv = document.createElement("canvas");
+  cv.width = 192; cv.height = 256;
+  const c = cv.getContext("2d");
+  c.fillStyle = "#ddd6c4"; c.fillRect(0, 0, 192, 256);
+  c.strokeStyle = "#8a8474"; c.lineWidth = 3; c.strokeRect(6, 6, 180, 244);
+  c.textAlign = "center";
+  if (bad) {
+    c.fillStyle = "#7a1f14";
+    c.font = "900 46px sans-serif";
+    c.fillText("納", 96, 66); c.fillText("税", 96, 122);
+    c.fillText("シ", 96, 178); c.fillText("ロ", 96, 234);
+  } else {
+    c.fillStyle = "#2b4a7a";
+    c.font = "bold 26px serif";
+    c.fillText("確定申告", 96, 88); c.fillText("お済みですか", 96, 128);
+    c.font = "13px sans-serif"; c.fillStyle = "#55503f";
+    c.fillText("国税庁", 96, 220);
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const posterTexOk = makePosterTex(false), posterTexBad = makePosterTex(true);
+const posterMat = new THREE.MeshLambertMaterial({ map: posterTexOk });
+const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.3), posterMat);
 poster.position.set(-3.4, 1.7, -5.97);
 scene.add(poster);
 
@@ -1746,16 +1709,36 @@ function makeMonster() {
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.185, 16, 16), scalp);
   head.position.set(0, 1.87, 0.05); head.scale.set(1.0, 1.12, 1.05); g.add(head);
 
-  // --- 顔＝紙の通知書プレート（+z 面に配置） ---
-  const faceTex = loadTex("./assets/textures/monster_face.jpg", true);
-  const faceMat = new THREE.MeshStandardMaterial({
-    map: faceTex,
-    roughness: 0.88,
-    metalness: 0.02
-  });
+  // --- 顔＝紙の通知書プレート（+z 面に配置）。ユーザー要望で「前の顔」（ホッケーマスク導入前の
+  // デザイン）に戻した。文言だけ更新：「源泉徴収票」→「重加算税」（仮装・隠蔽への懲罰的な追徴税で、
+  // 確定申告ホラーというテーマに直球で刺さるので採用）。以前は素の円柱ボディに直接貼っていたが、
+  // 今の頭部球（半径0.185・z scale 1.05＝前面 z≈0.244）より少し前に置いて食い込みを避ける。
+  //
+  // 【v22で写真テクスチャから戻した】monster_face.jpg は解像度と陰影があるぶん「作り込んだ顔」に
+  // 見えてしまい、この怪人の怖さの源――事務書類がそのまま顔になっている無機質さ――が薄れた。
+  // MeshBasic（陰影を受けない）なのも意図的で、暗い部屋でも紙面が白く平坦に浮く。
+  const fcv = document.createElement("canvas");
+  fcv.width = 256; fcv.height = 320;
+  const fc = fcv.getContext("2d");
+  fc.fillStyle = "#e8e4d8"; fc.fillRect(0, 0, 256, 320);
+  fc.strokeStyle = "#555"; fc.lineWidth = 2;
+  fc.strokeRect(10, 10, 236, 300);
+  fc.fillStyle = "#222";
+  fc.font = "bold 26px serif"; fc.textAlign = "center";
+  fc.fillText("重加算税", 128, 46);
+  fc.font = "11px sans-serif";
+  for (let r = 0; r < 6; r++) {
+    fc.strokeStyle = "#888"; fc.lineWidth = 1;
+    fc.strokeRect(20, 66 + r * 40, 216, 34);
+  }
+  fc.fillStyle = "#111";
+  fc.fillRect(52, 130, 42, 30);   // 目
+  fc.fillRect(162, 130, 42, 30);  // 目
+  const faceTex = new THREE.CanvasTexture(fcv);
+  faceTex.colorSpace = THREE.SRGBColorSpace;
   const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.34, 0.45),
-    faceMat
+    new THREE.PlaneGeometry(0.34, 0.43),
+    new THREE.MeshBasicMaterial({ map: faceTex })
   );
   face.position.set(0, 1.87, 0.27);
   g.add(face);
