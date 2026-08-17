@@ -1254,3 +1254,79 @@ node shot.mjs --out C:/tmp/audit9 closet tv table
 ### `shot.mjs` に5アングル足した
 
 `window` / `windowsill` / `wallclock` / `entrance` / `mail`。**家具しか撮っていなかったから、窓・時計・玄関のバグを4回の改修に渡って見逃していた。** 「造形」の対象は家具だけではない。`mail` のように**床に近い低い画角**が要るものもある（山の1枚ごとの浮きは、立ち姿勢の目線 1.6m からは見えない）。
+
+## 15. 画像生成を `agy` に配線した（v22・テクスチャ用）
+
+結論から: **`agy -p` で画像は作れる。** ただし**文字を含む資産には使えない**。この2行が要点で、以下は根拠と手順。
+
+### `agy` は何で、どこにあるか
+
+`agy` = **Antigravity CLI**（Google）。**Antigravity IDE とは別物の独立インストール**で、IDE の `bin/` には入っていない（あるのは `antigravity-ide` だけ）。
+
+| 項目 | 実測値 |
+|---|---|
+| 実体 | `C:\Users\dxa00\AppData\Local\agy\bin\agy.exe` |
+| バージョン | 1.1.13 |
+| 設定 | `~/.gemini/antigravity-cli/settings.json` |
+| 認証 | `~/.gemini/antigravity-cli/antigravity-oauth-token`（OAuth。**APIキーの受け渡しは不要**） |
+| 既定モデル | Gemini 3.7 Flash (High) |
+
+`-p` は `--print` の別名で「単発プロンプトを非対話で実行して応答を印字」。持っているツールを本人に列挙させたところ **`generate_image: Generate an image or edit existing images based on a text prompt.`** があった。`run_command` / `view_file` / `write_to_file` / `invoke_subagent` などフルセットのエージェントでもある。
+
+（`xaffiliate` の `decisions/c-gemini-cli-apikey-recovery.md:43` は agy 移行を「vision/画像入力サポート未確認」として却下していた。あれは**入力**の話で、**出力＝画像生成は使える**とここで判明した。前提が変わったので、あの却下は画像生成については当てはまらない。）
+
+### 素で叩くと必ず踏む罠が3つある
+
+だから `tools/genimage.mjs` を噛ませる。詳しい理由はファイル冒頭のコメントに書いたが、要約すると:
+
+1. **出力パスの指定が無視される。** 「`C:/tmp/foo.png` に保存して」と頼んでも実際には `~/.gemini/antigravity-cli/brain/<conversationId>/<slug>_<epochMs>.jpg` に落ちる。conversationId は毎回変わるので事前に組み立てられない。**stdout に印字されたパスが唯一の handle**。
+2. **`--output-format json` でないと stdout が信用できない。** text モードはモデルの散文。json なら `{conversation_id, status, response, duration_seconds, num_turns, usage}` の安定した封筒になり `status` で機械判定できる。
+3. **プロンプトで shell を禁じないと丸ごと失敗する。** headless には権限プロンプトが出せないので、モデルが `run_command` を使う気になった瞬間（出力先を mkdir しようとする等）`no output produced — a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied` で**画像ごと何も返らない**。最初の1回はこれで空振りした。出力先ディレクトリを**こちらで先に作っておき**、「shell を使うな」と釘を刺すと通る。
+
+代替として `--dangerously-skip-permissions` か `agy` 側 `settings.json` の `permissions.allow` に `command(<コマンド>)` を足す手もあるが、**`generate_image` だけで完結するので shell を開ける必要はない**。開けない方を選んだ。
+
+### 実測した性能と限界（2026-08-17）
+
+| 項目 | 実測 |
+|---|---|
+| 解像度 | 1024×1024（`--aspect 3:4` 等の指定は効く） |
+| 形式 | **JPEG 固定。アルファを持てない** |
+| 所要 | 初回 150 秒（起動と認証）／温まると **15〜33 秒** |
+| 写実性 | 高い。布・紙・壁の地合いはそのままテクスチャに使える |
+| `--edit`（img2img） | **構造を保つ。** キルトの縫い目と織り目を1pxも崩さず色だけ「褪せた青灰」に振れた。**1枚のマスターから色違いの一族を作れる** |
+| 平面性 | 「flat orthographic scan、額縁なし、影なし、ビネットなし、端まで埋める」と指定すれば従う。指定しないと**額縁に入って壁に掛かった情景**を描く |
+| タイリング | **保証されない。** 「seamless tileable」と頼んでも継ぎ目は合わない |
+
+### 文字は駄目。ここが唯一の重要な制約
+
+短い数行なら正しい日本語が出る（「お知らせ／コーポ北沢／ゴミ出しルールについて／収集日：月・水・金（午前８：００まで）」は完全に正しかった）。**しかし文字量が増えると崩壊する。** 同じ題材を情報量の多い掲示に振ったら:
+
+> 「6曜日」／「燃やすごみには1週罰10mの前に休み外します」／「瓶、サポ消き・空き缶・ブゴルフィスト」／「古紙日はやゐに必けるやゴミみをはずく施しております」
+
+日本語として読めない文字列が混ざる。**この game のポスター・書類はプレイヤーが読む**（異変のひとつが「文字の差し替え」）ので、破綻は仕様バグとしてそのまま画面に出る。
+
+→ **書類・ポスター・怪人の顔を写真テクスチャから Canvas へ戻した判断（コミット `13ed7b2`）は、これで裏が取れた。** あれは正しい。文字を持つ資産は Canvas 描画のまま維持する。agy は**文字の無い素材**に限って使う。
+
+### 使い方
+
+```bash
+node tools/genimage.mjs --out assets/tex/quilt.jpg \
+  "quilted linen bedspread, diagonal stitching, beige"
+
+# 既存画像の構造を保って色だけ振る
+node tools/genimage.mjs --out assets/tex/quilt_blue.jpg --edit assets/tex/quilt.jpg \
+  "recolor the fabric to a faded dusty blue-gray, keep the stitching identical"
+
+# 同じ画を続けて詰める（conversation id は本ツールが印字する）
+node tools/genimage.mjs --out assets/tex/quilt2.jpg --conversation <id> "add more wear at the edges"
+```
+
+`--aspect w:h` / `--scene`（平面の縛りを外す）/ `--timeout` あり。**生成物は必ず目で見てから使うこと**（端に地の色が1本残ることがある）。
+
+### 権限（`~/.claude/settings.json`）
+
+`permissions.allow` に `Bash(agy --version)` `Bash(agy --help)` `Bash(agy -p:*)` `Bash(agy models:*)` 等と、`PowerShell(...)` の同型、`Bash(node tools/genimage.mjs:*)` を追加した。**`agy:*` のような包括許可は入れていない** — `agy` はファイルを書きシェルを回せるエージェントなので、`--dangerously-skip-permissions` を含む任意のフラグを無審査で通す形にはしたくない。
+
+### 副産物: 別セッションが既に agy を使っていた
+
+`~/.gemini/antigravity-cli/brain/` を漁ったら `quilt_texture_1786937239716.jpg`（同日の 7 時間前）があった。v23/v24 の掛け布団作業をしている並行セッションが、同じ経路を先に見つけていたらしい。**`brain/` はそのまま資産の置き場ではない**（会話ごとの作業ディレクトリで、いつ掃除されるか分からない）ので、残したい画は `--out` でリポジトリ側に取り出すこと。
