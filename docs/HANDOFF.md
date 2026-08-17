@@ -1,10 +1,12 @@
-# 開発引き継ぎ資料（v18時点）
+# 開発引き継ぎ資料（v20時点）
 
 次にこのリポジトリを触るセッション（人間・AI問わず）向けの技術メモ。「なぜこうなっているか」を中心に書く。ゲーム企画・レベルデザインの詳細は `README.md` を参照。
 
-- **更新日**: 2026年8月16日
+- **更新日**: 2026年8月17日
 - **公開URL**: https://dxa0010.github.io/kakushin-sama/
 - **ブランチ**: `claude/artifact-review-anha8j`
+
+**v20で何が変わったか（要約）**: **環境遮蔽（GTAO）を導入した**。参考作 [winchxyz/bikini-bottom](https://github.com/winchxyz/bikini-bottom) のグラフィック調査から出た最優先項目で、`vendor/three/addons/postprocessing/GTAOPass.js` は**v7から入っていたのに一度も import されていなかった**。この部屋は夜で、面と面が「接している」ことを示す手掛かりが影しかない。点光源のシャドウマップは数十cm〜mスケールの落ち影しか作れないため、机の脚と床・マグと天板・本と本の隙間といった数cmスケールの接触部が一切暗くならず、**物が「乗っている」ではなく「浮いている」ように見えていた**。半径・強度は `tools/shot-ao.mjs` で撮り比べて `radius 0.20 / intensity 0.9` に確定（狭い部屋では半径を上げると接触影ではなく「領域全体が煤ける」方向に効く）。あわせて `__dbg.gfx` を新設し、**scene / renderer / composer / aoPass を撮影ハーネスから直接触れるように**した（v19まで `scene` が非公開で `__dbg.monster.parent` から辿る必要があった）。詳細はセクション12。
 
 **v18で何が変わったか（要約）**: **Three.js用の2D/3D画像テクスチャアセットを生成・導入し、簡易Canvas描画だった重要演出を実写・高精細化した**。
 ① **壁のポスター（通常/怪異）**: レトロ官公庁風ポスター（`poster_normal.jpg`）と、カクシン様接近前触れ時の「納税シロ」「重加算税」血文字ポスター（`poster_anom.jpg`）を導入。
@@ -42,8 +44,15 @@
 ```
 index.html                 DOM/CSS/UI要素 + importmap + <script type="module">
 src/game.js                ゲーム全体（three.jsシーン構築・物理・AI・UI制御）を1ファイルに集約
+src/audio.js               音の生成エンジン（ゲーム非依存。tools/audio-lab.html から単体試聴できる）
+src/pin.js                 暗証番号ゲートの判定ロジック（純粋モジュール。Nodeでテスト可能）
 vendor/three/               Three.js r185 本体 + addons（postprocessing/geometries/environments等）
 assets/textures/            実写テクスチャ（壁・床・布地。ambientCG CC0 + three.js examples MIT）
+tools/audio-lab.html        音の試聴台（ゲーム本体は起動しない）
+tools/shot-ao.mjs           AOのパラメータ比較ハーネス（Playwright。セクション9・12）
+tests/unit/                 node --test で回る単体テスト（依存ゼロ）
+tests/e2e/                  Playwright のE2E（リポジトリにplaywrightが無いので手動実行）
+docs/test-specs/            テスト仕様書（ケースIDでテストコードと相互追跡する）
 .github/workflows/          GitHub Pages 自動デプロイ
 docs/HANDOFF.md             このファイル
 ```
@@ -796,7 +805,7 @@ node shot_items.mjs desk clock bed    # 対象を絞って撮影 → C:/tmp/<nam
 - **ESMは `NODE_PATH` を無視する**ため、`.mjs` スクリプトは playwright がある `AppData/Roaming/npm/node_modules` に**コピーして、そのディレクトリから実行する**必要がある。
 - Bashツールの `/tmp` は `C:\tmp` に**マップされていない**。Windowsパス（`C:/tmp/...`）で書くこと。
 - `shot_items.mjs` の `SHOTS` に `名前: [視点x, 視点z, 対象x, 対象y, 対象z]` を足せばアングルを追加できる。怪人用は `shot_monster.mjs`（AIを止めて任意座標に立たせる）。
-- `window.__dbg` 経由でプレイヤーをワープさせる。`scene` は公開されていないので `__dbg.monster.parent` から辿る（ライトを走査して値を差し替える比較検証もこの手で行った）。
+- `window.__dbg` 経由でプレイヤーをワープさせる。**v20 で `__dbg.gfx` を新設したので、`scene` / `camera` / `renderer` / `composer` は直接触れる**（v19までは `__dbg.monster.parent` から辿る必要があった）。描画パラメータの比較検証は `__dbg.gfx.ao()` のようにリロード不要のフックを足す方が速い——同一セッション内で振れば、アイテム配置や異変の乱数が揃った状態で比較できる。セクション12参照。
 - カメラ向きの式は `yaw = atan2(-dx,-dz)` / `pitch = asin((ty-1.6)/hypot(dist, ty-1.6))`。
 - `git push` は Windows の資格情報ヘルパー由来で `fatal: ...ログオン セッションは存在しません` 等を出すが、**その後に `bb61fa4..572ed53` のような行が出ていれば成功している**。`git log --oneline -1 origin/<branch>` で確認すること。
 
@@ -865,3 +874,72 @@ node shot_items.mjs desk clock bed    # 対象を絞って撮影 → C:/tmp/<nam
 - **市役所ENDは何も解禁しない**（`sermon` と同じ失敗系）。`refund` だけが青色申告を解禁する構造は維持した。ロック解除を次周の要素にする案は未着手。
 - `normalizePin` の既定桁数 4 は `pin.js` 側に置いた。桁数はマイナンバーカードの公開仕様であって秘密ではないため（答えと違って注入の必要がない）。
 - 全角数字 `０３１５` は受け付ける（日本語IMEで現実に起きる）。一方 `〇三一五`・アラビア数字 `٠٣١٥`・数値型の `315` は拒否する。
+
+## 12. 環境遮蔽（GTAO・v20・グラフィックスの最重要）
+
+### なぜ入れたか
+
+参考作 [winchxyz/bikini-bottom](https://github.com/winchxyz/bikini-bottom) の調査から出た結論が発端。先方はセルシェーディング＋スクリーンスペースのインク線で**全オブジェクトの輪郭を描いて形を読ませている**。造形の精密さで言えばこちらが負けているわけではないが、「物体としてちゃんとしている」ように見えるのは輪郭線があるからだった。
+
+**フォトリアルにおける「形の境界を暗く示す装置」の等価物が AO** である。そして `GTAOPass.js` は v7 のポストプロセス導入時から `vendor/` に入っていたのに、**一度も import されていなかった**。
+
+導入前の実画（`tools/shot-ao.mjs` の `off` ケース）で確認できた症状：
+
+- 机の脚と床の接点に一切の暗さが無い。脚が床に「刺さっている」ではなく「重なっている」に見える
+- マグ・ペン立て・書類が天板に落とす接触影が無い。物が浮いて見える
+- **本棚が最悪**。本と本の隙間・棚板の内側が全部同じ明るさで、数十冊が1枚の板に見える
+- モニタ台と天板の接点、ベッドとマットレスの段差も同様
+
+`aoPatch()`（床に半透明の楕円パッチを貼る関数）は、この不在に対する応急処置だった。AO が入った今も残してあるが、**将来 AO を前提に整理してよい**。
+
+### 配線とパラメータ
+
+```
+RenderPass → GTAOPass → UnrealBloomPass → OutputPass → FilmShader(ShaderPass)
+```
+
+**ブルームより前に置くこと。** AO で暗くしてから残った明部だけを滲ませる。逆順にすると AO が滲みを削って光源のグローが痩せる。
+
+| 定数 | 値 | 根拠 |
+|---|---|---|
+| `AO_RADIUS` | **0.20** m | 本と本の隙間（1〜3cm）〜家具の接地部を拾う幅 |
+| `AO_INTENSITY` | **0.9** | `blendIntensity` |
+| `thickness` | 0.3 | 紙・本の表紙のような薄い板の裏に遮蔽が回り込まないように小さく |
+| `screenSpaceRadius` | `false` | **半径をワールド単位で解釈させる。部屋の実寸に合わせるため必須** |
+
+**半径は大きいほど良いのではない。** `tools/shot-ao.mjs` で `off / 0.6 / 0.9 / 1.2 × 半径 0.20 / 0.35` を同一アングル・同一シードで撮り比べた結果：
+
+- **半径 0.35 は狭い部屋では「接触部が暗くなる」ではなく「領域全体が煤ける」方向に効く。** モニタの黒ベゼルが背景に溶けて輪郭を失い、机の木目も潰れた。部屋が 17×13m しかなく、家具どうしが 0.35m 以内に密集しているため、互いに遮蔽し合って大域的な減光になる
+- 強度 1.2 は暗部が潰れて造形が消える。0.6 は棚の奥行きが出きらない
+- **0.20 / 0.9 が接触影として最も素直**。本棚の隙間が暗くなり、かつ本の背表紙の明るさは残る
+
+### 撮り比べのやりかた（次に触る人向け）
+
+`__dbg.gfx.ao(on, intensity, radius)` で**リロードなしに**切り替えられる。同一セッション内で振れるので、シーンの乱数（アイテム配置・異変）が揃った状態で比較できる。
+
+```bash
+python -m http.server 8765     # リポジトリルートで
+cp tools/shot-ao.mjs "$APPDATA/npm/node_modules/" && cd "$APPDATA/npm/node_modules"
+node shot-ao.mjs shelf desk    # → C:/tmp/ao/<アングル>_<ラベル>.png
+```
+
+- **導入文が画に被る**ので、撮影前に 5.2 秒待つようにしてある（`notice()` の表示が 4.6 秒）。`shot_items.mjs` はこの待ちが無いので字幕が写り込む
+- アングル定義は `shot_items.mjs` と同じ `名前: [視点x, 視点z, 対象x, 対象y, 対象z]` 形式
+
+### `__dbg.gfx` を新設した（v19までの不便を潰した）
+
+セクション9に「`scene` は公開されていないので `__dbg.monster.parent` から辿る」と書いてあったが、これを解消した。
+
+| フック | 用途 |
+|---|---|
+| `gfx.scene / camera / renderer / composer / aoPass / bloomPass / filmPass / THREE` | 描画系の直接参照 |
+| `gfx.ao(on, intensity, radius)` | AO の on/off・強度・半径をリロードなしで変更 |
+| `gfx.aoDebug(output)` | AO バッファそのものを画面に出す（`0`=通常 / `4`=AO / `5`=Denoise / `3`=法線 / `2`=深度）。**AOが効いていない時はまずこれで4を出す** |
+| `gfx.inspectLight(on)` | 検分用に部屋を一時的に明るくする。**暗いまま撮っても造形は判定できない** |
+
+### 未解決・次にやること
+
+1. **AO を前提に `aoPatch()` を整理する**（現在は二重に暗くなっている箇所がある可能性。未検証）
+2. **本棚の造形バグ**：AO を入れたことで、棚の右側で本が不自然に交差・貫通しているのが見えるようになった。`findOverlaps`（セクション13予定の造形検査）で数えてから直すこと
+3. **性能を計測していない。** GTAO は法線バッファ＋AO＋デノイズで3パス増える。SwiftShader のヘッドレスでは体感できないので、実機の GPU で fps を測ること
+4. **深度・法線バッファの精度**：`camera.near = 0.1 / far = 50` の比は良好だが、AO が近接面で縞を出すようなら `distanceExponent` を触る前に near/far を疑う

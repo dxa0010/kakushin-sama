@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -360,6 +361,37 @@ const FilmShader = {
 };
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
+
+/* ---------- 環境遮蔽（GTAO・v20で追加） ----------
+   この部屋は夜で、面と面が「接している」ことを示す手掛かりが影しかない。
+   点光源のシャドウマップは数十cm〜mスケールの落ち影しか作れないので、
+   机の脚と床・マグと天板・本と本の隙間・棚の内側といった数cmスケールの接触部が
+   一切暗くならず、物が「乗っている」ではなく「浮いている」ように見えていた。
+   （`aoPatch()` が床に半透明パッチを貼っていたのは、この不在の応急処置。）
+
+   ブルームより前に置く：AOで暗くしてから、残った明部だけを滲ませる。
+   逆順にするとAOが滲みを削って、光源のグローが痩せる。
+
+   半径と強度は tools/shot-ao.mjs で off / 0.6・0.9・1.2 × 半径 0.20・0.35 を撮り比べて決めた。
+   狭い部屋では半径を大きくすると「接触部が暗くなる」ではなく「領域全体が煤ける」方向に効き、
+   0.35 ではモニタの黒ベゼルが背景に溶けて輪郭を失った。0.20 が接触影として最も素直。 */
+const AO_RADIUS    = 0.20;   // m。本と本の隙間(1〜3cm)〜家具の接地部を拾う。上げると部屋全体が煤ける
+const AO_INTENSITY = 0.9;    // 1.2 は暗部が潰れて造形が消える。0.6 は棚の奥行きが出きらない
+const aoPass = new GTAOPass(scene, camera, innerWidth, innerHeight);
+aoPass.output = GTAOPass.OUTPUT.Default;
+aoPass.blendIntensity = AO_INTENSITY;
+aoPass.updateGtaoMaterial({
+  radius: AO_RADIUS,
+  distanceExponent: 1.0,
+  thickness: 0.3,        // 薄い板（紙・本の表紙）の裏まで遮蔽が回り込まないように小さく
+  distanceFallOff: 1.0,
+  scale: 1.0,
+  samples: 16,
+  screenSpaceRadius: false,   // 半径はワールド単位で解釈させる（部屋の実寸に合わせるため）
+});
+aoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 16 });
+composer.addPass(aoPass);
+
 // strength 0.28 / threshold 0.9：しきい値を上げて「明るい白い面（寝具・紙・時計盤）」が滲むのを防ぎ、
 // 発光体（アイテムの光球・照明器具）だけを控えめに光らせる。
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.28, 0.55, 0.9);
@@ -2565,4 +2597,24 @@ window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOm
   // 検証用: 音は耳で聞けないので、グラフと実出力を数値で確認できるように公開する
   audio: { AC: () => Audio.AC, master: () => Audio.masterGain, BUS: () => Audio.BUS,
            panFor, setVolume, toggleMute, prefs: () => audioPrefs,
-           ambience: () => ambience, lib: Audio } };
+           ambience: () => ambience, lib: Audio },
+  // 検証用: 絵は目で見られないので、撮影ハーネスから描画系を直接触れるように公開する。
+  // v19まで scene が非公開で `__dbg.monster.parent` から辿る必要があった（HANDOFF §9）。
+  gfx: {
+    scene, camera, renderer, composer, aoPass, bloomPass, filmPass, THREE,
+    /** AOのon/off・強度・半径をリロードなしで変える（before/afterを同一シードで撮るため） */
+    ao(on = true, intensity = AO_INTENSITY, radius = AO_RADIUS) {
+      aoPass.enabled = !!on;
+      aoPass.blendIntensity = intensity;
+      aoPass.updateGtaoMaterial({ radius });
+      return { enabled: aoPass.enabled, intensity, radius };
+    },
+    /** AOバッファそのものを画面に出す（0=通常, 4=AO, 5=Denoise, 3=法線, 2=深度） */
+    aoDebug(output = GTAOPass.OUTPUT.AO) { aoPass.output = output; return output; },
+    /** 検分用に部屋を一時的に明るくする。暗いまま撮っても造形は判定できない */
+    inspectLight(on = true) {
+      ambient.intensity = on ? 1.2 : 0.85 * 0.44 * 0.25;
+      hemi.intensity    = on ? 1.0 : 0.85 * 0.42 * 0.25;
+      return { ambient: ambient.intensity, hemi: hemi.intensity };
+    },
+  } };
