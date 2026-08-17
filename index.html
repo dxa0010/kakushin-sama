@@ -112,6 +112,12 @@
   #etaxWin .body { padding: 22px 22px 26px; }
   #etaxWin h2 { font-size: 1.05rem; margin-bottom: 14px; color: #1c2c4a; }
   #etaxWin .row { font-size: 0.85rem; color: #444; line-height: 1.9; margin-bottom: 16px; }
+  #etaxPin {
+    display: block; width: 100%; margin-bottom: 14px; padding: 10px 12px;
+    font-size: 1.3rem; letter-spacing: 0.5em; text-align: center; font-family: inherit;
+    border: 1px solid #b7b2a4; border-radius: 3px; background: #fff; color: #222;
+  }
+  #etaxPin:disabled { background: #e4e1d8; color: #888; }
   #etaxMsg { min-height: 3em; font-size: 0.88rem; color: #a12b1f; line-height: 1.7; margin-bottom: 14px; }
   #etaxMsg.ok { color: #1c6b2e; }
   #etaxBtn {
@@ -250,8 +256,10 @@
     <div class="body">
       <h2>令和7年分 所得税及び復興特別所得税の申告</h2>
       <div class="row">申告書データの作成が完了しました。<br>内容を確認のうえ、送信してください。</div>
+      <div class="row">マイナンバーカードの暗証番号（4桁）を入力してください。</div>
+      <input id="etaxPin" type="text" maxlength="4" inputmode="numeric" autocomplete="off">
       <div id="etaxMsg"></div>
-      <button id="etaxBtn">送信する</button>
+      <button id="etaxBtn" disabled>送信する</button>
     </div>
   </div>
 </div>

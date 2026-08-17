@@ -11,6 +11,8 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import * as Audio from "./audio.js";
 const { beep, thump, footstep, heartbeat, clockTick, speak,
         setVolume, toggleMute, audioPrefs } = Audio;
+// マイナンバーカード暗証番号ロジック（ゲーム非依存の純粋モジュール。tests/unit/pin.test.js で単体検証できる）
+import { createPinGate, normalizePin } from "./pin.js";
 /* ============================================================
    確定申告からは逃げられない — prototype
    ============================================================ */
@@ -61,7 +63,8 @@ const DOCSPECS = {
   reader:   { title: "保証書", issuer: "ヨドバチカメラ",
     rows: [["品名", "ICカードリーダー"], ["型番", "CR-2026W"], ["購入金額", "¥2,980"]] },
   password: { title: "パスワード控え", issuer: "本人控え",
-    rows: [["利用者識別番号", "1234 5678 9012 3456"], ["暗証番号", "＊＊＊＊＊＊＊＊"], ["メモ", "『いつもの』"]] },
+    // 暗証番号は実物の利用者証明用電子証明書と同じ4桁（8個だと桁数の誤誘導になる＝A-2）
+    rows: [["利用者識別番号", "1234 5678 9012 3456"], ["暗証番号", "＊＊＊＊"], ["メモ", "『いつもの』"]] },
 };
 const LOOKA = { 金: "全", 医: "圧", 番: "蕃", 期: "斯", 額: "顎", 号: "呂" };
 const ANOMS = [
@@ -2025,12 +2028,46 @@ $("btnBack").addEventListener("click", () => closeInspect());
 
 /* ---------- e-Tax sequence（審査＝真贋の清算） ---------- */
 let etaxTimer = 0;
+// マイナンバーカード暗証番号の認証ゲート。
+// 【生成場所が重要】openEtax() の中で作らない（W-03）。ウィンドウを閉じて開き直しても
+// 試行回数（残り3回）が保持されるようにするため、モジュールのトップレベルで1つだけ作る。
+// 正解 0315 と最大試行回数 3 はここでだけ注入する（pin.js には書かない＝A-1, A-7）。
+// セーブには残さない（1プレイ限り＝A-14。save 側に暗証番号関連のキーは追加しない）。
+const pin = createPinGate({ answer: "0315", maxAttempts: 3 });
+
+/** #etaxPin の入力状態と pin ゲートの状態から、送信ボタンの有効/無効を決める。
+ * ロック済みなら常に無効、認証済みなら常に有効、それ以外は4桁揃うまで無効にする（A-12）。 */
+function updateEtaxBtnState() {
+  const btn = $("etaxBtn"), pinInput = $("etaxPin");
+  const st = pin.getState();
+  if (st.locked) { btn.disabled = true; return; }
+  if (st.authenticated) { btn.disabled = false; return; }
+  btn.disabled = normalizePin(pinInput.value) === null;
+}
+$("etaxPin").addEventListener("input", updateEtaxBtnState);
+
 function openEtax() {
   state = "ETAX";
   etaxTimer = 0;
-  $("etaxMsg").textContent = "";
+  const pinInput = $("etaxPin");
+  const st = pin.getState();
   $("etaxMsg").classList.remove("ok");
-  $("etaxBtn").disabled = false;
+  if (st.locked) {
+    // ロック後にここへ来ることは通常無い（ロック直後に市役所ENDへ遷移する）が、保険として表示する
+    $("etaxMsg").textContent = "カードがロックされています。市役所の窓口でのみ再登録できます。";
+    pinInput.value = ""; pinInput.disabled = true;
+  } else if (st.authenticated) {
+    $("etaxMsg").textContent = "";
+    pinInput.value = ""; pinInput.disabled = true;
+  } else {
+    pinInput.disabled = false;
+    pinInput.value = "";
+    // 開き直したとき、試行を消費済みなら残り回数を見せる（A-13：公平性）。
+    // 【初回は空にする】案内文は上の .row に既にあり、#etaxMsg はエラー色（#a12b1f）なので、
+    // ここに案内を出すと「まだ何も失敗していないのに赤い文が出ている」状態になる。
+    $("etaxMsg").textContent = st.attemptsUsed > 0 ? `残り${st.attemptsLeft}回です。` : "";
+  }
+  updateEtaxBtnState();
   $("etax").classList.remove("hidden");
   document.exitPointerLock && document.exitPointerLock();
 }
@@ -2041,7 +2078,56 @@ function closeEtax() {
 }
 $("etaxClose").addEventListener("click", closeEtax);
 $("etaxBtn").addEventListener("click", () => {
-  const btn = $("etaxBtn"), msg = $("etaxMsg"), win = $("etaxWin");
+  const btn = $("etaxBtn"), msg = $("etaxMsg"), win = $("etaxWin"), pinInput = $("etaxPin");
+
+  if (!pin.getState().authenticated) {
+    const r = pin.submit(pinInput.value);
+    // submit するたびにタイマーを0に戻す（不正入力・誤りを含む）。能動的に操作している間は
+    // 「居座り」ではないので、暗証番号を思い出す時間を実質的に確保できる（下記(A)の判断とセット）。
+    etaxTimer = 0;
+    if (r.status === "ok") {
+      pinInput.value = "";
+      pinInput.disabled = true;
+      updateEtaxBtnState();
+      // ここで return しない。認証成功後は既存の送信・審査処理へそのまま入る
+      // （認証と真贋審査は独立。既存の却下ロジックは変更しない）。
+    } else if (r.status === "wrong") {
+      aggro++;
+      win.classList.remove("shake"); void win.offsetWidth; win.classList.add("shake");
+      pinInput.value = "";
+      let html = `暗証番号が違います。残り${r.attemptsLeft}回です。`;
+      if (r.finalWarning) {
+        // 2回目のミス＝最終警告。既存の却下と同じ escalation（怪人を呼ぶ）に加え、
+        // メモの手掛かりを再提示する。『いつもの』だけでは名前に結びつかないため、
+        // 申告書の氏名欄（PLAYER_NAME）を引用して一歩踏み込む（答え0315そのものは書かない）。
+        html += `<br>次に間違えるとカードがロックされます。` +
+                `<br>メモには『いつもの』とだけ書いてある。` +
+                `<br>……申告書の氏名欄には、いつもの名前があった。「${PLAYER_NAME}」。`;
+        if (!mob.active) enterVisit();
+        else visit.huntLeft = Math.max(visit.huntLeft, 25);
+      }
+      msg.innerHTML = html;
+      updateEtaxBtnState();
+      return;
+    } else if (r.status === "locked") {
+      if (r.justLocked) {
+        // 3回目のミス。ロックの合図はちょうど1回だけ来るので、ここで ending を1回だけ呼ぶ。
+        aggro++;
+        win.classList.remove("shake"); void win.offsetWidth; win.classList.add("shake");
+        msg.innerHTML = "暗証番号が違います。カードがロックされました。<br>再登録は市役所の窓口でのみ受け付けます。";
+        pinInput.disabled = true;
+        btn.disabled = true;
+        setTimeout(() => ending("shiyakusho"), 2200);
+      }
+      return;
+    } else {
+      // invalid（送信ボタンは4桁揃うまで無効なので、通常の操作では到達しない）
+      msg.textContent = "4桁の数字で入力してください。";
+      updateEtaxBtnState();
+      return;
+    }
+  }
+
   btn.disabled = true;
   msg.classList.remove("ok");
   msg.textContent = "送信中──審査しています…";
@@ -2082,6 +2168,8 @@ const EDS = {
   refund: { tag: "還付 END", text: "受付完了。<br>あなたは生き延びた。<br><br>還付金：¥34,120" },
   late:   { tag: "期限後申告 END", text: "3月16日 0:00。<br>怪人は、静かに頭を下げた。<br>「期限後申告について、ご案内します」<br><br>無申告加算税があなたに課された。" },
   sermon: { tag: "説教 END", text: "捕まった。<br><br>あなたは税務署で3時間、丁寧に説教された。<br>担当者は、最後までずっと敬語だった。" },
+  // 暗証番号を3回間違えてカードがロックされた失敗系エンディング（sermon と同様、ランク計算には関与しない・何も解禁しない）
+  shiyakusho: { tag: "市役所 END", text: "マイナンバーカードがロックされた。<br>再登録は市役所の窓口でのみ受け付けている。<br>市役所は平日9時〜17時。<br><br>今夜、あなたはe-Taxで送信できなかった。" },
 };
 function ending(key) {
   if (state === "END") return;
@@ -2373,7 +2461,20 @@ function frame(now) {
     monsterUpdate(dt);
     if (state === "ETAX") {
       etaxTimer += dt;
-      if (etaxTimer > 40) ending("sermon");
+      // 【なぜ認証前だけ上限を延ばすか】暗証番号を思い出す時間が実質40秒しかないと、
+      // 考え込むだけで市役所ENDより先に説教ENDに落ちてしまい、パズルとして成立しない。
+      // それでも緊張が失われる心配は無い：monsterUpdate(dt) は state に関係なく毎フレーム
+      // 呼ばれ続けており、下の pd < 0.95 && !ply.hidden での ending("sermon") も生きている。
+      // つまり e-Tax画面に居る間も怪人は近づいてきて、机の前で捕まる。緊張は不可視の
+      // タイマーではなく実在する脅威が担保しているので、認証前の上限を延ばしても緊張は落ちない。
+      // さらに openEtax() は毎回 etaxTimer=0 を実行するため、元の40秒は「閉じて開き直せば
+      // 無効化できる」ハードな制約ではなく、知らない人だけが罰される罠になっていた。
+      // 認証後は従来どおり40秒のまま（変更なし）。submit するたびにも0へ戻す（不正入力・
+      // 誤りを含む。能動的に操作している＝居座りではないため）。
+      // 時計は clockUpdate(dt*0.4) で進み続け、3月16日0:00の期限後ENDが最終的な締め切りとして
+      // 残るので、居座り対策は失われない。
+      const etaxLimit = pin.getState().authenticated ? 40 : 90;
+      if (etaxTimer > etaxLimit) ending("sermon");
       clockUpdate(dt * 0.4); // 送信中も時間は進む（少しだけ慈悲）
     }
 
@@ -2412,9 +2513,10 @@ function refreshTitleMeta() {
   const mb = $("modeBlue");
   mb.disabled = !blueOpen;
   mb.textContent = blueOpen ? "青色申告" : "青色申告（還付ENDで解禁）";
-  const eN = ["refund", "late", "sermon"].filter(k => save.endings[k]).length;
+  // エンディング数は EDS のキー数から数える（shiyakusho 追加で4つ目。ハードコードしない）
+  const eN = Object.keys(EDS).filter(k => save.endings[k]).length;
   $("meta").textContent =
-    `異変図鑑 ${Object.keys(save.found).length}/${ANOMS.length} ／ エンディング ${eN}/3`
+    `異変図鑑 ${Object.keys(save.found).length}/${ANOMS.length} ／ エンディング ${eN}/${Object.keys(EDS).length}`
     + (save.bestRank ? ` ／ 最高ランク ${save.bestRank}` : "");
 }
 refreshTitleMeta();
@@ -2457,6 +2559,7 @@ $("startBtn").addEventListener("click", () => {
 /* debug hook (テスト用) */
 window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOmen, ending, save, runLog,
   monster, spawnMonster,   // 検証用: 怪人の直接制御
+  pin, openEtax,           // 検証用: 暗証番号ゲート本体とe-Taxの開閉（E2Eから残り回数を観測するため）
   st: () => state, gm: () => gameMin, setMin: v => { gameMin = v; },
   setMode: m => { mode = m; },
   // 検証用: 音は耳で聞けないので、グラフと実出力を数値で確認できるように公開する
