@@ -15,7 +15,7 @@ const { beep, thump, footstep, heartbeat, clockTick, speak,
 // マイナンバーカード暗証番号ロジック（ゲーム非依存の純粋モジュール。tests/unit/pin.test.js で単体検証できる）
 import { createPinGate, normalizePin } from "./pin.js";
 /* ============================================================
-   確定申告からは逃げられない — prototype
+   カクシン様 ─ 確定申告からは逃げられない — prototype
    ============================================================ */
 const $ = (id) => document.getElementById(id);
 const V3 = THREE.Vector3;
@@ -2723,7 +2723,7 @@ $("etaxBtn").addEventListener("click", () => {
 /* ---------- endings ---------- */
 const EDS = {
   refund: { tag: "還付 END", text: "受付完了。<br>あなたは生き延びた。<br><br>還付金：¥34,120" },
-  late:   { tag: "期限後申告 END", text: "3月16日 0:00。<br>怪人は、静かに頭を下げた。<br>「期限後申告について、ご案内します」<br><br>無申告加算税があなたに課された。" },
+  late:   { tag: "期限後申告 END", text: "3月16日 0:00。<br>カクシン様は、静かに頭を下げた。<br>「期限後申告について、ご案内します」<br><br>無申告加算税があなたに課された。" },
   sermon: { tag: "説教 END", text: "捕まった。<br><br>あなたは税務署で3時間、丁寧に説教された。<br>担当者は、最後までずっと敬語だった。" },
   // 暗証番号を3回間違えてカードがロックされた失敗系エンディング（sermon と同様、ランク計算には関与しない・何も解禁しない）
   shiyakusho: { tag: "市役所 END", text: "マイナンバーカードがロックされた。<br>再登録は市役所の窓口でのみ受け付けている。<br>市役所は平日9時〜17時。<br><br>今夜、あなたはe-Taxで送信できなかった。" },

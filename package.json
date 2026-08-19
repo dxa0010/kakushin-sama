@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "kakushin-sama",
-  "description": "確定申告からは逃げられない — テスト実行のためだけの package.json（ビルドはしない・依存は足さない）",
+  "description": "カクシン様 ─ 確定申告からは逃げられない — テスト実行のためだけの package.json（ビルドはしない・依存は足さない）",
   "type": "module",
   "scripts": {
     "test": "node --test tests/unit/*.test.js",

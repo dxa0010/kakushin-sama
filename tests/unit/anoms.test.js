@@ -7,6 +7,7 @@
    ============================================================ */
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 const ANOMS_URL = new URL("../../src/anoms.js", import.meta.url).href;
 
@@ -398,7 +399,7 @@ describe("L-12 label はロケール固有の混同表で1箇所だけ置換す�
   test("L-12b 混同表の全エントリが、いずれかの項目名に実際にヒットする（死んだ表を作らない）", async () => {
     await eachLocale(async (locale) => {
       const { confusables, docSpecs } = await load();
-      const labels = Object.values(docSpecs(locale)).flatMap((d) => d.rows.map((r) => r[0])).join(" ");
+      const labels = Object.values(docSpecs(locale)).flatMap((d) => d.rows.map((r) => r[0])).join("\x00");
       for (const from of Object.keys(confusables(locale))) {
         assert.ok(labels.includes(from), `${locale} の混同表エントリ "${from}" がどの項目名にも出現しない`);
       }
@@ -687,3 +688,43 @@ describe("L-19 can を満たさない書類への適用は例外", () => {
     });
   });
 });
+
+/* ------------------------------------------------------------
+   L-23 / L-24: 怪異の名前とタイトル（仕様書 §8）
+   ------------------------------------------------------------ */
+describe("怪異の名前とタイトル", () => {
+  test("L-23b 全ロケールに title があり、ブランドトークンを含む", async () => {
+    const { LOCALES, localeText } = await load();
+    for (const locale of LOCALES) {
+      const t = localeText(locale);
+      assert.equal(typeof t.title, "string", `${locale} に title が無い`);
+      assert.ok(t.title.length > 0, `${locale} の title が空`);
+      // ja は原語のカタカナ、それ以外は L-24 によりラテン文字大文字で固定
+      const token = locale === "ja" ? "カクシン" : "KAKUSHIN";
+      assert.ok(t.title.includes(token),
+        `${locale} の title に「${token}」が無い: ${t.title}。` +
+        `タイトルは異変 issuer / kami の唯一の根拠なので、名前が消えると解けなくなる`);
+    }
+  });
+
+  test("L-23c ja の title が index.html の <title> と一致する", async () => {
+    const { localeText } = await load();
+    const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+    const m = html.match(/<title>([^<]*)<\/title>/);
+    assert.ok(m, "index.html に <title> が無い");
+    assert.equal(m[1], localeText("ja").title,
+      "index.html の <title> と src/anoms.js の ja.title がずれている（片方だけ直した）");
+  });
+
+  test("L-24 zh-Hans は「确信」を使わない（quèxìn と読まれ音が繋がらない）", async () => {
+    const { localeText } = await load();
+    const t = localeText("zh-Hans");
+    for (const [field, v] of Object.entries(t)) {
+      if (typeof v !== "string") continue;
+      assert.ok(!v.includes("确信"),
+        `zh-Hans の ${field} に「确信」がある: ${v}。` +
+        `漢字の中国語音 quèxìn は KAKUSHIN と別物で、ブランドが繋がらない（仕様書 L-24）`);
+    }
+  });
+});
+

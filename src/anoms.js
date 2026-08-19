@@ -45,6 +45,7 @@ const TEXT = {
     dateGenuine: "令和8年2月14日", dateBad: "令和8年2月30日",
     playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
     monster: "カクシン様", fakeIssuer: "株式会社カクシン", soul: "魂",
+    title: "カクシン様 ─ 確定申告からは逃げられない",
   },
   en: {
     currency: "¥", eraName: "Reiwa",
@@ -52,13 +53,17 @@ const TEXT = {
     dateGenuine: "February 14, Reiwa 8", dateBad: "February 30, Reiwa 8",
     playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
     monster: "Kakushin-sama", fakeIssuer: "Kakushin Co., Ltd.", soul: "Soul",
+    title: "KAKUSHIN — No Escape from Your Tax Return",
   },
   "zh-Hans": {
     currency: "¥", eraName: "令和",
     eraGenuine: "令和8年度", eraInf: "令和∞年度", eraBad: "昭和107年度",
     dateGenuine: "令和8年2月14日", dateBad: "令和8年2月30日",
     playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
-    monster: "确信大人", fakeIssuer: "确信株式会社", soul: "灵魂",
+    // L-24: 「确信」は quèxìn と読まれ KAKUSHIN と音が繋がらないので使わない。
+    // 中国語圏でもラテン文字のブランド名は一般的で、Steam 検索とも噛み合う。
+    monster: "KAKUSHIN大人", fakeIssuer: "KAKUSHIN株式会社", soul: "灵魂",
+    title: "KAKUSHIN — 逃不掉的个税汇算",
   },
   ru: {
     currency: "¥", eraName: "Рэйва",
@@ -66,6 +71,7 @@ const TEXT = {
     dateGenuine: "14 февраля 8 года Рэйва", dateBad: "30 февраля 8 года Рэйва",
     playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
     monster: "Какусин-сама", fakeIssuer: "ООО «Какусин»", soul: "Душа",
+    title: "KAKUSHIN — От налоговой не убежать",
   },
   es: {
     currency: "¥", eraName: "Reiwa",
@@ -73,6 +79,7 @@ const TEXT = {
     dateGenuine: "14 de febrero de Reiwa 8", dateBad: "30 de febrero de Reiwa 8",
     playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
     monster: "Kakushin-sama", fakeIssuer: "Kakushin, S.A.", soul: "Alma",
+    title: "KAKUSHIN — De Hacienda no se escapa",
   },
 };
 

@@ -139,7 +139,11 @@ describe("回帰: 既存の挙動を壊していない", () => {
     const game = GAME();
     const originals = [
       'refund: { tag: "還付 END", text: "受付完了。<br>あなたは生き延びた。<br><br>還付金：¥34,120" }',
-      'late:   { tag: "期限後申告 END", text: "3月16日 0:00。<br>怪人は、静かに頭を下げた。<br>「期限後申告について、ご案内します」<br><br>無申告加算税があなたに課された。" }',
+      // 2026-08-19: 「怪人」→「カクシン様」に変更。文言の推敲ではなく公平性の修正。
+      // 変更前は「カクシン」という名前がプレイヤーに一度も提示されず、
+      // 異変 issuer（発行元＝株式会社カクシン）を却下する根拠がゲーム内に存在しなかった。
+      // タイトル画面とこの END で名乗ることで、却下判定が演繹可能になる。
+      'late:   { tag: "期限後申告 END", text: "3月16日 0:00。<br>カクシン様は、静かに頭を下げた。<br>「期限後申告について、ご案内します」<br><br>無申告加算税があなたに課された。" }',
       'sermon: { tag: "説教 END", text: "捕まった。<br><br>あなたは税務署で3時間、丁寧に説教された。<br>担当者は、最後までずっと敬語だった。" }',
     ];
     for (const line of originals) {
@@ -174,6 +178,59 @@ describe("配線: index.html と package.json", () => {
     assert.match(tag, /autocomplete="off"/, 'autocomplete="off" が無い');
     assert.ok(html.indexOf('id="etaxPin"') > html.indexOf('id="etaxWin"'),
       "#etaxPin が e-Tax ウィンドウの中に無い");
+  });
+
+  /* L-23（仕様書: docs/test-specs/anoms-i18n.md）
+     異変 issuer / kami は「怪異の名前」を知らないと却下できない。
+     v21 以前はこの名前がプレイヤーに一度も提示されておらず、両異変は
+     ゲーム内の情報だけでは解けなかった（L-2 違反）。名前はタイトル画面で提示する。
+     名前をテストにハードコードせず実装から導出しているので、改名しても追従する。 */
+  test("L-23 異変が使う怪異の名前がタイトル画面で提示されている", () => {
+    const game = GAME();
+    const html = HTML();
+
+    const grab = (id) => {
+      const at = game.indexOf('id: "' + id + '"');
+      assert.ok(at >= 0, `異変 ${id} の定義が見つからない`);
+      const m = game.slice(at, at + 400).match(/apply:\s*s\s*=>\s*\{([^}]*)\}/);
+      assert.ok(m, `異変 ${id} の apply が見つからない`);
+      const lit = m[1].match(/"([^"]+)"/);
+      assert.ok(lit, `異変 ${id} の apply に文字列リテラルが無い`);
+      return lit[1];
+    };
+    const issuer = grab("issuer");   // 例: 株式会社カクシン
+    const kami = grab("kami");       // 例: カクシン様
+
+    // 2つのリテラルの最長共通部分文字列＝怪異の名前
+    let token = "";
+    for (let i = 0; i < kami.length; i++)
+      for (let j = i + 1; j <= kami.length; j++) {
+        const t = kami.slice(i, j);
+        if (t.length > token.length && issuer.includes(t)) token = t;
+      }
+    assert.ok(token.length >= 2,
+      `issuer(${issuer}) と kami(${kami}) に共通の名前が無い。別々の名前を使うと、` +
+      `一方はタイトルで提示されても他方の根拠にならない`);
+
+    // タイトル画面のオーバーレイ（プレイヤーが開始前に必ず読む範囲）に名前があること
+    const from = html.indexOf('<div id="title"');
+    const to = html.indexOf('<div id="meta">');
+    assert.ok(from >= 0 && to > from, 'index.html のタイトル画面オーバーレイが見つからない');
+    const titleScreen = html.slice(from, to);
+
+    // オーバーレイのどこかにあるだけでは不足。操作説明（.ctrl, 0.78rem の灰色文字）は
+    // 読み飛ばされうるので、必ず目に入る <h1> にあることを要求する。
+    // ※この assert は「h1 から名前を消す」変異で実際に落ちることを確認済み。
+    const h1 = titleScreen.match(/<h1>([\s\S]*?)<\/h1>/);
+    assert.ok(h1, 'タイトル画面に <h1> が無い');
+    assert.ok(h1[1].includes(token),
+      `怪異の名前「${token}」がタイトル画面の <h1> に無い（見つかった h1: ${h1[1]}）。` +
+      `異変 issuer / kami を却下する根拠がゲーム内に存在しなくなる（L-2 公平性）`);
+
+    // <title> にも入れる（ストア名・タブ名・口コミで使われる同じトークン）
+    const head = html.match(/<title>([^<]*)<\/title>/);
+    assert.ok(head && head[1].includes(token),
+      `<title> に「${token}」が無い: ${head && head[1]}`);
   });
 
   test("NF-06 package.json に依存を追加していない（依存ゼロの静的サイトを維持）", () => {

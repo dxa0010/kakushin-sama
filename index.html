@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>確定申告からは逃げられない</title>
+<title>カクシン様 ─ 確定申告からは逃げられない</title>
 <link rel="icon" href="data:,">
 </head>
 <body>
@@ -32,6 +32,15 @@
     font-size: clamp(1.6rem, 6vw, 3.2rem);
     letter-spacing: 0.12em; font-weight: 600;
     color: #cfc9b8; margin-bottom: 10px;
+  }
+  /* タイトルの2段目。h1（怪異の名前）を最大に見せ、作品名の後半をその下に置く。
+     名前を最初に読ませるのは演出ではなく仕様：異変 issuer（発行元＝株式会社カクシン）と
+     kami（氏名欄＝カクシン様）は「カクシン」という名前を知っていることが判定の根拠になる。
+     v21 の暗証番号と同じ「ゲーム内の情報だけで解ける」原則（docs/test-specs/anoms-i18n.md L-2）。 */
+  #title .sub2 {
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: clamp(1rem, 2.6vw, 1.35rem);
+    letter-spacing: 0.16em; color: #a49d8a; margin-bottom: 12px;
   }
   #title .sub { color: #6f6a5e; font-size: 0.9rem; letter-spacing: 0.3em; margin-bottom: 34px; }
   #title .prem {
@@ -282,8 +291,9 @@
 </div>
 
 <div id="title" class="overlay">
-  <h1>確定申告からは逃げられない</h1>
-  <div class="sub">YOU CANNOT ESCAPE THE FINAL TAX RETURN</div>
+  <h1>カクシン様</h1>
+  <div class="sub2">確定申告からは逃げられない</div>
+  <div class="sub">KAKUSHIN — NO ESCAPE FROM YOUR TAX RETURN</div>
   <div class="prem">3月15日、午後9時。あなたの名前は「三月 十五」。<br>まだ、何もやっていない。<br>書類を5つ集め、e-Taxで送信せよ。<br>ただし──部屋の書類には、偽物が混ざっている。<br>期限は今夜、23時59分。</div>
   <div id="modeSel">
     <button id="modeWhite" class="btn mbtn sel">白色申告</button>
@@ -295,7 +305,7 @@
     <span id="volVal">80%</span>
   </div>
   <button id="startBtn" class="btn">開 始</button>
-  <div class="ctrl">移動：WASD ／ 視点：マウス ／ 調べる：E またはクリック ／ ミュート：M<br>スマホ：左スティック移動 ／ 右スティック視点 ／ ボタンで調べる<br><br>書類は拾う前に検分できる。偽物には一箇所だけ「ありえない」がある。<br>偽物のまま送信すると、審査で却下され──あれが、来る。<br>怪人は常には居ない。だが、部屋の異変は前触れだ。クローゼットには隠れられる。</div>
+  <div class="ctrl">移動：WASD ／ 視点：マウス ／ 調べる：E またはクリック ／ ミュート：M<br>スマホ：左スティック移動 ／ 右スティック視点 ／ ボタンで調べる<br><br>書類は拾う前に検分できる。偽物には一箇所だけ「ありえない」がある。<br>偽物のまま送信すると、審査で却下され──あれが、来る。<br>カクシン様は常には居ない。だが、部屋の異変は前触れだ。クローゼットには隠れられる。</div>
   <div id="meta"></div>
 </div>
 
