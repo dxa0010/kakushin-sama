@@ -30,137 +30,240 @@ const SUB_IDS = new Set(["typo", "stamp", "name", "date", "mark", "label"]);
  * ロケール共通の定数
  * ===================================================================== */
 
-const PLAYER_NAME = "三月 十五";   // 暗証番号のフォールバック手掛かりでもある（L-9）
-const PLAYER_NAME_ALT = "三月 十六"; // 一字ちがい。十五/十六 は字形が明確に違う
-const MINUS = "−";                 // U+2212。U+002D でも括弧記法でもない（L-5）
+const MINUS = "−";   // U+2212。U+002D でも括弧記法でもない（L-5）
+
+/* =====================================================================
+ * 通貨モデル（§9.2 / L-31）
+ *
+ * ru と es は通貨記号が後置で、桁区切りも「,」ではない。
+ * 「¥ 始まりの行を探す」という前提はここで捨てる。
+ * ===================================================================== */
+
+const MONEY = {
+  ja:        { symbol: "¥", position: "pre",  thousands: ",", decimal: "." },
+  en:        { symbol: "$", position: "pre",  thousands: ",", decimal: "." },
+  "zh-Hans": { symbol: "¥", position: "pre",  thousands: ",", decimal: "." },
+  // ロシアは桁区切りが空白（本来は不分割空白だが、フォントのサブセットを
+  // 増やさないため通常の空白で組む＝設計時の判断）
+  ru:        { symbol: "₽", position: "post", thousands: " ", decimal: "," },
+  // スペインは「.」が桁区切り、「,」が小数点。英語圏と逆
+  es:        { symbol: "€", position: "post", thousands: ".", decimal: "," },
+};
+
+/** 整数を桁区切りしてロケールの通貨表記にする。 */
+function groupDigits(n, sep) {
+  const s = String(Math.trunc(Math.abs(n)));
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 === 0) out += sep;
+    out += s[i];
+  }
+  return out;
+}
+function fmt(locale, n) {
+  const m = MONEY[locale];
+  const body = groupDigits(n, m.thousands);
+  return m.position === "pre" ? m.symbol + body : body + " " + m.symbol;
+}
+
+/** 忌み数（§9.1 / L-33）。日本と中国は 四＝死 を共有する（L-28）。 */
+const UNLUCKY = { ja: "4", en: "13", "zh-Hans": "4", ru: "13", es: "13" };
+
+/** 申告期限とその国の日付の書き順（§9.5 / L-30）。
+ * 暗証番号はここから導出する。正解値そのものはこのファイルに書かない（L-34c）。 */
+const DEADLINE = {
+  ja:        { month: 3, day: 15, order: "MD" },
+  en:        { month: 4, day: 15, order: "MD" },
+  "zh-Hans": { month: 6, day: 30, order: "MD" },
+  ru:        { month: 4, day: 30, order: "DM" },
+  es:        { month: 6, day: 30, order: "DM" },
+};
+
+/** 税務当局。すべてパロディ名（L-35b）。
+ * 実在する当局の正式名称・記章・書式を再現しない（docs/HANDOFF.md の既存制約）。
+ * 米国の IRS の記章は 31 U.S.C. § 333 で保護されている。 */
+const AUTHORITY = {
+  ja: "国税院",
+  en: "United States Revenue Bureau",
+  "zh-Hans": "国家税务总署",
+  ru: "Федеральное налоговое управление",
+  es: "Agencia Estatal de Recaudación",
+};
 
 /* =====================================================================
  * ロケールごとの語彙
+ *
+ * eraGenuine / eraInf / eraBad は「税年度」。日本以外に元号は無いので、
+ * 異変 era は「他の4枚と食い違う年」で成立させる（§9.4）。
  * ===================================================================== */
 
 const TEXT = {
   ja: {
-    currency: "¥", eraName: "令和",
+    eraName: "令和",
     eraGenuine: "令和8年分", eraInf: "令和∞年分", eraBad: "昭和107年分",
     dateGenuine: "令和8年2月14日", dateBad: "令和8年2月30日",
-    playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
+    playerName: "三月 十五", playerNameAlt: "三月 十六",
     monster: "カクシン様", fakeIssuer: "株式会社カクシン", soul: "魂",
     title: "カクシン様 ─ 確定申告からは逃げられない",
+    system: "確定申告", channel: "e-Tax",
   },
   en: {
-    currency: "¥", eraName: "Reiwa",
-    eraGenuine: "Reiwa 8", eraInf: "Reiwa ∞", eraBad: "Shōwa 107",
-    dateGenuine: "February 14, Reiwa 8", dateBad: "February 30, Reiwa 8",
-    playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
-    monster: "Kakushin-sama", fakeIssuer: "Kakushin Co., Ltd.", soul: "Soul",
+    eraName: "Tax Year",
+    eraGenuine: "Tax Year 2025", eraInf: "Tax Year ∞", eraBad: "Tax Year 2027",
+    dateGenuine: "February 14, 2026", dateBad: "February 30, 2026",
+    playerName: "April Fifteen", playerNameAlt: "Apryl Fifteen",
+    monster: "Kakushin-sama", fakeIssuer: "KAKUSHIN Holdings, Inc.", soul: "Soul",
     title: "KAKUSHIN — No Escape from Your Tax Return",
+    system: "Form 1040", channel: "e-File",
   },
   "zh-Hans": {
-    currency: "¥", eraName: "令和",
-    eraGenuine: "令和8年度", eraInf: "令和∞年度", eraBad: "昭和107年度",
-    dateGenuine: "令和8年2月14日", dateBad: "令和8年2月30日",
-    playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
-    // L-24: 「确信」は quèxìn と読まれ KAKUSHIN と音が繋がらないので使わない。
-    // 中国語圏でもラテン文字のブランド名は一般的で、Steam 検索とも噛み合う。
-    monster: "KAKUSHIN大人", fakeIssuer: "KAKUSHIN株式会社", soul: "灵魂",
+    eraName: "年度",
+    eraGenuine: "2025年度", eraInf: "∞年度", eraBad: "2027年度",
+    dateGenuine: "2026年2月14日", dateBad: "2026年2月30日",
+    playerName: "六月 三十", playerNameAlt: "六月 三千",
+    // L-24:「确信」は quèxìn と読まれ KAKUSHIN と音が繋がらないので使わない。
+    monster: "KAKUSHIN大人", fakeIssuer: "KAKUSHIN控股有限公司", soul: "灵魂",
     title: "KAKUSHIN — 逃不掉的个税汇算",
+    system: "综合所得年度汇算", channel: "个人所得税",
   },
   ru: {
-    currency: "¥", eraName: "Рэйва",
-    eraGenuine: "8 год Рэйва", eraInf: "∞ год Рэйва", eraBad: "107 год Сёва",
-    dateGenuine: "14 февраля 8 года Рэйва", dateBad: "30 февраля 8 года Рэйва",
-    playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
-    monster: "Какусин-сама", fakeIssuer: "ООО «Какусин»", soul: "Душа",
+    eraName: "год",
+    eraGenuine: "2025 год", eraInf: "∞ год", eraBad: "2027 год",
+    dateGenuine: "14.02.2026", dateBad: "30.02.2026",
+    playerName: "Апрелий Тридцатов", playerNameAlt: "Апрелей Тридцатов",
+    monster: "Какусин-сама", fakeIssuer: "ООО «KAKUSHIN»", soul: "Душа",
     title: "KAKUSHIN — От налоговой не убежать",
+    system: "3-НДФЛ", channel: "Личный кабинет",
   },
   es: {
-    currency: "¥", eraName: "Reiwa",
-    eraGenuine: "Reiwa 8", eraInf: "Reiwa ∞", eraBad: "Shōwa 107",
-    dateGenuine: "14 de febrero de Reiwa 8", dateBad: "30 de febrero de Reiwa 8",
-    playerName: PLAYER_NAME, playerNameAlt: PLAYER_NAME_ALT,
-    monster: "Kakushin-sama", fakeIssuer: "Kakushin, S.A.", soul: "Alma",
+    eraName: "ejercicio",
+    eraGenuine: "ejercicio 2025", eraInf: "ejercicio ∞", eraBad: "ejercicio 2027",
+    dateGenuine: "14/02/2026", dateBad: "30/02/2026",
+    playerName: "Junio Treinta", playerNameAlt: "Iunio Treinta",
+    monster: "Kakushin-sama", fakeIssuer: "KAKUSHIN Inversiones, S.L.", soul: "Alma",
     title: "KAKUSHIN — De Hacienda no se escapa",
+    system: "Declaración de la Renta", channel: "Renta WEB",
   },
 };
 
 /* =====================================================================
- * 書類（5枚）
+ * 書類（5枚）── §9.3
  *
- * 金額の桁区切りは全ロケールで「,」に固定する。ロシア語圏・スペイン語圏は
- * 日常では「.」や空白を使うが、これは「日本の税務書類」なので日本の様式が
- * フィクション内で正しい（L-1）。
+ * 4枚目 `prior` は「前年の申告書控え」。米国は AGI、スペインは casilla 505、
+ * ロシアは前年控えが本人確認・控除継続に実際に要る（L-27）。
+ * 日本だけ例外で、前年控えの提出要件が無いためICカードリーダーの保証書を残す。
+ *
+ * 項目名は混同表（CONFUSABLES）の全エントリに当たり先を用意すること（L-12b）。
+ * 死んだ表エントリがあると、その異変は永遠に発火しない。
  * ===================================================================== */
 
 const DOCS = {
   ja: {
     shiharai: { title: "支払調書", issuer: "株式会社ホワイト商事", rows: [
-      ["支払金額", "¥1,200,000"], ["源泉徴収税額", "¥122,526"], ["区分", "原稿料"]] },
+      ["支払金額", fmt("ja", 1200000)], ["源泉徴収税額", fmt("ja", 122526)], ["区分", "原稿料"]] },
     iryohi: { title: "医療費のお知らせ", issuer: "全国健康保険協会", rows: [
-      ["医療費合計", "¥184,320"], ["対象期間", "1月〜12月"], ["受診回数", "14回"]] },
+      ["医療費合計", fmt("ja", 184320)], ["対象期間", "1月〜12月"], ["受診回数", "14回"]] },
     mycard: { title: "個人番号カード", issuer: "地方公共団体情報システム機構", rows: [
       ["個人番号", "1234 5678 9012"], ["有効期限", "令和10年5月"], ["住所", "県道市町 1-2-3"]] },
-    reader: { title: "保証書", issuer: "ヨドバチカメラ", rows: [
-      ["品名", "ICカードリーダー"], ["型番", "CR-2026W"], ["購入金額", "¥2,980"]] },
+    prior: { title: "保証書", issuer: "ヨドバチカメラ", rows: [
+      ["品名", "ICカードリーダー"], ["型番", "CR-2026W"], ["購入金額", fmt("ja", 2980)]] },
     password: { title: "パスワード控え", issuer: "本人控え", rows: [
       ["利用者識別番号", "1234 5678 9012 3456"], ["暗証番号", "＊＊＊＊"], ["メモ", "『いつもの』"]] },
   },
 
   en: {
-    shiharai: { title: "Payment Record", issuer: "White Trading Co., Ltd.", rows: [
-      ["Payment amount", "¥1,200,000"], ["Withholding tax", "¥122,526"], ["Category", "Manuscript fee"]] },
-    // 「受診回数」は "Number of visits" ではなく "Outpatient visits"。
-    // 混同表の O→0 の当たり先を作るため（L-12b）。
-    iryohi: { title: "Notice of Medical Expenses", issuer: "Japan Health Insurance Association", rows: [
-      ["Total medical expenses", "¥184,320"], ["Period covered", "January–December"], ["Outpatient visits", "14"]] },
-    mycard: { title: "Individual Number Card", issuer: "Local Government Information Systems Organization", rows: [
-      ["Individual number", "1234 5678 9012"], ["Valid until", "May, Reiwa 10"], ["Address", "1-2-3 Kendo, Michi City"]] },
-    reader: { title: "Warranty", issuer: "Yodobachi Camera", rows: [
-      ["Item", "IC card reader"], ["Model", "CR-2026W"], ["Purchase amount", "¥2,980"]] },
+    // 混同表の当たり先: m(compensation) / W(Withholding) / l(Total) / d(withheld) / O(Outpatient)
+    shiharai: { title: "Nonemployee Compensation", issuer: "Whitfield Trading LLC", rows: [
+      ["Nonemployee compensation", fmt("en", 18400)],
+      ["Federal income tax withheld", fmt("en", 2760)],
+      ["Withholding agent", "Whitfield Trading LLC"]] },
+    iryohi: { title: "Medical Expense Summary", issuer: "Meridian Health Network", rows: [
+      ["Total medical expenses", fmt("en", 9180)],
+      ["Months covered", "January–December"],
+      ["Outpatient visits", "14"]] },
+    mycard: { title: "Social Security Card", issuer: "United States Social Insurance Office", rows: [
+      ["Social security number", "123-45-6789"],
+      ["Issued", "May 2018"],
+      ["Address", "412 Kendrick Ave, Milton City"]] },
+    // 前年の申告書控え。米国の e-File は前年 AGI で本人確認する（L-27）
+    prior: { title: "Form 1040 (2024) — Taxpayer Copy", issuer: "Personal copy", rows: [
+      ["Adjusted gross income", fmt("en", 61204)],
+      ["Total tax", fmt("en", 7436)],
+      ["Filed on", "April 15, 2025"]] },
     password: { title: "Password Memo", issuer: "Personal copy", rows: [
       ["User ID", "1234 5678 9012 3456"], ["PIN", "＊＊＊＊"], ["Note", "“the usual”"]] },
   },
 
   "zh-Hans": {
-    shiharai: { title: "支付记录", issuer: "白色商事株式会社", rows: [
-      ["支付金额", "¥1,200,000"], ["预扣税额", "¥122,526"], ["类别", "稿费"]] },
-    iryohi: { title: "医疗费通知", issuer: "全国健康保险协会", rows: [
-      ["医疗费合计", "¥184,320"], ["对象期间", "1月～12月"], ["就诊次数", "14次"]] },
-    mycard: { title: "个人编号卡", issuer: "地方公共团体信息系统机构", rows: [
-      ["个人编号", "1234 5678 9012"], ["有效期限", "令和10年5月"], ["住所", "县道市町 1-2-3"]] },
-    reader: { title: "保证书", issuer: "淀梁照相机", rows: [
-      ["品名", "IC读卡器"], ["型号", "CR-2026W"], ["购买金额", "¥2,980"]] },
+    // 混同表の当たり先: 额 / 类 / 医 / 费 / 号 / 编 / 户 / 备
+    shiharai: { title: "劳务报酬所得明细", issuer: "白鹭商贸有限公司", rows: [
+      ["收入额", fmt("zh-Hans", 120000)],
+      ["已预扣税额", fmt("zh-Hans", 12252)],
+      ["所得类别", "稿酬所得"]] },
+    iryohi: { title: "医疗费用汇总单", issuer: "明德医疗集团", rows: [
+      ["医疗费合计", fmt("zh-Hans", 18432)],
+      ["覆盖月份", "1月～12月"],
+      ["就诊次数", "14次"]] },
+    mycard: { title: "居民身份证", issuer: "公安机关", rows: [
+      ["公民身份号码", "1234 5678 9012"], ["证件编号", "2026 1201"], ["住址", "明德市 光明路 12 号"]] },
+    prior: { title: "上年度汇算清缴记录", issuer: "本人留存", rows: [
+      ["已缴税额", fmt("zh-Hans", 7436)],
+      ["开户银行", "白鹭银行"],
+      ["申报日期", "2025年6月30日"]] },
     password: { title: "密码备忘", issuer: "本人留存", rows: [
       ["用户识别号", "1234 5678 9012 3456"], ["密码", "＊＊＊＊"], ["备注", "“老样子”"]] },
   },
 
   ru: {
-    shiharai: { title: "Справка о выплатах", issuer: "ООО «Вайто Сёдзи»", rows: [
-      ["Сумма выплаты", "¥1,200,000"], ["Удержанный налог", "¥122,526"], ["Категория", "Авторский гонорар"]] },
-    iryohi: { title: "Извещение о медицинских расходах", issuer: "Всеяпонская ассоциация медицинского страхования", rows: [
-      ["Итого медицинских расходов", "¥184,320"], ["Период", "январь–декабрь"], ["Число посещений", "14"]] },
-    mycard: { title: "Карта личного номера", issuer: "Организация информационных систем местного самоуправления", rows: [
-      ["Личный номер", "1234 5678 9012"], ["Срок действия", "май 10 года Рэйва"], ["Адрес", "Кэндо, г. Мити, 1-2-3"]] },
-    // 「品名」は «Наименование» ではなく «Название»。混同表の з→э の当たり先を作るため（L-12b）。
-    reader: { title: "Гарантийный талон", issuer: "«Ёдобати Камера»", rows: [
-      ["Название", "Считыватель IC-карт"], ["Модель", "CR-2026W"], ["Сумма покупки", "¥2,980"]] },
+    // 混同表の当たり先: ь(Стоимость) / щ(Общая, посещений) / ц(Медицинские) /
+    //                   з(Название) / е・и(多数)
+    shiharai: { title: "Справка о доходах", issuer: "ООО «Белояр»", rows: [
+      ["Общая сумма дохода", fmt("ru", 1200000)],
+      ["Удержанный налог", fmt("ru", 156000)],
+      ["Название организации", "ООО «Белояр»"]] },
+    iryohi: { title: "Справка об оплате медицинских услуг", issuer: "Медцентр «Меридиан»", rows: [
+      ["Стоимость услуг", fmt("ru", 184320)],
+      ["Медицинские услуги", "январь–декабрь"],
+      ["Число посещений", "14"]] },
+    mycard: { title: "Свидетельство ИНН", issuer: "Федеральное налоговое управление", rows: [
+      ["Серия и номер", "12 34 567890"],
+      ["Дата выдачи", "май 2018"],
+      ["Адрес", "г. Мытищи, ул. Кедровая, 12"]] },
+    prior: { title: "Декларация 3-НДФЛ за 2024 год", issuer: "Личная копия", rows: [
+      ["Сумма налога", fmt("ru", 156000)],
+      ["Дата подачи", "30.04.2025"],
+      ["Стоимость услуг представителя", fmt("ru", 8000)]] },
     password: { title: "Памятка с паролем", issuer: "Личная копия", rows: [
-      ["Идентификационный номер", "1234 5678 9012 3456"], ["Пароль", "＊＊＊＊"], ["Примечание", "«как всегда»"]] },
+      ["Идентификационный номер", "1234 5678 9012 3456"],
+      ["Пароль", "＊＊＊＊"],
+      ["Примечание", "«как всегда»"]] },
   },
 
   es: {
-    shiharai: { title: "Registro de pagos", issuer: "Jaito Shōji, S.A.", rows: [
-      ["Importe del pago", "¥1,200,000"], ["Impuesto retenido", "¥122,526"], ["Categoría", "Honorarios de autor"]] },
-    // 「対象期間」は «Período cubierto» ではなく «Meses cubiertos»。
-    // í→i を当てると "Periodo" になるが、RAE は "periodo" も正しい綴りとして認めており、
-    // 異変が異変にならない（L-2 の公平性違反）。曖昧さの無い語に替える。
-    iryohi: { title: "Aviso de gastos médicos", issuer: "Asociación Japonesa del Seguro de Salud", rows: [
-      ["Total de gastos médicos", "¥184,320"], ["Meses cubiertos", "enero–diciembre"], ["Número de consultas", "14"]] },
-    mycard: { title: "Tarjeta de número personal", issuer: "Organización de Sistemas de Información de la Administración Local", rows: [
-      ["Número personal", "1234 5678 9012"], ["Válido hasta", "mayo de Reiwa 10"], ["Dirección", "Kendo, Michi, 1-2-3"]] },
-    reader: { title: "Garantía", issuer: "Yodobachi Cámara", rows: [
-      ["Descripción", "Lector de tarjetas IC"], ["Modelo", "CR-2026W"], ["Importe de compra", "¥2,980"]] },
+    // 混同表の当たり先: í(íntegros) / ú(Número) / ó(Retención) / é(médicos) /
+    //                   á(máximo) / ñ(Compañía)
+    // Año は使わない。ñ→n が "Ano" になり、異変ではなく下ネタになる（L-12e）
+    shiharai: { title: "Certificado de retenciones", issuer: "Blanquil Comercial, S.L.", rows: [
+      ["Rendimientos íntegros", fmt("es", 18400)],
+      ["Retención practicada", fmt("es", 2760)],
+      ["Clave de percepción", "Actividades profesionales"]] },
+    iryohi: { title: "Certificado de gastos médicos", issuer: "Clínica Meridiano", rows: [
+      ["Total de gastos médicos", fmt("es", 9180)],
+      ["Importe máximo deducible", fmt("es", 1500)],
+      ["Compañía aseguradora", "Mutua Meridiano"]] },
+    mycard: { title: "Documento Nacional de Identidad", issuer: "Dirección General de Registro Civil", rows: [
+      ["Número de documento", "12345678Z"],
+      ["Fecha de expedición", "12/05/2018"],
+      ["Domicilio", "C/ Quintana 12, 3.º B, Madrid"]] },
+    // casilla 505 は参照番号の取得に実際に要る（L-27）
+    prior: { title: "Declaración de la Renta 2024 — copia", issuer: "Copia personal", rows: [
+      ["Casilla 505", fmt("es", 61204)],
+      ["Cuota resultante", fmt("es", 7436)],
+      ["Fecha de presentación", "30/06/2025"]] },
     password: { title: "Nota de contraseña", issuer: "Copia personal", rows: [
-      ["Número de identificación", "1234 5678 9012 3456"], ["Contraseña", "＊＊＊＊"], ["Observación", "“lo de siempre”"]] },
+      ["Número de identificación", "1234 5678 9012 3456"],
+      ["Contraseña", "＊＊＊＊"],
+      ["Observación", "“lo de siempre”"]] },
   },
 };
 
@@ -215,7 +318,7 @@ const META = {
     label:  ["化けた項目名",     "項目名に誤りがあります"],
   },
   en: {
-    era:    ["A Year That Never Was",        "No such era year."],
+    era:    ["A Year That Never Was",        "No such tax year."],
     typo:   ["Transposed Title",             "The title of this document is incorrect."],
     minus:  ["Negative Sum",                 "The amount is negative."],
     stamp:  ["The Inverted Seal",            "The seal is upside down."],
@@ -224,7 +327,7 @@ const META = {
     issuer: ["An Issuer That Does Not Exist","The issuer does not exist."],
     date:   ["A Date That Never Was",        "No such date of issue."],
     soul:   ["Payment in Soul",              "The amount is not currency."],
-    four:   ["The Number of Death",          "All figures are four."],
+    four:   ["The Number of Death",          "Every figure is thirteen."],
     kami:   ["The Form That Names Itself",   "The name is not that of a person."],
     eye:    ["The Watching Seal",            "The seal impression blinked."],
     blur:   ["Wet Ink",                      "The document is wet."],
@@ -233,7 +336,7 @@ const META = {
     label:  ["Corrupted Field Name",         "A field name is incorrect."],
   },
   "zh-Hans": {
-    era:    ["不存在的年号",     "该年号不存在。"],
+    era:    ["不存在的年度",     "该年度不存在。"],
     typo:   ["颠倒的标题",       "文书名称有误。"],
     minus:  ["负数金额",         "金额为负值。"],
     stamp:  ["倒盖的印章",       "印章倒盖。"],
@@ -251,7 +354,7 @@ const META = {
     label:  ["化形的项目名",     "项目名称有误。"],
   },
   ru: {
-    era:    ["Год, которого не было",        "Такого года эры не существует."],
+    era:    ["Год, которого не было",        "Такого налогового года не существует."],
     typo:   ["Переставленный заголовок",     "Название документа указано неверно."],
     minus:  ["Отрицательная сумма",          "Сумма отрицательна."],
     stamp:  ["Перевёрнутая печать",          "Печать поставлена вверх ногами."],
@@ -260,7 +363,7 @@ const META = {
     issuer: ["Несуществующий эмитент",       "Эмитент не существует."],
     date:   ["Дата, которой не было",        "Такой даты выдачи не существует."],
     soul:   ["Плата душой",                  "Сумма указана не в валюте."],
-    four:   ["Число смерти",                 "Все числа — четвёрки."],
+    four:   ["Число смерти",                 "Все числа — тринадцать."],
     kami:   ["Документ, назвавший себя",     "Имя принадлежит не человеку."],
     eye:    ["Смотрящая печать",             "Оттиск печати мигнул."],
     blur:   ["Размокшие буквы",              "Документ намок."],
@@ -269,7 +372,7 @@ const META = {
     label:  ["Подменённое имя графы",        "Название графы указано неверно."],
   },
   es: {
-    era:    ["Un año que no existió",        "Ese año de era no existe."],
+    era:    ["Un año que no existió",        "Ese ejercicio fiscal no existe."],
     typo:   ["Título transpuesto",           "El nombre del documento es incorrecto."],
     minus:  ["Importe negativo",             "El importe es negativo."],
     stamp:  ["El sello invertido",           "El sello está boca abajo."],
@@ -278,7 +381,7 @@ const META = {
     issuer: ["Un emisor que no existe",      "El emisor no existe."],
     date:   ["Una fecha que no existió",     "Esa fecha de emisión no existe."],
     soul:   ["Pago en alma",                 "El importe no es una moneda."],
-    four:   ["El número de la muerte",       "Todas las cifras son cuatro."],
+    four:   ["El número de la muerte",       "Todas las cifras son trece."],
     kami:   ["El documento que se nombra",   "El nombre no es de un ser humano."],
     eye:    ["El sello que observa",         "El sello parpadeó."],
     blur:   ["Tinta mojada",                 "El documento está mojado."],
@@ -300,7 +403,7 @@ const CODEX_ORIGIN = {
     ju:   "朱肉の赤は、古くは魔を退けるための色だった。退ける側が押しているとは限らない。",
   },
   en: {
-    four: "In Japan, four is read shi — the same sound as death. Tax offices do not renumber.",
+    four: "Thirteen is the floor that buildings skip. A revenue office skips nothing.",
     ju:   "Vermilion ink was once used to ward off spirits. Nothing guarantees which side is holding the seal.",
   },
   "zh-Hans": {
@@ -308,11 +411,11 @@ const CODEX_ORIGIN = {
     ju:   "朱红本是辟邪之色。但持印的一方，未必就是辟邪的那一方。",
   },
   ru: {
-    four: "В Японии «четыре» читается «си» — так же, как «смерть». Налоговая не меняет нумерацию из-за этого.",
+    four: "Тринадцать — число, которое пропускают в западных домах. Налоговая не пропускает ничего.",
     ju:   "Багряная тушь когда-то отгоняла злых духов. Ничто не говорит о том, на чьей стороне печать.",
   },
   es: {
-    four: "En Japón, cuatro se lee shi — igual que muerte. La oficina tributaria no renumera por eso.",
+    four: "Aquí el día aciago es el martes 13, no el viernes. Hacienda no descansa ninguno de los dos.",
     ju:   "La tinta bermellón servía para ahuyentar a los espíritus. Nada garantiza de qué lado está el sello.",
   },
 };
@@ -325,15 +428,17 @@ const CODEX_ORIGIN = {
  * ===================================================================== */
 
 const PIN_HINT = {
-  ja: `メモには『いつもの』とだけ書いてある。……申告書の氏名欄には、いつもの名前があった。「${PLAYER_NAME}」。`,
+  // L-30: 各国の暗証番号はその国の締切を「その国の書き順で」書いたもの。
+  // 日本語版と違い、月・日の順序を注記する必要が無い（ru の 3004 は 30.04 として自明）。
+  ja: `メモには『いつもの』とだけ書いてある。……申告書の氏名欄には、いつもの名前があった。「${TEXT.ja.playerName}」。`,
 
-  en: `The memo says only “the usual.” …And in the name field of the return, the usual name: ${PLAYER_NAME} — Sangatsu Jūgo. March. Fifteen. Month, then day.`,
+  en: `The memo says only “the usual.” …And in the name field of the return, the usual name: ${TEXT.en.playerName}.`,
 
-  "zh-Hans": `备忘上只写着“老样子”。……而申告书的姓名栏里，是那个熟悉的名字。「${PLAYER_NAME}」。三月，十五日。`,
+  "zh-Hans": `备忘上只写着“老样子”。……而申报表的姓名栏里，是那个熟悉的名字。「${TEXT["zh-Hans"].playerName}」。`,
 
-  ru: `В памятке только: «как всегда». …А в графе имени на декларации — то же имя: ${PLAYER_NAME}, Сангацу Дзюго. Март. Пятнадцать. Сначала месяц, затем день.`,
+  ru: `В памятке только: «как всегда». …А в графе имени на декларации — то же имя: ${TEXT.ru.playerName}.`,
 
-  es: `La nota solo dice: “lo de siempre”. …Y en la casilla del nombre de la declaración, el nombre de siempre: ${PLAYER_NAME}, Sangatsu Jūgo. Marzo. Quince. Primero el mes, luego el día.`,
+  es: `La nota solo dice: “lo de siempre”. …Y en la casilla del nombre de la declaración, el nombre de siempre: ${TEXT.es.playerName}.`,
 };
 
 /* =====================================================================
@@ -374,9 +479,12 @@ function pick(rng, n) {
   return Math.min(n - 1, Math.max(0, Math.floor(rng() * n)));
 }
 
-/** 金額欄（¥ 始まりの値）を持つ行の添字。無ければ -1。 */
-function moneyRowIndex(d) {
-  return d.rows.findIndex((r) => r[1].startsWith("¥"));
+/** 金額欄を持つ行の添字。無ければ -1。
+ * ru / es は通貨記号が後置なので「¥ 始まり」では見つからない（L-31）。
+ * ロケールの通貨記号を含むかどうかで判定する。 */
+function moneyRowIndex(d, locale) {
+  const sym = MONEY[locale].symbol;
+  return d.rows.findIndex((r) => r[1].includes(sym));
 }
 
 /** 混同表に当たる (行, 文字位置, 元の字) の候補をすべて列挙する。 */
@@ -413,6 +521,14 @@ const IS_CJK_LOCALE = (locale) => locale === "ja" || locale === "zh-Hans";
  * apply: 複製済みの書類 s を破壊的に書き換える（呼び出し元が複製済み）
  * ===================================================================== */
 
+/** 「1つの数値」＝数字と桁区切り（, / . / 空白）の最長連続。
+ * 3桁グループを前提にすると、桁の切り方が不規則な番号（"123 45 6789" のような
+ * 社会保障番号）で途中で切れて "13 1313" のような残骸になる。g フラグは replace 用。 */
+const NUM_RUN = /[0-9][0-9 ,.]*[0-9]|[0-9]/g;
+/** can の判定用。g フラグ付きを .test() に使うと lastIndex が進んで結果が揺れる。 */
+const HAS_NUM = /[0-9]/;
+const DIGIT = /[0-9]/g;
+
 const RULES = {
   era: {
     apply: (s, locale, rng) => {
@@ -443,10 +559,12 @@ const RULES = {
   },
 
   minus: {
-    can: (d) => moneyRowIndex(d) >= 0,
-    apply: (s) => {
+    can: (d, locale) => moneyRowIndex(d, locale) >= 0,
+    apply: (s, locale) => {
       // 括弧記法 (1,200,000) は英語・スペイン語の会計慣習として「正しい」ので使わない（L-5）。
-      const i = moneyRowIndex(s);
+      // U+2212 は値の文字列の先頭に置く。前置記号のロケールは「−¥1,200,000」、
+      // 後置記号のロケールは「−1 200 000 ₽」となり、どちらも現地の負数表記として自然（L-32）。
+      const i = moneyRowIndex(s, locale);
       s.rows[i][1] = MINUS + s.rows[i][1];
     },
   },
@@ -468,16 +586,26 @@ const RULES = {
   },
 
   soul: {
-    can: (d) => moneyRowIndex(d) >= 0,
+    can: (d, locale) => moneyRowIndex(d, locale) >= 0,
     apply: (s, locale) => {
-      const i = moneyRowIndex(s);
+      const i = moneyRowIndex(s, locale);
       s.rows[i][1] = TEXT[locale].soul;
     },
   },
 
   four: {
-    can: (d) => d.rows.some((r) => /\d/.test(r[1])),
-    apply: (s) => { s.rows.forEach((r) => { r[1] = r[1].replace(/\d/g, "4"); }); },
+    can: (d) => d.rows.some((r) => HAS_NUM.test(r[1])),
+    // 忌み数はロケールで違う（L-33）。1桁（4）なら「数字を1文字ずつ」置き換えて
+    // 桁の見た目を保ち、2桁（13）なら「数値ごと」置き換える。
+    // 13 で1文字ずつ置換すると ¥13131313... になり、異変ではなく壊れたデータに見える。
+    apply: (s, locale) => {
+      const n = UNLUCKY[locale];
+      s.rows.forEach((r) => {
+        r[1] = n.length === 1
+          ? r[1].replace(DIGIT, n)
+          : r[1].replace(NUM_RUN, n);
+      });
+    },
   },
 
   kami: {
@@ -493,7 +621,15 @@ const RULES = {
     can: (d, locale) => labelCandidates(d, locale).length > 0,
     apply: (s, locale, rng) => {
       const cands = labelCandidates(s, locale);
-      const [ri, ci, ch] = cands[pick(rng, cands.length)];
+      // L-20: 候補「箇所」から一様に引くと、その言語で頻出する字に偏る。
+      // ru を実測すると и→й が 47箇所中22、いっぽう最も効く ь→ъ（1918年以前の
+      // 正書法＝革命前の綴り）は 3 しかなく、実質ほとんど出なかった。
+      // まず「置換の種類」を一様に引き、そのうえで箇所を引く。
+      // 16種の異変が一様に出る設計と揃う（種類が異変の味であって、箇所ではない）。
+      const kinds = [...new Set(cands.map((c) => c[2]))];   // 出現順＝決定的
+      const ch = kinds[pick(rng, kinds.length)];
+      const sites = cands.filter((c) => c[2] === ch);
+      const [ri, ci] = sites[pick(rng, sites.length)];
       const arr = [...s.rows[ri][0]];
       arr[ci] = CONFUSABLES[locale][ch];   // 1文字が2文字に増えることがある（m→rn 等）
       s.rows[ri][0] = arr.join("");
@@ -529,6 +665,40 @@ export function docSpecs(locale) {
     };
   }
   return out;
+}
+
+/** そのロケールの通貨モデル（記号・位置・桁区切り・小数点）＝L-31。 */
+export function money(locale) {
+  assertLocale(locale);
+  return { ...MONEY[locale] };
+}
+
+/** 整数をそのロケールの通貨表記にする。 */
+export function formatMoney(locale, amount) {
+  assertLocale(locale);
+  if (typeof amount !== "number" || !Number.isFinite(amount)) {
+    throw new Error(`formatMoney: amount は有限の数値が必要です（受け取った値: ${JSON.stringify(amount)}）`);
+  }
+  return fmt(locale, amount);
+}
+
+/** そのロケールの忌み数（L-33）。日本と中国は "4" を共有する。 */
+export function unluckyNumber(locale) {
+  assertLocale(locale);
+  return UNLUCKY[locale];
+}
+
+/** そのロケールの申告期限と日付の書き順（L-30）。
+ * 暗証番号はここから導出する。正解値そのものはこのモジュールに書かない（L-34c）。 */
+export function deadline(locale) {
+  assertLocale(locale);
+  return { ...DEADLINE[locale] };
+}
+
+/** そのロケールの税務当局（すべてパロディ名＝L-35b）。 */
+export function authority(locale) {
+  assertLocale(locale);
+  return AUTHORITY[locale];
 }
 
 /** そのロケールの混同表（L-12）。 */
