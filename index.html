@@ -20,19 +20,19 @@
      -1 / -2 は穴埋め。简 は日本語フォントに無く（言語選択の「简体中文」）、
      ₽ は CJK 系フォントに一切無い。スタックの末尾に置けば字ごとに拾われる。 */
   @font-face { font-family: "Kakushin Sans";  src: url(assets/fonts/kakushin-sans-jp.woff2) format("woff2");
-               font-weight: 100 900; font-display: block; }
+               font-weight: 100 900; font-display: swap; }
   @font-face { font-family: "Kakushin Serif"; src: url(assets/fonts/kakushin-serif-jp.woff2) format("woff2");
-               font-weight: 100 900; font-display: block; }
+               font-weight: 100 900; font-display: swap; }
   @font-face { font-family: "Kakushin Sans SC";  src: url(assets/fonts/kakushin-sans-sc.woff2) format("woff2");
-               font-weight: 100 900; font-display: block; }
+               font-weight: 100 900; font-display: swap; }
   @font-face { font-family: "Kakushin Serif SC"; src: url(assets/fonts/kakushin-serif-sc.woff2) format("woff2");
-               font-weight: 100 900; font-display: block; }
+               font-weight: 100 900; font-display: swap; }
   @font-face { font-family: "Kakushin Mono";  src: url(assets/fonts/kakushin-mono.woff2) format("woff2");
-               font-weight: 100 900; font-display: block; }
+               font-weight: 100 900; font-display: swap; }
   @font-face { font-family: "Kakushin Gap";   src: url(assets/fonts/kakushin-fallback-1.woff2) format("woff2");
-               font-display: block; }
+               font-display: swap; }
   @font-face { font-family: "Kakushin Gap";   src: url(assets/fonts/kakushin-fallback-2.woff2) format("woff2");
-               font-display: block; }
+               font-display: swap; }
 
   /* スタックは1箇所で決める。個々の規則は必ずこの変数を使うこと
      （直接フォント名を書くと、同梱漏れが実機まで見つからない）。 */
@@ -193,8 +193,14 @@
     text-shadow: 0 1px 8px #000, 0 0 24px #000;
     opacity: 0; transition: opacity 0.5s;
   }
+  /* z-index 34: #etax(30) と #inspect(32) より手前、#ending(40)・#pause(60) より奥。
+     【なぜ手前に出すか】怪人は検分中・e-Tax中も動いて捕まえに来るのに、v22 では
+     この接近ヴィネットが通常プレイ中しか更新されず、しかも検分パネルの奥にあった。
+     つまり**書類を睨んでいる間だけ視覚的な接近警告が消える**状態で、心音だけが頼りだった。
+     難しさではなく不公平な挙動なので、白青どちらでも直す。pointer-events:none なので
+     手前に出してもボタンのクリックは妨げない。 */
   #vignette {
-    position: fixed; inset: 0; pointer-events: none; z-index: 15; opacity: 0;
+    position: fixed; inset: 0; pointer-events: none; z-index: 34; opacity: 0;
     background: radial-gradient(ellipse at center, transparent 46%, rgba(120,10,5,0.55) 100%);
     transition: opacity 0.3s;
   }
@@ -381,6 +387,14 @@
     <label for="pGamma" data-t="optGamma"></label>
     <input id="pGamma" type="range" min="80" max="180" step="5">
     <output id="pGammaV"></output>
+
+    <label for="pQual" data-t="optQuality"></label>
+    <select id="pQual">
+      <option value="auto" data-t="qualityAuto"></option>
+      <option value="high" data-t="qualityHigh"></option>
+      <option value="low"  data-t="qualityLow"></option>
+    </select>
+    <output id="pQualV"></output>
 
     <label for="pLang">言語 / Language</label>
     <select id="pLang">

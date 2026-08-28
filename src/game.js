@@ -142,8 +142,35 @@ function applyLocale(locale) {
 
 /* ---------- モード ---------- */
 const MODES = {
-  white: { labelKey: "modeWhite", forced: 2, p: 0.25, rp: 0.35, mps: 0.45, subtleW: 0.45, base: 34120, huntBonus: 0, visitEarly: 0 },
-  blue:  { labelKey: "modeBlue", forced: 3, p: 0.5,  rp: 0.5,  mps: 0.55, subtleW: 0.75, base: 65480, huntBonus: 6, visitEarly: 4 },
+  /* chaseSpeed: 追跡時の速度（m/s）。null なら従来どおり「巡回速度 × 1.2」。
+     【白は null のまま＝一切変えない】テストプレイで白は「ゲームに慣れた人でも3回死ぬ」
+     ちょうどよさに達している、というのが実測の判断。触ると壊れる。
+     【青は 4.0 の絶対値】プレイヤーは 3.6 m/s 固定なので速度差 0.4。距離4mで見つかってから
+     追いつかれるまで約10秒で、視線を切るか隠れるかを選ぶ余地は残る。青は巡回速度に
+     連動させない（時刻に関係なく「見つかったら 4.0 で来る」という一本の規則にする）。
+     freeze: 発見した瞬間に怪人が立ち止まる秒数。白は 0（＝演出なし・従来のまま）。 */
+  /* visitGap / visitSpread: 次の訪問までのゲーム内分（gap + 乱数(0..spread)）。
+     白は従来の 18 + 乱数(0〜14)＝14〜32分（visitEarly 0）のまま。
+     青は「ほぼ常時いるが息継ぎはある」に寄せる。
+     chaseAccel: 足跡を辿り続けている間の加速。null なら加速しない（白）。
+     minimapNoise: ミニマップに偽の反応を混ぜる（青のみ）。 */
+  white: { labelKey: "modeWhite", forced: 2, p: 0.25, rp: 0.35, mps: 0.45, subtleW: 0.45, base: 34120, huntBonus: 0, visitEarly: 0,
+           chaseSpeed: null, freeze: 0,   spotFx: false,
+           visitGap: 18, visitSpread: 14, aggroMul: 1.5, aggroMax: 10, chaseAccel: null },
+  blue:  { labelKey: "modeBlue", forced: 3, p: 0.5,  rp: 0.5,  mps: 0.55, subtleW: 0.75, base: 65480, huntBonus: 6, visitEarly: 0,
+           chaseSpeed: 4.0,  freeze: 0.7, spotFx: true,
+           /* 訪問間隔 6 + 乱数(0〜8) ゲーム内分。青は 0.55 分/秒なので**実時間で約11〜25秒**。
+              【完全な常時徘徊にはしない】息継ぎが無いと緩急が消えて、恐怖ではなく作業疲労になる。
+              11〜25秒は「急げば書類1枚を見極められるが、少しでも迷うと次の前触れ（9〜12秒）が
+              始まってしまう」長さ。プレイヤーは検分をチキンレースとして強いられる。
+              破棄ペナルティも青では緩める（min(3,…)）。元の min(10,…) は間隔18分が前提の値で、
+              6分に対して10分引くと前触れが成立する前に次が始まってしまう。 */
+           visitGap: 6,  visitSpread: 8, aggroMul: 1.0, aggroMax: 3,
+           /* 【速度で殴らず、追われ続けた時間で殴る】初速は白と同じ「巡回×1.2」のまま。
+              足跡を連続で辿っている間だけ every 秒ごとに per だけ速くなり、cap で頭打ち。
+              単純な壁周回で逃げ続けると必ず追いつかれるので、**視線を切る／クローゼットに
+              入る**ことに初めて意味が出る（必須ギミックにはせず、使えば効く形にする）。 */
+           chaseAccel: { per: 0.2, every: 1.5, cap: 4.0 }, minimapNoise: true },
 };
 let mode = "white";
 
@@ -153,12 +180,12 @@ function loadSave() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (s && typeof s === "object")
-      return Object.assign({ found: {}, endings: {}, runs: 0, bestRank: "", audio: null, locale: null, sens: 100, gamma: 125 }, s);
+      return Object.assign({ found: {}, endings: {}, runs: 0, bestRank: "", audio: null, locale: null, sens: 100, gamma: 125, quality: "auto" }, s);
   } catch (e) {}
   // sens / gamma は「現行の実測値＝100 / 125」を基準にした百分率。
   // 明るさの既定は 1.25（docs/HANDOFF.md：実機で承認済みの v9 値）。**既定は下げない。**
   // プレイヤー側の調整は許すが、初期状態は必ずこの値から始める。
-  return { found: {}, endings: {}, runs: 0, bestRank: "", audio: null, locale: null, sens: 100, gamma: 125 };
+  return { found: {}, endings: {}, runs: 0, bestRank: "", audio: null, locale: null, sens: 100, gamma: 125, quality: "auto" };
 }
 const save = loadSave();
 // ロケールはここで確定する（detectLocale が save を読むので、loadSave の後でなければならない）。
@@ -271,7 +298,6 @@ function drawDoc(spec) {
   c.textBaseline = "alphabetic";
   c.fillStyle = "#ece7d8"; c.fillRect(0, 0, w, h);
   if (spec.mirror) { c.translate(w, 0); c.scale(-1, 1); }
-  if (spec.blur) { c.shadowColor = "rgba(40,38,30,0.85)"; c.shadowBlur = 3.5; }
   if (spec.mark) {
     // 透かし：うっすらと、あの顔
     c.save();
@@ -293,6 +319,12 @@ function drawDoc(spec) {
     c.fillText(TXT.curseMark, 0, 0);
     c.restore();
   }
+  /* 【「濡れた文字」の滲みは文字だけに掛ける】v22 まで、この shadowBlur は関数の頭で
+     立てて末尾の restore() まで解除されず、**枠線・透かし・朱印・罫線を含む全ての
+     fill/stroke がシャドウ付き**で描かれていた。Canvas の shadowBlur は通常描画より
+     一桁近く重く、しかも異変の名前は「濡れた**文字**」なので枠や印まで滲むのは仕様違い。
+     ここ（題字の直前）から、朱印の直前までの文字描画にだけ掛ける。 */
+  if (spec.blur) { c.shadowColor = "rgba(40,38,30,0.85)"; c.shadowBlur = 3.5; }
   c.fillStyle = "#22201c"; c.textAlign = "center";
   // 題字はロケールで長さが大きく変わる（「支払調書」4字 と "Nonemployee Compensation" 24字）。
   // 固定サイズだと枠外へ流れて読めなくなるので、必ず幅に収める。
@@ -327,6 +359,7 @@ function drawDoc(spec) {
   c.font = `14px ${F_SANS()}`;
   c.fillText(spec.date, 30, h - 38);
   c.save();
+  c.shadowBlur = 0;   // 朱印は滲ませない（上の「文字だけ」の但し書きを参照）
   c.translate(w - 80, h - 78);
   if (spec.stampFlip) c.rotate(Math.PI);
   c.globalAlpha = 0.85; c.strokeStyle = "#b23b2e"; c.lineWidth = 2.4;
@@ -368,17 +401,53 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050507);
 scene.fog = new THREE.Fog(0x050507, 6, 17);
 const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 50);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+/* ---------- 画質プリセット（v23で追加） ----------
+   v22 まで、モバイルとデスクトップが**完全に同一の設定**で回っていた（分岐が1つも無い）。
+   影を落とす光源が7個（うち PointLight が5個＝それぞれキューブ6面レンダリング）、
+   GTAO 16サンプル、UnrealBloom、MSAA、pixelRatio 上限2。スマホでは「ゲームとして
+   動かすのがキツい」という報告になっていた。
+
+   【端末判定は UA を見ない】UA 文字列は当てにならないうえ、同じ機種でも世代で性能が違う。
+   触れる画面か・論理コア数・実メモリの3つで見て、**迷ったら low に倒す**（重くて遊べない
+   より、少し地味でも動くほうがよい）。deviceMemory は Chromium 系にしか無いので、
+   取れなければ「並」とみなす。
+   save.quality に "high" / "low" があればそれを優先する（ポーズ画面で変更できる）。 */
+const isTouch = matchMedia("(pointer: coarse)").matches;
+function detectQuality() {
+  if (save.quality === "high" || save.quality === "low") return save.quality;
+  const cores = navigator.hardwareConcurrency || 4;
+  const mem   = navigator.deviceMemory || 4;
+  return (isTouch || cores <= 4 || mem <= 4) ? "low" : "high";
+}
+let QUALITY = detectQuality();
+const LOW = () => QUALITY === "low";
+
+// antialias は WebGL コンテキスト生成時にしか決められない（後から切り替えられない）ので、
+// 起動時の判定で確定させる。ポーズ画面で品質を変えたときに再取得できない唯一の項目だが、
+// MSAA は下の GTAO・シャドウに比べれば軽いので、ここだけ据え置きでも実害は小さい。
+const renderer = new THREE.WebGLRenderer({
+  antialias: !LOW(),
+  powerPreference: "high-performance",   // 内蔵GPUではなく discrete を要求（未指定だと既定任せ）
+});
+renderer.setPixelRatio(LOW() ? 1 : Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// 【PCFSoftShadowMap を使わない理由】three r185 で**廃止済み**で、内部では PCFShadowMap に
+// フォールバックしている。つまり見た目は既に PCF のもので、指定しても得られるものが無い。
+// そのうえ WebGLShadowMap.render() が「deprecated」を**毎フレーム** console.warn する
+// （three.core の warn は warnOnce と違って dedupe しない）。絵は変わらずログ生成コストだけ
+// 払っていたので、実際に走っている型を明示して止める。
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 // 既定 1.25 は実機で承認済みの値（docs/HANDOFF.md）。**既定を下げない。**
 // プレイヤーが設定画面で変えた場合だけ save.gamma が効く。
 renderer.toneMappingExposure = save.gamma / 100;
 $("app").appendChild(renderer.domElement);
-const MAXANISO = renderer.capabilities.getMaxAnisotropy();
+// 異方性フィルタは GPU の上限をそのまま使っていた（多くの環境で16）。床や壁を浅い角度で
+// 見たときのボケ止めなので効果はあるが、サンプル数がそのまま帯域に効く。低画質では4に抑える
+// （4→16 の差は、暗い夜の部屋を歩いている限りほぼ判別できない）。
+const MAXANISO = Math.min(renderer.capabilities.getMaxAnisotropy(), LOW() ? 4 : 16);
 
 /* 環境マップ（金属・光沢面の反射用、ごく弱く） */
 {
@@ -395,12 +464,16 @@ const FilmShader = {
     tDiffuse: { value: null },
     time: { value: 0 },
     res: { value: new THREE.Vector2(innerWidth, innerHeight) },
+    // 見つかっている度合い 0..1（v23）。ヴィネットと彩度をここで動かす。
+    // 【DOM の #vignette ではなくシェーダでやる理由】彩度を落とすには元の色が要る。
+    // DOM のオーバーレイは上に色を乗せることしかできないので、彩度は落とせない。
+    spot: { value: 0 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse; uniform float time; uniform vec2 res;
+    uniform sampler2D tDiffuse; uniform float time; uniform vec2 res; uniform float spot;
     varying vec2 vUv;
     void main() {
       vec2 uv = vUv;
@@ -412,6 +485,17 @@ const FilmShader = {
       col.b = texture2D(tDiffuse, uv - d * ca).b;
       float v = smoothstep(0.95, 0.30, length(d) * 1.15);   // ビネット
       col *= mix(0.42, 1.0, v);
+      /* 【見つかっている間の演出】画面中央の地形は必ず見えたまま保つ。
+         パンくずで追われる以上、角とドアの位置を読んで逃げる必要があり、
+         視界を奪う演出は「理不尽な死」に直結する。だから触るのは
+         (1) 彩度（血の気が引く）と (2) 四隅（周辺視を締める）の2つだけで、
+         中央の明度とコントラストには一切手を入れない。 */
+      if (spot > 0.001) {
+        float lum = dot(col, vec3(0.299, 0.587, 0.114));
+        col = mix(col, vec3(lum), spot * 0.7);              // 完全なモノクロにはしない
+        float edge = smoothstep(0.28, 0.88, length(d) * 1.15);
+        col = mix(col, vec3(0.17, 0.02, 0.02), edge * spot * 0.7);   // 四隅から赤黒く侵食
+      }
       float g = fract(sin(dot(uv * res + mod(time, 97.0), vec2(12.9898, 78.233))) * 43758.5453);
       col += (g - 0.5) * 0.028;                // フィルムグレイン
       gl_FragColor = vec4(col, 1.0);
@@ -435,7 +519,19 @@ composer.addPass(new RenderPass(scene, camera));
    0.35 ではモニタの黒ベゼルが背景に溶けて輪郭を失った。0.20 が接触影として最も素直。 */
 const AO_RADIUS    = 0.20;   // m。本と本の隙間(1〜3cm)〜家具の接地部を拾う。上げると部屋全体が煤ける
 const AO_INTENSITY = 0.9;    // 1.2 は暗部が潰れて造形が消える。0.6 は棚の奥行きが出きらない
-const aoPass = new GTAOPass(scene, camera, innerWidth, innerHeight);
+/* 【AO と Bloom は半解像度で回す】v22 までこの2つは「起動時は CSS ピクセル、resize が
+   一度でも起きると composer 経由で dpr 倍」という一貫しない状態だった（EffectComposer が
+   effectiveWidth = width * pixelRatio で setSize を掛け直すため）。dpr 2 の端末では
+   **アドレスバーの開閉で resize が飛んだ瞬間にピクセル数が4倍になる**——モバイルで
+   「遊び始めてしばらくしたら重くなる」の正体がこれ。
+
+   どちらのパスも低周波な情報しか作らない（AO は接触部の陰り、Bloom は明部の滲み）ので、
+   半分の解像度で作って全解像度に合成しても絵は保たれる。起動時から resize 後まで同じ
+   倍率で走るようにして、上の「途中から4倍」も同時に潰す。 */
+const FX_SCALE = 0.5;
+const fxSize = (w, h) => [Math.max(1, Math.round(w * FX_SCALE)), Math.max(1, Math.round(h * FX_SCALE))];
+const dpr0 = renderer.getPixelRatio();
+const aoPass = new GTAOPass(scene, camera, ...fxSize(innerWidth * dpr0, innerHeight * dpr0));
 aoPass.output = GTAOPass.OUTPUT.Default;
 aoPass.blendIntensity = AO_INTENSITY;
 aoPass.updateGtaoMaterial({
@@ -452,11 +548,19 @@ composer.addPass(aoPass);
 
 // strength 0.28 / threshold 0.9：しきい値を上げて「明るい白い面（寝具・紙・時計盤）」が滲むのを防ぎ、
 // 発光体（アイテムの光球・照明器具）だけを控えめに光らせる。
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.28, 0.55, 0.9);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(...fxSize(innerWidth * dpr0, innerHeight * dpr0)), 0.28, 0.55, 0.9);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 const filmPass = new ShaderPass(FilmShader);
 composer.addPass(filmPass);
+
+// composer は resize のたびに全パスへ effectiveWidth/Height を配る。AO と Bloom だけは
+// そこに FX_SCALE を掛けて受け取らせる（内部のレンダーターゲットだけが縮む。合成先の
+// writeBuffer は composer が持つフル解像度のままなので、絵の出力サイズは変わらない）。
+for (const p of [aoPass, bloomPass]) {
+  const base = p.setSize.bind(p);
+  p.setSize = (w, h) => base(...fxSize(w, h));
+}
 
 addEventListener("resize", () => {
   camera.aspect = innerWidth/innerHeight;
@@ -465,6 +569,48 @@ addEventListener("resize", () => {
   composer.setSize(innerWidth, innerHeight);
   filmPass.uniforms.res.value.set(innerWidth, innerHeight);
 });
+
+/* ---------- 画質の適用 ----------
+   起動時（シーン構築後）と、ポーズ画面で品質を変えたときに呼ぶ。
+   **シーンより後に呼ばれる前提**（光源を traverse するため）なので、定義はここでも
+   呼び出しは下の applyLights(1) の隣にある。
+
+   low で落とすもの（重い順）:
+   1. 影を落とす光源を7→1灯。PointLight のシャドウはキューブ6面ぶんのシーン再描画で、
+      天井灯4基＋PC画面グローの5灯だけで毎フレーム30面。ここが単独で最大の負荷。
+   2. GTAO（16サンプル＋デノイズ）を丸ごと切る。夜の部屋の接触影は失われるが、
+      そもそも描画が間に合わなければ絵の善し悪し以前の問題になる。
+   3. Bloom を切る。発光体のグローが痩せるだけで、造形の情報は落ちない。
+   4. pixelRatio を 1 に。dpr 3 の端末では**これだけでピクセル数が1/9**になる。
+   MSAA(antialias) だけはコンテキスト生成時に決まるので、ここでは変えられない。 */
+function applyQuality() {
+  const low = LOW();
+  renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  // EffectComposer は生成時の pixelRatio を自分で抱えていて、renderer 側を変えても
+  // 追随しない（addons/postprocessing/EffectComposer.js の _pixelRatio）。明示的に渡す。
+  // setPixelRatio は内部で setSize を呼ぶので、続けて setSize する必要はない。
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(innerWidth, innerHeight);
+  filmPass.uniforms.res.value.set(innerWidth, innerHeight);
+  aoPass.enabled    = !low;
+  bloomPass.enabled = !low;
+  scene.traverse((o) => {
+    if (!o.isLight || !o.shadow) return;
+    // 作者が意図した castShadow を最初の1回だけ控えておく（low→high で復元するため）。
+    if (o.userData.wantShadow === undefined) o.userData.wantShadow = o.castShadow;
+    o.castShadow = low ? !!o.userData.keepShadow : o.userData.wantShadow;
+    // 残す1灯も 2048→512 に落とす。手持ちライトの影は輪郭が動き続けるので、
+    // 解像度の粗さは「揺れる影」に紛れて目立たない。
+    const want = low ? 512 : (o.userData.baseMapSize || o.shadow.mapSize.x);
+    if (o.userData.baseMapSize === undefined) o.userData.baseMapSize = o.shadow.mapSize.x;
+    if (o.shadow.mapSize.x !== want) {
+      o.shadow.mapSize.set(want, want);
+      // mapSize はテクスチャ確保後に変えても反映されない。捨てて作り直させる。
+      if (o.shadow.map) { o.shadow.map.dispose(); o.shadow.map = null; }
+    }
+  });
+}
 
 /* ---------- procedural textures ---------- */
 function makeTex(w, h, fn, rx = 1, ry = 1) {
@@ -2108,6 +2254,12 @@ scene.add(moon, moonTarget);
 moon.target = moonTarget;
 const flash = new THREE.SpotLight(0xfff0cf, 1.5, 15, Math.PI/5.2, 0.7, 1.6);   // 目線の懐中電灯。明るすぎたので 9→1.5 に減光
 flash.castShadow = true;
+// 低画質では影を落とす光源をこの1灯だけにする（applyQuality が userData を見る）。
+// 【なぜ懐中電灯を残すか】プレイヤー視点に追従する唯一の光源で、怪人や家具の落ち影が
+// 「自分が照らしている方向」に出る。ここが消えると部屋が平面の書き割りになり、
+// 暗い部屋を手探りで進むという体験そのものが失われる。天井灯の落ち影は動かないので
+// 情報量が少なく、削っても遊びには効かない。
+flash.userData.keepShadow = true;
 flash.shadow.mapSize.set(2048, 2048);
 flash.shadow.bias = -0.002;
 flash.shadow.normalBias = 0.04;
@@ -2326,16 +2478,22 @@ scene.traverse(o => {
   const basic = mat && mat.isMeshBasicMaterial;
   o.castShadow = !basic && !(mat && mat.transparent) && !o.userData.noShadow;
   o.receiveShadow = !basic;
-}); // 「訪問」のあいだだけ実在する
+});
+// 光源が出揃ったここで初めて画質を適用できる（applyQuality は光源を traverse する）。
+applyQuality();
+// 「訪問」のあいだだけ実在する
 const WP = [[3.5,0.5],[0,-2.75],[-4.5,-3.5],[-1.75,0],[-5,3.5],[0,2.75],[3.5,4.5],[6.2,-4.0]];
-const mob = { x: 0, z: 0, wp: 0, mode: "patrol", lostAt: 0, spokeAt: -99, stuck: 0, active: false };
+const mob = { x: 0, z: 0, wp: 0, mode: "patrol", lostAt: 0, spokeAt: -99, stuck: 0, active: false,
+               crumb: -1, freeze: 0,
+               boost: 0, boostT: 0 };   // crumb = 追っているパンくずの通し番号（-1 は未追跡）
+// boost = 追い続けて積み上がった加速ぶん（m/s）、boostT = その積算タイマー
 function spawnMonster() {
   // プレイヤーから遠い候補の中からランダムに出現（毎回同じ場所からは出ない）
   const withD = WP.map((wp, i) => ({ i, wp, d: Math.hypot(wp[0]-ply.x, wp[1]-ply.z) }))
     .sort((a, b) => b.d - a.d);
   const pick = withD[Math.floor(Math.random() * Math.min(3, withD.length))];
   mob.x = pick.wp[0]; mob.z = pick.wp[1]; mob.wp = pick.i;
-  mob.mode = "patrol"; mob.lostAt = 0; mob.stuck = 0; mob.active = true;
+  mob.mode = "patrol"; mob.lostAt = 0; mob.stuck = 0; mob.active = true; mob.crumb = -1; mob.freeze = 0; mob.boost = 0; mob.boostT = 0;
   monster.visible = true;
   monster.position.set(mob.x, 0, mob.z);
   beep(85, 0.7, "sine", 0.16, 55);
@@ -2387,7 +2545,14 @@ function enterVisit() {
 function endVisit() {
   mob.active = false; monster.visible = false; mob.mode = "patrol";
   visit.state = "none";
-  visit.nextAt = gameMin + 18 - MODES[mode].visitEarly + Math.random() * 14 - Math.min(10, aggro * 1.5);
+  /* 次の訪問まで。白は従来どおり 18 + 乱数(0〜14) − 破棄ペナルティ。
+     青は visitGap 3 + 乱数(0〜4) で、ゲーム内3〜7分（実時間で約5〜13秒）＝
+     ほぼ常時いるが息継ぎはある、に寄せる。
+     【下限を置く理由】破棄を重ねると aggro のぶん最大10分引かれるので、
+     青の短い間隔では簡単に負になって「前触れが終わる前に次が始まる」状態になる。
+     前触れ（9〜12秒）は青でも唯一の予告なので、必ず1回分は成立させる。 */
+  const M = MODES[mode];
+  visit.nextAt = gameMin + Math.max(2, M.visitGap - M.visitEarly + Math.random() * M.visitSpread - Math.min(M.aggroMax, aggro * M.aggroMul));
   restoreRoom();
   notice(tr("omenGone"), 2.6);
 }
@@ -2422,6 +2587,25 @@ addEventListener("keydown", e => {
 addEventListener("keyup",   e => { keys[e.code] = false; });
 
 /* pointer lock look */
+/* 【閉じたら必ず掛け直す】v22 まで openInspect / openEtax / openPause / ending が
+   exitPointerLock() を呼ぶのに、**掛け直す口はキャンバスの click と closePause しか
+   無かった**。つまり書類の受理／破棄を押して検分ビューを閉じるたびに視点操作が死に、
+   キャンバスをもう一度クリックするまで戻らない。検分はこのゲームのコアループそのもので
+   1周に十数回通るので、「何か選択した前後でしっかり止まる」という体感の主因になっていた。
+   閉じる処理はどれもクリックか Esc（＝ユーザー操作）から来るので、ここで requestPointerLock
+   を呼ぶのは仕様上正当。 */
+function relock() {
+  if (isTouch || state !== "PLAY") return;
+  if (document.pointerLockElement === renderer.domElement) return;
+  // Chrome 111+ は Promise を返す。古い実装は undefined を返すので両方受ける。
+  // 拒否は例外ではなく pointerlockerror なので、握り潰さず「クリックで復帰」を案内する
+  // （Esc で解除した直後は約1.25秒ロックを受け付けない、というブラウザ側の連打防止がある）。
+  const p = renderer.domElement.requestPointerLock();
+  if (p && typeof p.catch === "function") p.catch(() => notice(tr("clickToLook"), 2.2));
+}
+addEventListener("pointerlockerror", () => {
+  if (state === "PLAY" && !isTouch) notice(tr("clickToLook"), 2.2);
+});
 renderer.domElement.addEventListener("click", () => {
   if (state === "PLAY" && !isTouch) renderer.domElement.requestPointerLock();
 });
@@ -2436,15 +2620,20 @@ addEventListener("mousemove", e => {
 });
 
 /* touch controls: dual fixed sticks (FPS style) */
-const isTouch = matchMedia("(pointer: coarse)").matches;
+// isTouch は画質プリセットの判定にも使うので、レンダラ生成より前（ファイル冒頭側）で宣言してある。
 if (isTouch) document.body.classList.add("touch");
 const stickMove = { x: 0, y: 0 };   // -1..1
 const stickLook = { x: 0, y: 0 };   // -1..1 (rate)
 function makeStick(el, out) {
   const knob = el.querySelector(".knob");
   let id = null;
+  /* 【rect を毎 touchmove で取らない】getBoundingClientRect はレイアウトが汚れていれば
+     強制リフローを起こす。touchmove は端末によって毎秒60〜120回飛び、しかもスティックは
+     左右2本ある。スティックは画面に固定配置で、指を置いている間にサイズも位置も変わらない
+     ので、touchstart で1回だけ測って、そのドラッグ中は使い回す。 */
+  let rect = null;
   const update = (t) => {
-    const r = el.getBoundingClientRect();
+    const r = rect || (rect = el.getBoundingClientRect());
     const max = r.width * 0.42;
     let dx = t.clientX - (r.left + r.width/2);
     let dy = t.clientY - (r.top + r.height/2);
@@ -2457,6 +2646,7 @@ function makeStick(el, out) {
     e.preventDefault();
     if (id !== null) return;
     id = e.changedTouches[0].identifier;
+    rect = null;   // このドラッグぶんの寸法をここで1回だけ測り直す
     update(e.changedTouches[0]);
   }, { passive: false });
   addEventListener("touchmove", e => {
@@ -2479,9 +2669,20 @@ makeStick($("stickL"), stickMove);
 makeStick($("stickR"), stickLook);
 
 /* ---------- collision ---------- */
+/* 【毎フレーム concat しない】hitsAny は moveCircle から呼ばれ、moveCircle は
+   プレイヤー（毎フレーム最大2回）と怪人（アクティブ中は最大2回）から呼ばれる。
+   v22 では**そのたびに walls.concat(solids) で新しい配列を作っていた**ので、
+   怪人が出ている間は毎フレーム4本の配列がゴミになっていた。壁も家具も
+   シーン構築中にしか push されない（実行時に増減しない）ので1回作れば足りる。
+   念のため要素数が変わったら作り直す。 */
+let blockers = null, blockersN = -1;
+function allBlockers() {
+  const n = walls.length + solids.length;
+  if (blockers === null || n !== blockersN) { blockers = walls.concat(solids); blockersN = n; }
+  return blockers;
+}
 function hitsAny(x, z, r) {
-  const all = walls.concat(solids);
-  for (const b of all) {
+  for (const b of allBlockers()) {
     const cx = Math.max(b.x1, Math.min(x, b.x2));
     const cz = Math.max(b.z1, Math.min(z, b.z2));
     if ((x-cx)*(x-cx) + (z-cz)*(z-cz) < r*r) return true;
@@ -2491,6 +2692,83 @@ function hitsAny(x, z, r) {
 function moveCircle(o, dx, dz, r) {
   if (!hitsAny(o.x + dx, o.z, r)) o.x += dx;
   if (!hitsAny(o.x, o.z + dz, r)) o.z += dz;
+}
+/* ---------- パンくず：プレイヤーの足跡（v23で追加） ----------
+   【なぜ要るか】怪人は経路探索を持たず、見失っている間もプレイヤーの**現在座標へ壁越しに
+   直進**していた。部屋の中央には南北2箇所の開口を持つ間仕切り壁があり、プレイヤーは
+   片方のドアから抜けてもう片方から戻る「壁を挟んだ周回」ができる。怪人は壁に貼り付いた
+   まま追随できず、**周回しているだけで永久に振り切れた**（テストプレイの「部屋がぐるぐる
+   回れちゃうから集められた」がこれ）。
+
+   直進をやめて、プレイヤーが1m進むごとに置いた見えない足跡を古い順に辿らせる。
+   足跡は必ず「実際に歩けた場所」なので、A* を書かずに角を曲がって追ってくるようになる。
+   （追跡経路の方式としてパンくずを選んだのは、A* に比べて実装が小さく、かつ
+     「怪人が匂いを辿っている」という見え方がホラーの様式にも合うため。）
+
+   通し番号 n を持たせているのは、古いものを shift で捨てても怪人が追っている足跡を
+   見失わないようにするため（配列の添字だと shift のたびに全部ずれる）。 */
+const TRAIL_MAX = 40;          // 1m 刻みなので約40m ぶん。部屋の対角(約20m)の倍を持つ
+const trail = [];              // { x, z, n } を古い順に
+let trailN = 0, trailLastX = 0, trailLastZ = 0;
+function trailPush() {
+  if (trail.length && Math.hypot(ply.x - trailLastX, ply.z - trailLastZ) < 1.0) return;
+  trailLastX = ply.x; trailLastZ = ply.z;
+  trail.push({ x: ply.x, z: ply.z, n: trailN++ });
+  if (trail.length > TRAIL_MAX) trail.shift();
+}
+/** 見失っている怪人が次に向かうべき足跡。無ければ null（＝プレイヤーへ直進に戻す）。 */
+function trailTarget() {
+  if (!trail.length) return null;
+  let node = mob.crumb >= 0 ? trail.find(c => c.n === mob.crumb) : null;
+  // まだ辿り始めていない／追っていた足跡が古くなって捨てられた場合は、
+  // 自分に一番近い足跡＝プレイヤーの通り道が自分の近くをかすめた点から始める。
+  if (!node) {
+    let bd = Infinity;
+    for (const c of trail) {
+      const d = Math.hypot(c.x - mob.x, c.z - mob.z);
+      if (d < bd) { bd = d; node = c; }
+    }
+  }
+  // 足跡に着いたら、ひとつ新しい足跡へ進む（古い順に辿る＝プレイヤーの経路をなぞる）。
+  while (node && Math.hypot(node.x - mob.x, node.z - mob.z) < 0.6) {
+    const next = trail.find(c => c.n === node.n + 1);
+    if (!next) { node = null; break; }   // 最新まで辿り着いた。あとは直進でよい
+    node = next;
+  }
+  mob.crumb = node ? node.n : -1;
+  return node;
+}
+
+/* ---------- 壁沿いのすべり（v23で追加） ----------
+   怪人の移動は経路探索を持たない直線ステアリングで、衝突解決は moveCircle の
+   「x を試す → z を試す」という軸別分離だけ。**斜めから角に入ると両軸とも弾かれて
+   完全に停止する**（中央壁のドア開口は幅1.56mしかなく、家具のコライダーの角も同様）。
+   これが「カクシン様がたまにスタックしてる」の正体で、v22 は復帰まで1.2秒その場で
+   震えていた。
+
+   ここでは、まっすぐ進めなかったときだけ進行方向の左右90度（＝壁に沿う向き）を試し、
+   目標に近づくほうへ滑らせる。A* ではないので袋小路は抜けられないが、「角で止まる」
+   という一番目につく破綻は消える。返り値は実際に動いた距離（呼び出し側の停滞判定用）。 */
+function steer(o, dx, dz, r, tx, tz) {
+  const ox = o.x, oz = o.z;
+  const want = Math.hypot(dx, dz);
+  moveCircle(o, dx, dz, r);
+  let moved = Math.hypot(o.x - ox, o.z - oz);
+  if (want < 1e-6 || moved > want * 0.5) return moved;
+  // 接線は2つある（左90度と右90度）。目標に近づくほうから試す。
+  const cands = [[-dz, dx], [dz, -dx]];
+  const near = ([sx, sz]) => Math.hypot(ox + sx - tx, oz + sz - tz);
+  if (near(cands[1]) < near(cands[0])) cands.reverse();
+  for (const [sx, sz] of cands) {
+    o.x = ox; o.z = oz;
+    moveCircle(o, sx, sz, r);
+    const m = Math.hypot(o.x - ox, o.z - oz);
+    if (m > want * 0.5) return m;
+  }
+  // どちらの接線も塞がっていた。素直に進んだ結果（部分的にでも動けた分）に戻す。
+  o.x = ox; o.z = oz;
+  moveCircle(o, dx, dz, r);
+  return moved;
 }
 /* line of sight: segment vs wall AABBs (walls only) */
 function los(ax, az, bx, bz) {
@@ -2558,9 +2836,17 @@ function mmPos(x, z) {
     (z - MM_BOUNDS.minZ) / (MM_BOUNDS.maxZ - MM_BOUNDS.minZ) * mmCanvas.height,
   ];
 }
-function drawMinimap() {
-  const ctx = mmCtx, w = mmCanvas.width, h = mmCanvas.height;
-  ctx.clearRect(0, 0, w, h);
+/* 【背景は1回だけ焼く】ミニマップは毎フレーム描き直されるが、床・家具・壁は
+   ゲーム中いっさい動かない。v22 では毎フレーム solids と walls を全部なめて
+   fillRect し、そのたびに mmPos が座標ペアの配列を2本ずつ返していた（＝壁と家具の
+   件数×2 のゴミが毎フレーム）。静的な層をオフスクリーンに1枚焼いて、毎フレームは
+   その1枚を drawImage して動く2点（怪人・プレイヤー）だけ描く。 */
+let mmBase = null;
+function bakeMinimapBase() {
+  const w = mmCanvas.width, h = mmCanvas.height;
+  mmBase = document.createElement("canvas");
+  mmBase.width = w; mmBase.height = h;
+  const ctx = mmBase.getContext("2d");
   ctx.fillStyle = "#12100c"; ctx.fillRect(0, 0, w, h);
   // 家具（薄く）
   ctx.fillStyle = "rgba(150,138,110,0.3)";
@@ -2574,6 +2860,11 @@ function drawMinimap() {
     const [x1, z1] = mmPos(b.x1, b.z1), [x2, z2] = mmPos(b.x2, b.z2);
     ctx.fillRect(x1, z1, Math.max(1.6, x2 - x1), Math.max(1.6, z2 - z1));
   });
+}
+function drawMinimap() {
+  const ctx = mmCtx, w = mmCanvas.width, h = mmCanvas.height;
+  if (!mmBase) bakeMinimapBase();
+  ctx.drawImage(mmBase, 0, 0);
   // 怪人（追跡中のみ表示＝すでに気配で分かっている情報)
   if (mob.active && mob.mode === "chase") {
     const [mx, mz] = mmPos(mob.x, mob.z);
@@ -2607,23 +2898,29 @@ refreshSlots();
 /* ---------- interact ---------- */
 let nearTarget = null; // {kind:'item'|'fake'|'desk'|'closet', ref}
 const CLOSET = { x: -1.6, z: -4.55 };
+/* 【配列を作って sort しない】毎フレーム呼ばれる。v22 では候補オブジェクトの配列を
+   組んでから sort していたが、欲しいのは最短の1件だけ。候補は最大でもアイテム5＋
+   フェイク3＋机＋クローゼットの10件なので、線形に最小を取るほうが速いうえ、
+   毎フレームのゴミが1オブジェクト（返り値）だけで済む。 */
 function findNear() {
   if (ply.hidden) return { kind: "closet" };
-  const cand = [];
-  ITEMS.forEach(it => { if (!it.taken) {
+  let best = null, bestD = Infinity;
+  const keep = (d, obj) => { if (d < bestD) { bestD = d; best = obj; } };
+  for (const it of ITEMS) {
+    if (it.taken) continue;
     const d = Math.hypot(ply.x - it.x, ply.z - it.z);
-    if (d < 1.45) cand.push({ d, kind: "item", ref: it });
-  }});
-  FAKES.forEach((f, idx) => { if (!f.taken) {
+    if (d < 1.45) keep(d, { d, kind: "item", ref: it });
+  }
+  FAKES.forEach((f, idx) => {
+    if (f.taken) return;
     const d = Math.hypot(ply.x - f.x, ply.z - f.z);
-    if (d < 1.45) cand.push({ d, kind: "fake", ref: f, idx });
-  }});
+    if (d < 1.45) keep(d, { d, kind: "fake", ref: f, idx });
+  });
   const dd = Math.hypot(ply.x - 6.5, ply.z - (-2.0));
-  if (dd < 1.6) cand.push({ d: dd, kind: "desk" });
+  if (dd < 1.6) keep(dd, { d: dd, kind: "desk" });
   const dc = Math.hypot(ply.x - CLOSET.x, ply.z - CLOSET.z);
-  if (dc < 1.25) cand.push({ d: dc, kind: "closet" });
-  cand.sort((a, b) => a.d - b.d);
-  return cand[0] || null;
+  if (dc < 1.25) keep(dc, { d: dc, kind: "closet" });
+  return best;
 }
 function tryInteract() {
   if (state !== "PLAY" || !nearTarget) return;
@@ -2678,6 +2975,7 @@ function closeInspect() {
   $("inspect").classList.add("hidden");
   if (state === "INSPECT") state = "PLAY";
   inspectIt = null;
+  relock();   // 掛け直さないと視点操作が死んだままになる（relock のコメント参照）
 }
 $("btnTake").addEventListener("click", () => {
   if (!inspectIt) return;
@@ -2766,6 +3064,7 @@ function closeEtax() {
   if (state !== "ETAX") return;
   $("etax").classList.add("hidden");
   state = "PLAY";
+  relock();   // closeInspect と同じ理由
 }
 $("etaxClose").addEventListener("click", closeEtax);
 $("etaxBtn").addEventListener("click", () => {
@@ -2942,13 +3241,28 @@ function monsterUpdate(dt) {
     visit.leaveT += dt;
     const d = Math.hypot(EXIT_POS.x - mob.x, EXIT_POS.z - mob.z);
     if (d < 0.6 || visit.leaveT > 7) { endVisit(); return; }
-    moveCircle(mob, (EXIT_POS.x-mob.x)/d * sp * dt, (EXIT_POS.z-mob.z)/d * sp * dt, 0.4);
+    steer(mob, (EXIT_POS.x-mob.x)/d * sp * dt, (EXIT_POS.z-mob.z)/d * sp * dt, 0.4, EXIT_POS.x, EXIT_POS.z);
   } else if (mob.mode === "patrol") {
     visit.huntLeft -= dt;
     if (visit.huntLeft <= 0) {
       mob.mode = "leave"; visit.leaveT = 0;
     } else if (canSee) {
       mob.mode = "chase";
+      /* ---------- 「見つかった」瞬間の演出（v23で追加） ----------
+         【なぜ要るか】これまで発見の瞬間は明示されず、心音が速まったことで事後的に
+         気づくしかなかった。白は怪人のほうが遅いのでそれでも成立していたが、青は
+         怪人のほうが速い（4.0 vs 3.6）ので、**逃げる判断と方向転換の猶予が無いと
+         ただの理不尽**になる。発見と同時に怪人を 0.7秒その場に止め、鋭い音を立てる。
+         この 0.7秒がプレイヤーの反応時間そのものになる。
+         白は freeze: 0 なので、この節は青でしか動かない（白は一切変えない方針）。 */
+      mob.boost = 0; mob.boostT = 0;   // 加速は「この追跡で追われ続けた時間」だけを表す
+      const fz = MODES[mode].freeze;
+      if (fz > 0) {
+        mob.freeze = fz;
+        // 足音の帯域（120Hz中心の低い破裂）とは重ならない高い帯域で、下降させて「気づかれた」を作る。
+        beep(2400, 0.18, "sawtooth", 0.09, 900);
+        beep(160, 0.5, "sine", 0.13, 70);
+      }
       if (state === "INSPECT") { closeInspect(); subtitle(tr("omenThere"), 2.2); }
       const now = performance.now()/1000;
       if (now - mob.spokeAt > 10) {
@@ -2962,21 +3276,66 @@ function monsterUpdate(dt) {
       const d = Math.hypot(tx - mob.x, tz - mob.z);
       if (d < 0.45) mob.wp = (mob.wp + 1) % WP.length;
       else {
-        const ox = mob.x, oz = mob.z;
-        moveCircle(mob, (tx-mob.x)/d * sp * dt, (tz-mob.z)/d * sp * dt, 0.4);
-        if (Math.hypot(mob.x-ox, mob.z-oz) < sp*dt*0.15) mob.wp = (mob.wp + 1) % WP.length;
+        const moved = steer(mob, (tx-mob.x)/d * sp * dt, (tz-mob.z)/d * sp * dt, 0.4, tx, tz);
+        if (moved < sp*dt*0.15) mob.wp = (mob.wp + 1) % WP.length;
       }
     }
   } else { // chase
+    /* 追跡速度。初速は白青とも従来の「巡回×1.2」（21時台1.26〜23時台2.76）。
+       青だけ、追い続けている間に少しずつ速くなって cap(4.0) で頭打ちになる。
+       【なぜ最初から4.0にしないか】いきなりプレイヤー(3.6)より速いと、見つかった時点で
+       ほぼ確定死になり「油断した自分が悪い」の納得感が出ない。追われた時間そのものを
+       圧力に変えると、逃げ切れはするが**逃げ続けることはできない**——だから
+       「どこかで視線を切る」という判断が要る遊びになる。 */
     sp *= 1.2;
-    if (canSee) mob.lostAt = 0;
-    else { mob.lostAt += dt; if (mob.lostAt > 2.8) { mob.mode = "patrol"; mob.lostAt = 0; } }
-    const d = pd || 1;
-    const ox = mob.x, oz = mob.z;
-    moveCircle(mob, (ply.x-mob.x)/d * sp * dt, (ply.z-mob.z)/d * sp * dt, 0.4);
-    if (Math.hypot(mob.x-ox, mob.z-oz) < sp*dt*0.1) {
+    const acc = MODES[mode].chaseAccel;
+    if (acc) {
+      mob.boostT += dt;
+      while (mob.boostT >= acc.every) { mob.boostT -= acc.every; mob.boost += acc.per; }
+      sp = Math.min(acc.cap, sp + mob.boost);
+    }
+    // 発見直後の硬直。止まっているだけで、向き（monster.lookAt）と捕獲判定は生きている。
+    if (mob.freeze > 0) { mob.freeze -= dt; sp = 0; }
+    // 【見えている間は直進、見失ったら足跡を辿る】v22 はロスト猶予の2.8秒のあいだも
+    // プレイヤーの現在座標へ壁越しに直進していたので、間仕切り壁を挟んで周回されると
+    // 壁に貼り付いたまま置いていかれた。見えなくなった瞬間から、プレイヤーが実際に
+    // 通った道（＝必ず歩ける道）をなぞる。
+    let tx = ply.x, tz = ply.z;
+    if (canSee) { mob.lostAt = 0; mob.crumb = -1; }
+    else {
+      mob.lostAt += dt;
+      if (mob.lostAt > 2.8) { mob.mode = "patrol"; mob.lostAt = 0; mob.crumb = -1; }
+      const node = trailTarget();
+      if (node) { tx = node.x; tz = node.z; }
+      /* 【足跡の終端に着いたら加速が抜けていく】trailTarget が null＝プレイヤーが実際に
+         通った道を最後まで辿りきったのに姿が無い、という状態。匂いが切れた瞬間なので
+         ここまでの加速を手放す。クローゼットに入る／視線を切って距離を取る、という
+         プレイヤー側の行動がそのまま「怪人の速度を巻き戻す」報酬になる。
+         【一瞬で戻さない】4.0 から 1.26 へ1フレームで落ちると、動きが物理的に不自然に見える
+         （急に置物になる）。毎秒 1.0 m/s ずつ抜く。 */
+      else { mob.boost = Math.max(0, mob.boost - dt); mob.boostT = 0; }
+    }
+    const d = Math.hypot(tx - mob.x, tz - mob.z) || 1;
+    const moved = steer(mob, (tx-mob.x)/d * sp * dt, (tz-mob.z)/d * sp * dt, 0.4, tx, tz);
+    if (moved < sp*dt*0.1) {
       mob.stuck += dt;
-      if (mob.stuck > 1.2) { mob.mode = "patrol"; mob.stuck = 0; }
+      // 【1.2秒 → 0.45秒】壁沿いのすべりを入れてもなお動けないのは、目標との間に
+      // 家具や壁が厚く挟まっている＝直線ステアリングでは到達できない配置のとき。
+      // 1.2秒その場で震えるのは見た目にはっきり「バグ」なので、早めに切り上げる。
+      if (mob.stuck > 0.45) {
+        // 【巡回に戻すが、順路の続きではなくプレイヤーに一番近い巡回点へ向かわせる】
+        // v22 は素の patrol に戻していたので、角で詰まるたびに部屋の反対側へ去っていき、
+        // プレイヤーは「壁の向こうで引っかかって諦めた敵」を見ることになっていた。
+        // 巡回点は部屋中に散っているので、近い1点を選ぶだけで障害物を大きく迂回できる
+        // （A* の代わりとして、既にあるウェイポイント網を経由路に使う）。
+        let bi = mob.wp, bd = Infinity;
+        WP.forEach((p, i) => {
+          const dd = Math.hypot(p[0]-ply.x, p[1]-ply.z);
+          if (dd < bd) { bd = dd; bi = i; }
+        });
+        mob.wp = bi;
+        mob.mode = "patrol"; mob.stuck = 0;
+      }
     } else mob.stuck = 0;
     if (pd < 0.95 && !ply.hidden) ending("sermon");
   }
@@ -2999,8 +3358,12 @@ function monsterUpdate(dt) {
     // 渡すのは定位と「1歩ごとにばらつかせる」指示だけにする。
     if (vol > 0.01) footstep(vol, { pan: panFor(mob.x, mob.z), vary: 1 });
   }
-  // 接近ビネット
-  if (state === "PLAY") {
+  // 接近ビネット。**検分中・e-Tax中も更新する**（v23）。
+  // これらの画面でも怪人は近づき、捕獲判定も生きているのに、v22 では通常プレイ中しか
+  // 更新されず、書類を睨んでいる間だけ視覚的な警告が止まっていた。心音は鳴り続けるので
+  // 「音だけが頼り」という中途半端な状態になっていた。難易度ではなく公平性の問題なので
+  // 白青どちらでも直す（CSS 側で z-index も 15→34 に上げてオーバーレイの手前に出した）。
+  if (state === "PLAY" || state === "INSPECT" || state === "ETAX") {
     $("vignette").style.opacity = pd < 3.5 ? (1 - pd/3.5) * 0.85 : 0;
   }
   heartbeatUpdate(pd);
@@ -3116,6 +3479,8 @@ function clockUpdate(dt) {
 
 /* ---------- main loop ---------- */
 let last = performance.now();
+let warmup = 4;   // タイトル表示中にシェーダを焼いておくフレーム数（下の opaqueOverlay を参照）
+let spotFx = 0;   // 「見つかっている度合い」0..1。FilmShader の spot uniform へ渡す
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -3143,6 +3508,7 @@ function frame(now) {
         const sin = Math.sin(ply.yaw), cos = Math.cos(ply.yaw);
         moveCircle(ply, (fx * cos + fz * sin) * sp, (fz * cos - fx * sin) * sp, ply.r);
       }
+      trailPush();
       clockUpdate(dt);
       // interact prompt
       nearTarget = findNear();
@@ -3200,8 +3566,39 @@ function frame(now) {
     if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) noticeEl.style.opacity = 0; }
   }
 
-  filmPass.uniforms.time.value = now / 1000;
-  composer.render();
+  /* ---------- 描画（状態に応じて手を抜く。v23で追加） ----------
+     v22 までは state に関係なく毎フレーム composer.render() を呼んでいた。つまり
+     **タイトル画面・ポーズ・エンディングという「不透明な DOM が画面全体を覆っている間」も、
+     GTAO＋Bloom＋影7灯がフル解像度で回り続けていた**。1ピクセルも見えないものを描いている。
+
+     オーバーレイの不透明度で3段に分ける（index.html の CSS がそのまま根拠）:
+     - #title / #pause(0.9) / #ending は不透明 → 描画を丸ごと止める。
+       最後に描いたフレームはキャンバスに残るので、絵が消えることはない。
+     - #inspect(0.8) / #etax(0.55) は半透明で、背後の部屋が透けて見える。**e-Tax画面の
+       向こうから怪人が近づいてくるのが見える**のは設計上の緊張なので、描画は止めない。
+       ただし AO（接触部の陰り）と Bloom（明部の滲み）は、55〜80%の暗幕越しには
+       まず判別できないので、この2パスだけ落とす。 */
+  // 【タイトル中に数フレームだけ描く理由】不透明だからと最初から一度も描かないと、
+  // シェーダのコンパイル（本体＋GTAO・Bloom・Output・Film の4パス）がまるごと
+  // 「ゲーム開始の1フレーム目」に集中して、開始直後に必ず固まる。タイトルの裏で
+  // 数フレーム焼いておけば、その分は待ち時間の中に隠れる。
+  const opaqueOverlay = (state === "TITLE" || state === "PAUSE" || state === "END") && warmup <= 0;
+  if (!opaqueOverlay) {
+    if (warmup > 0) warmup--;
+    const dimmed = state === "INSPECT" || state === "ETAX";
+    aoPass.enabled    = !LOW() && !dimmed;
+    bloomPass.enabled = !LOW() && !dimmed;
+    /* 見つかっている度合いを滑らかに追従させる（v23）。
+       立ち上がりを速く（0.22秒）・戻りを遅く（1.1秒）するのは、「見つかった瞬間」は
+       即座に伝えたい一方、視線を切った直後に画面がパッと戻ると緊張が抜けすぎるため。
+       白は spotFx:false なので常に 0＝この演出は青でしか出ない。 */
+    const spotWant = (MODES[mode].spotFx && mob.active && mob.mode === "chase") ? 1 : 0;
+    const spotRate = dt / (spotWant > spotFx ? 0.22 : 1.1);
+    spotFx += Math.max(-spotRate, Math.min(spotRate, spotWant - spotFx));
+    filmPass.uniforms.spot.value = spotFx;
+    filmPass.uniforms.time.value = now / 1000;
+    composer.render();
+  }
 }
 requestAnimationFrame(frame);
 
@@ -3281,6 +3678,10 @@ function paintPause() {
   $("pSensV").textContent = `${save.sens}%`;
   $("pGamma").value = String(save.gamma);
   $("pGammaV").textContent = (save.gamma / 100).toFixed(2);
+  $("pQual").value = save.quality || "auto";
+  // 「自動」を選んでいるときは、実際にどちらで走っているかを見せる（判定は端末任せなので、
+  // 重い・軽いの原因がここにあると気付けるようにする）。
+  $("pQualV").textContent = (save.quality || "auto") === "auto" ? tr(LOW() ? "qualityLow" : "qualityHigh") : "";
   $("pLang").value = LOCALE;
   $("pLangV").textContent = "";
 }
@@ -3293,6 +3694,15 @@ $("pGamma").addEventListener("input", () => {
   save.gamma = Number($("pGamma").value);
   renderer.toneMappingExposure = save.gamma / 100;
   persistSave(); paintPause();
+});
+$("pQual").addEventListener("change", () => {
+  save.quality = $("pQual").value;
+  persistSave();
+  QUALITY = detectQuality();
+  applyQuality();   // pixelRatio・GTAO・Bloom・影はその場で切り替わる
+  paintPause();
+  // MSAA だけは WebGL コンテキスト生成時にしか決められないので、次回の起動から効く。
+  // 影と GTAO に比べれば軽いので、ここで location.reload() まではしない（進行が消えるため）。
 });
 $("pLang").addEventListener("change", () => {
   const v = $("pLang").value;
@@ -3356,6 +3766,12 @@ window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOm
   pin, openEtax,           // 検証用: 暗証番号ゲート本体とe-Taxの開閉（E2Eから残り回数を観測するため）
   st: () => state, gm: () => gameMin, setMin: v => { gameMin = v; },
   setMode: m => { mode = m; },
+  // 検証用（v23）: 画質プリセットとポーズの開閉。tools/smoke-v23.mjs が
+  // 「オーバーレイ中に描画を止めているか」「low で影が1灯になるか」を見るのに使う。
+  quality: () => QUALITY, applyQuality, openPause, closePause,
+  // 検証用（v23）: パンくず追跡。足跡を任意に敷いてから怪人を走らせて、
+  // 間仕切り壁を回り込めるかを tools/smoke-v23.mjs で確かめる。
+  trail, trailPush, trailTarget, endVisit,
   // 検証用: 音は耳で聞けないので、グラフと実出力を数値で確認できるように公開する
   audio: { AC: () => Audio.AC, master: () => Audio.masterGain, BUS: () => Audio.BUS,
            panFor, setVolume, toggleMute, prefs: () => audioPrefs,
