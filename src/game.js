@@ -14,6 +14,9 @@ const { beep, thump, footstep, heartbeat, clockTick, speak,
         setVolume, toggleMute, audioPrefs } = Audio;
 // マイナンバーカード暗証番号ロジック（ゲーム非依存の純粋モジュール。tests/unit/pin.test.js で単体検証できる）
 import { createPinGate, normalizePin } from "./pin.js";
+// 書類・異変の多言語データ（純粋モジュール。tests/unit/anoms.test.js で単体検証できる）
+import { LOCALES, ANOM_IDS, docSpecs, applyAnom, canApply, anomMeta,
+         localeText, codexOrigin, pinHint, deadline } from "./anoms.js";
 /* ============================================================
    カクシン様 ─ 確定申告からは逃げられない — prototype
    ============================================================ */
@@ -21,7 +24,7 @@ const $ = (id) => document.getElementById(id);
 const V3 = THREE.Vector3;
 
 /* ---------- state ---------- */
-let state = "TITLE";           // TITLE | PLAY | INSPECT | ETAX | END
+let state = "TITLE";           // TITLE | PLAY | INSPECT | ETAX | PAUSE | END
 let gameMin = 21 * 60;         // in-game minutes
 let MIN_PER_SEC = 0.45;        // モードで変わる（白0.45 / 青0.55）
 let phase = 1;
@@ -37,7 +40,7 @@ const ITEMS = [
     // 【暗証番号の手掛かり①：形式】必須アイテムなので、桁数と「数字だけ」は必ず伝わる
     // 900px幅で1行あたり約30字で折り返すので、<br>で区切って収める（以下のギャグも同様）
     gag: "マイナンバーカード。電子証明書の期限は……セーフ。<br>あと2ヶ月だった。暗証番号は4桁。数字だけの、あれだ。" },
-  { id: "reader",   short: "リーダー",  x:  3.6, z:  5.35, y: 0.75,
+  { id: "prior",    short: "",  x:  3.6, z:  5.35, y: 0.75,
     gag: "ICカードリーダー。テレビの裏に落ちていた。3年前に買って、使ったのは1回だけ。" },
   { id: "password", short: "パスワード", x:  7.0, z:  2.0, y: 1.55,
     // 【暗証番号の手掛かり②：探索への誘導】『いつもの』で行き止まりにしないための一文。
@@ -65,66 +68,39 @@ const FAKES = [
 ];
 let got = 0;
 
-/* ---------- 書類の中身と異変（真贋判定の核） ---------- */
-const PLAYER_NAME = "三月 十五";
-const DOCSPECS = {
-  shiharai: { title: "支払調書", issuer: "株式会社ホワイト商事",
-    rows: [["支払金額", "¥1,200,000"], ["源泉徴収税額", "¥122,526"], ["区分", "原稿料"]] },
-  iryohi:   { title: "医療費のお知らせ", issuer: "全国健康保険協会",
-    rows: [["医療費合計", "¥184,320"], ["対象期間", "1月〜12月"], ["受診回数", "14回"]] },
-  mycard:   { title: "個人番号カード", issuer: "地方公共団体情報システム機構",
-    rows: [["個人番号", "1234 5678 9012"], ["有効期限", "令和10年5月"], ["住所", "県道市町 1-2-3"]] },
-  reader:   { title: "保証書", issuer: "ヨドバチカメラ",
-    rows: [["品名", "ICカードリーダー"], ["型番", "CR-2026W"], ["購入金額", "¥2,980"]] },
-  password: { title: "パスワード控え", issuer: "本人控え",
-    // 暗証番号は実物の利用者証明用電子証明書と同じ4桁（8個だと桁数の誤誘導になる＝A-2）
-    rows: [["利用者識別番号", "1234 5678 9012 3456"], ["暗証番号", "＊＊＊＊"], ["メモ", "『いつもの』"]] },
-};
-const LOOKA = { 金: "全", 医: "圧", 番: "蕃", 期: "斯", 額: "顎", 号: "呂" };
-const ANOMS = [
-  // sub:true = 巧妙（青色申告で出やすい）。name は図鑑名
-  { id: "era",    name: "存在しない年号",   reject: "年号が存在しません",
-    apply: s => { s.era = Math.random() < 0.5 ? "令和∞年分" : "昭和107年分"; } },
-  { id: "typo",   name: "入れ替わった題字", sub: true, reject: "書類の名称に誤りがあります",
-    apply: s => { const t = [...s.title]; [t[0], t[1]] = [t[1], t[0]]; s.title = t.join(""); } },
-  { id: "minus",  name: "負の金額",         reject: "金額が負の値になっています",
-    can: d => d.rows.some(r => r[1].startsWith("¥")),
-    apply: s => { const r = s.rows.find(r => r[1].startsWith("¥")); r[1] = "−" + r[1]; } },
-  { id: "stamp",  name: "逆さの印",         sub: true, reject: "押印が逆さまです",
-    apply: s => { s.stampFlip = true; } },
-  { id: "name",   name: "一字ちがいの氏名", sub: true, reject: "氏名が申告者と一致しません",
-    apply: s => { s.name = "三月 十六"; } },
-  { id: "mirror", name: "鏡の書類",         reject: "書類全体が鏡文字です",
-    apply: s => { s.mirror = true; } },
-  { id: "issuer", name: "実在しない発行元", reject: "発行元が実在しません",
-    apply: s => { s.issuer = "株式会社カクシン"; } },
-  { id: "date",   name: "存在しない日付",   sub: true, reject: "発行日が存在しません",
-    apply: s => { s.date = "令和8年2月30日"; } },
-  { id: "soul",   name: "魂の対価",         reject: "金額が通貨ではありません",
-    can: d => d.rows.some(r => r[1].startsWith("¥")),
-    apply: s => { const r = s.rows.find(r => r[1].startsWith("¥")); r[1] = "魂"; } },
-  { id: "four",   name: "四づくし",         reject: "数値がすべて4です",
-    can: d => d.rows.some(r => /\d/.test(r[1])),
-    apply: s => { s.rows.forEach(r => r[1] = r[1].replace(/\d/g, "4")); } },
-  { id: "kami",   name: "名乗る書類",       reject: "氏名が人間ではありません",
-    apply: s => { s.name = "カクシン様"; } },
-  { id: "eye",    name: "見ている印",       reject: "印影が瞬きしました",
-    apply: s => { s.stampEye = true; } },
-  { id: "blur",   name: "濡れた文字",       reject: "書類が濡れています",
-    apply: s => { s.blur = true; } },
-  { id: "mark",   name: "透かしの顔",       sub: true, reject: "不正な透かしが検出されました",
-    apply: s => { s.mark = true; } },
-  { id: "ju",     name: "朱の呪",           reject: "確認できない印が押されています",
-    apply: s => { s.ju = true; } },
-  { id: "label",  name: "化けた項目名",     sub: true, reject: "項目名に誤りがあります",
-    can: d => d.rows.some(r => [...r[0]].some(ch => LOOKA[ch])),
-    apply: s => {
-      const r = s.rows.find(r => [...r[0]].some(ch => LOOKA[ch]));
-      const arr = [...r[0]], i = arr.findIndex(ch => LOOKA[ch]);
-      arr[i] = LOOKA[arr[i]]; r[0] = arr.join("");
-    } },
-];
-const anomName = id => (ANOMS.find(a => a.id === id) || {}).name || "？？？";
+/* ---------- 書類の中身と異変（真贋判定の核） ----------
+   中身は src/anoms.js（5ロケール分・純粋モジュール）に移した。ここは配線だけ。
+   ロケールを跨いで壊れやすいのは「見たものと却下理由の食い違い」なので、
+   却下理由も図鑑名もここで文字列を持たず、必ず anomMeta() から取る。 */
+
+/** 表示ロケール。保存値 > ブラウザ設定 > ja の順で決める。 */
+function detectLocale() {
+  const saved = save && save.locale;
+  if (saved && LOCALES.includes(saved)) return saved;
+  const langs = (navigator.languages && navigator.languages.length)
+    ? navigator.languages : [navigator.language || "ja"];
+  for (const raw of langs) {
+    const l = String(raw).toLowerCase();
+    if (l.startsWith("ja")) return "ja";
+    if (l.startsWith("zh")) return "zh-Hans";
+    if (l.startsWith("ru")) return "ru";
+    if (l.startsWith("es")) return "es";
+    if (l.startsWith("en")) return "en";
+  }
+  return "ja";
+}
+let LOCALE = "ja";     // save 読み込み後に applyLocale() で確定する
+let SPECS = null;      // docSpecs(LOCALE)
+let TXT = null;        // localeText(LOCALE)
+
+function applyLocale(locale) {
+  LOCALE = locale;
+  SPECS = docSpecs(LOCALE);
+  TXT = localeText(LOCALE);
+  // 短縮名（結果ログ・所持リスト）は書類データ側が持つ。ロケールで変わるため。
+  ITEMS.forEach((it) => { if (SPECS[it.id]) it.short = SPECS[it.id].short; });
+}
+
 
 /* ---------- モード ---------- */
 const MODES = {
@@ -139,23 +115,42 @@ function loadSave() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (s && typeof s === "object")
-      return Object.assign({ found: {}, endings: {}, runs: 0, bestRank: "", audio: null }, s);
+      return Object.assign({ found: {}, endings: {}, runs: 0, bestRank: "", audio: null, locale: null, sens: 100, gamma: 125 }, s);
   } catch (e) {}
-  return { found: {}, endings: {}, runs: 0, bestRank: "", audio: null };
+  // sens / gamma は「現行の実測値＝100 / 125」を基準にした百分率。
+  // 明るさの既定は 1.25（docs/HANDOFF.md：実機で承認済みの v9 値）。**既定は下げない。**
+  // プレイヤー側の調整は許すが、初期状態は必ずこの値から始める。
+  return { found: {}, endings: {}, runs: 0, bestRank: "", audio: null, locale: null, sens: 100, gamma: 125 };
 }
 const save = loadSave();
+// ロケールはここで確定する（detectLocale が save を読むので、loadSave の後でなければならない）。
+// これより前に SPECS / TXT を触るとどちらも null になる。
+applyLocale(detectLocale());
+// CSS は html[lang] で zh-Hans のスタックを切り替える（index.html の :root）。
+// 日中で同じコードポイントの字形が違うため、ここが合っていないと
+// 中国語の文章が日本の字形で組まれる。
+document.documentElement.lang = LOCALE;
+// 同梱フォントの読み込みを始める。canvas は @font-face を自動では読まないので、
+// 書類を描く前にこの Promise を待つ（P2-7 / loadFonts のコメント参照）。
+const fontsReady = loadFonts();
 function persistSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const runLog = [];    // {short, fake, anomId, act, ok, revealed}
 const newFound = [];
 function registerFound(id) { if (id && !save.found[id]) { save.found[id] = true; newFound.push(id); } }
 
+/** 図鑑名。ロケールごとに違うので anoms.js から取る。 */
+const anomName = (id) => (id && ANOM_IDS.includes(id) ? anomMeta(id, LOCALE).name : "？？？");
+/** 却下理由。プレイヤーが見たものと必ず一致させる。 */
+const anomReject = (id) => anomMeta(id, LOCALE).reject;
+
 function makeCopy(it, p) {
-  if (Math.random() >= p) return { fake: false, anom: null };
-  const d = DOCSPECS[it.id];
-  const ok = ANOMS.filter(a => !a.can || a.can(d));
-  const subtle = ok.filter(a => a.sub), obvious = ok.filter(a => !a.sub);
+  if (Math.random() >= p) return { fake: false, anomId: null };
+  const d = SPECS[it.id];
+  const ok = ANOM_IDS.filter(id => canApply(id, d, LOCALE));
+  const subtle = ok.filter(id => anomMeta(id, LOCALE).sub);
+  const obvious = ok.filter(id => !anomMeta(id, LOCALE).sub);
   const pool = (Math.random() < MODES[mode].subtleW && subtle.length) ? subtle : obvious;
-  return { fake: true, anom: pool[Math.floor(Math.random() * pool.length)] };
+  return { fake: true, anomId: pool[Math.floor(Math.random() * pool.length)] };
 }
 function assignCopies() {
   const order = [...ITEMS.keys()].sort(() => Math.random() - 0.5);
@@ -170,13 +165,66 @@ assignCopies();
    一箇所ありえない」を見抜くのが本編なので、背景の質感より可読性が優先される。
    assets/textures/doc_*.jpg / stamp_curse.jpg は参照していない（ファイルは残置）。 */
 function buildSpec(it) {
-  const d = DOCSPECS[it.id];
-  const s = { title: d.title, issuer: d.issuer, rows: d.rows.map(r => [...r]),
-              era: "令和7年分", name: PLAYER_NAME, date: "令和8年1月31日",
-              stampFlip: false, mirror: false };
-  if (it.copy.fake) it.copy.anom.apply(s);
-  return s;
+  // docSpecs() は呼ぶたびに新しいオブジェクトを返し、年号年・発行日・氏名も真正値で
+  // 埋まっている（L-8 / L-9d）。異変は applyAnom() が複製に当てて返す（L-16）。
+  const d = SPECS[it.id];
+  const s = { ...d, rows: d.rows.map(r => [...r]), stampFlip: false, mirror: false };
+  return it.copy.fake ? applyAnom(it.copy.anomId, s, LOCALE, Math.random) : s;
 }
+/* canvas のフォントスタック（P2-7）。
+   CSS 側は var(--f-serif) 等で一元化しているが、canvas の c.font は CSS 変数を
+   解釈しないので、ここで同じ内容を持つ。**index.html の :root と揃えること。**
+
+   同梱フォントを先頭に置く理由は Proton 対策（実機に日本語フォントが無い）。
+   OS フォントは後ろに残す：実機に良いフォントがあるなら使わせない理由が無い。 */
+const SC = () => (LOCALE === "zh-Hans");
+const F_SERIF = () => (SC()
+  ? `'Kakushin Serif SC','Kakushin Serif','Kakushin Gap',serif`
+  : `'Kakushin Serif','Kakushin Serif SC','Kakushin Gap','Hiragino Mincho ProN','Yu Mincho',serif`);
+const F_SANS = () => (SC()
+  ? `'Kakushin Sans SC','Kakushin Sans','Kakushin Gap',sans-serif`
+  : `'Kakushin Sans','Kakushin Sans SC','Kakushin Gap','Hiragino Sans','Yu Gothic',sans-serif`);
+/* 等幅は金額・日付・暗証番号に使う。元の Noto Sans Mono は CJK を持たないので、
+   「2025年6月30日」のような日付のために sans へ落ちる必要がある。 */
+const F_MONO = () => `'Kakushin Mono',${F_SANS()}`;
+
+/** 同梱フォントを実際に読み込む。
+   **canvas は @font-face を自動では読まない。** c.font に名前を書いても、
+   その face が未読込なら黙って次のフォントへ落ちる。つまり待たずに描くと
+   初回の書類だけ OS フォント（Proton では豆腐）で描かれ、しかも
+   2枚目からは直るので原因が分かりにくい。描く前に必ずここを待つ。 */
+async function loadFonts() {
+  if (!document.fonts || !document.fonts.load) return;
+  const fams = ["Kakushin Sans", "Kakushin Serif", "Kakushin Sans SC",
+                "Kakushin Serif SC", "Kakushin Mono", "Kakushin Gap"];
+  // load は「この文字列を描くのに要る face」を読む。ロケールでは分けず、
+  // 和字・簡体字・数字・₽ を全部含む 1 つの文字列を渡す。
+  // （分けると SC() を参照することになるが、loadFonts はモジュール上端から
+  //   呼ぶので、その時点で const SC はまだ初期化されていない＝TDZ で落ちる。）
+  const probe = "\u78ba\u6c47\u7b80" + "0\u20bd";
+  await Promise.all(fams.flatMap((f) => [
+    document.fonts.load(`16px '${f}'`, probe),
+    document.fonts.load(`600 16px '${f}'`, probe),
+    document.fonts.load(`16px '${f}'`, "0"),
+  ])).catch(() => {});
+  await document.fonts.ready;
+}
+
+/** text が maxW に収まる最大のフォントサイズを basePx 以下で選び、c.font に設定する。
+ * 実測した幅を返す。多言語化で文字列長がロケールごとに大きく変わるため、
+ * 固定サイズのままだと枠外へ流れて**異変が読めなくなる**（本作では致命的）。 */
+function fitFont(c, text, maxW, basePx, tail, head = "") {
+  let px = basePx;
+  c.font = head + px + tail;
+  let wdt = c.measureText(text).width;
+  while (wdt > maxW && px > 8) {
+    px -= 1;
+    c.font = head + px + tail;
+    wdt = c.measureText(text).width;
+  }
+  return wdt;
+}
+
 function drawDoc(spec) {
   const cv = $("docCv"), c = cv.getContext("2d"), w = cv.width, h = cv.height;
   c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
@@ -199,29 +247,44 @@ function drawDoc(spec) {
     c.save();
     c.translate(54, 54); c.rotate(-0.12);
     c.globalAlpha = 0.75; c.fillStyle = "#b23b2e";
-    c.font = "34px serif"; c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillText("呪", 0, 0);
+    c.textAlign = "center"; c.textBaseline = "middle";
+    // 「呪」は1字だが、ラテン文字圏は VOID / NULO と複数字になる。幅に合わせて縮める。
+    fitFont(c, TXT.curseMark, 92, 34, `px ${F_SERIF()}`);
+    c.fillText(TXT.curseMark, 0, 0);
     c.restore();
   }
   c.fillStyle = "#22201c"; c.textAlign = "center";
-  c.font = "600 32px 'Hiragino Mincho ProN','Yu Mincho',serif";
+  // 題字はロケールで長さが大きく変わる（「支払調書」4字 と "Nonemployee Compensation" 24字）。
+  // 固定サイズだと枠外へ流れて読めなくなるので、必ず幅に収める。
+  fitFont(c, spec.title, w - 56, 32, `px ${F_SERIF()}`, "600 ");
   c.fillText(spec.title, w / 2, 78);
-  c.textAlign = "right"; c.font = "15px sans-serif"; c.fillStyle = "#4a463c";
+  c.textAlign = "right"; c.font = `15px ${F_SANS()}`; c.fillStyle = "#4a463c";
   c.fillText(spec.era, w - 28, 44);
   c.textAlign = "left"; c.strokeStyle = "#9a9484"; c.lineWidth = 1;
   c.strokeRect(26, 106, w - 52, 46);
-  c.font = "14px sans-serif"; c.fillStyle = "#5a564a"; c.fillText("氏名", 38, 134);
-  c.font = "21px 'Hiragino Mincho ProN','Yu Mincho',serif"; c.fillStyle = "#22201c";
-  c.fillText(spec.name, 120, 136);
+  c.font = `14px ${F_SANS()}`; c.fillStyle = "#5a564a"; c.fillText(TXT.labelName, 38, 134);
+  const nameX = 38 + c.measureText(TXT.labelName).width + 22;
+  c.fillStyle = "#22201c";
+  fitFont(c, spec.name, w - 52 - (nameX - 26) - 14, 21, `px ${F_SERIF()}`);
+  c.fillText(spec.name, nameX, 136);
   spec.rows.forEach((r, i) => {
     const y = 172 + i * 60;
     c.strokeRect(26, y, w - 52, 48);
-    c.font = "13px sans-serif"; c.fillStyle = "#5a564a"; c.fillText(r[0], 38, y + 29);
-    c.font = "17px ui-monospace,monospace"; c.fillStyle = "#22201c";
+    // 項目名と値は同じ行に左右で並ぶ。項目名は幅の55%までに収め、残りを値に渡す。
+    c.fillStyle = "#5a564a";
+    const labW = fitFont(c, r[0], (w - 78) * 0.55, 13, `px ${F_SANS()}`);
+    c.fillText(r[0], 38, y + 29);
+    c.fillStyle = "#22201c";
+    fitFont(c, r[1], w - 78 - labW - 12, 17, `px ${F_MONO()}`);
     c.textAlign = "right"; c.fillText(r[1], w - 40, y + 31); c.textAlign = "left";
   });
-  c.font = "14px sans-serif"; c.fillStyle = "#3c3930";
-  c.fillText("発行：" + spec.issuer, 30, h - 68);
+  c.fillStyle = "#3c3930";
+  // 発行元は法人名なので長い（«Организация информационных систем...» 等）。
+  // 印（右下）に重ならないよう、右端から100px 手前までに収める。
+  const issued = `${TXT.labelIssuer}${TXT.colon}${spec.issuer}`;
+  fitFont(c, issued, w - 30 - 100, 14, `px ${F_SANS()}`);
+  c.fillText(issued, 30, h - 68);
+  c.font = `14px ${F_SANS()}`;
   c.fillText(spec.date, 30, h - 38);
   c.save();
   c.translate(w - 80, h - 78);
@@ -234,8 +297,10 @@ function drawDoc(spec) {
     c.fillStyle = "#1a1815";
     c.beginPath(); c.arc(0, 0, 4.5, 0, Math.PI * 2); c.fill();
   } else {
-    c.fillStyle = "#b23b2e"; c.font = "26px serif"; c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillText("印", 0, 2);
+    c.fillStyle = "#b23b2e"; c.textAlign = "center"; c.textBaseline = "middle";
+    // 「印」は1字、「М.П.」「SELLO」は複数字。円（半径30）の内側に収める。
+    fitFont(c, TXT.sealMark, 48, 26, `px ${F_SERIF()}`);
+    c.fillText(TXT.sealMark, 0, 2);
   }
   c.restore();
   c.restore();
@@ -269,7 +334,9 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.25;
+// 既定 1.25 は実機で承認済みの値（docs/HANDOFF.md）。**既定を下げない。**
+// プレイヤーが設定画面で変えた場合だけ save.gamma が効く。
+renderer.toneMappingExposure = save.gamma / 100;
 $("app").appendChild(renderer.domElement);
 const MAXANISO = renderer.capabilities.getMaxAnisotropy();
 
@@ -2044,14 +2111,14 @@ function makePosterTex(bad) {
   c.textAlign = "center";
   if (bad) {
     c.fillStyle = "#7a1f14";
-    c.font = "900 46px sans-serif";
+    c.font = `900 46px ${F_SANS()}`;
     c.fillText("納", 96, 66); c.fillText("税", 96, 122);
     c.fillText("シ", 96, 178); c.fillText("ロ", 96, 234);
   } else {
     c.fillStyle = "#2b4a7a";
-    c.font = "bold 26px serif";
+    c.font = `bold 26px ${F_SERIF()}`;
     c.fillText("確定申告", 96, 88); c.fillText("お済みですか", 96, 128);
-    c.font = "13px sans-serif"; c.fillStyle = "#55503f";
+    c.font = `13px ${F_SANS()}`; c.fillStyle = "#55503f";
     c.fillText("国税庁", 96, 220);
   }
   const t = new THREE.CanvasTexture(cv);
@@ -2143,9 +2210,9 @@ function makeMonster() {
   fc.strokeStyle = "#555"; fc.lineWidth = 2;
   fc.strokeRect(10, 10, 236, 300);
   fc.fillStyle = "#222";
-  fc.font = "bold 26px serif"; fc.textAlign = "center";
+  fc.font = `bold 26px ${F_SERIF()}`; fc.textAlign = "center";
   fc.fillText("重加算税", 128, 46);
-  fc.font = "11px sans-serif";
+  fc.font = `11px ${F_SANS()}`;
   for (let r = 0; r < 6; r++) {
     fc.strokeStyle = "#888"; fc.lineWidth = 1;
     fc.strokeRect(20, 66 + r * 40, 216, 34);
@@ -2290,11 +2357,17 @@ addEventListener("keydown", e => {
   if (e.code === "KeyE") tryInteract();
   if (e.code === "KeyM") {
     const m = toggleMute();
-    notice(m ? "🔇 ミュート" : `🔈 音量 ${Math.round(audioPrefs.vol * 100)}%`, 1.4);
+    // 絵文字（🔇🔈）は使わない。同梱フォント（Noto Sans/Serif JP・SC・Mono）は
+    // どれも絵文字を持たず、Proton 環境には絵文字フォント自体が無いので豆腐になる。
+    // 2字のために絵文字フォントを同梱する価値は無く、言葉で足りる（P2-7）。
+    notice(m ? "ミュート" : `音量 ${Math.round(audioPrefs.vol * 100)}%`, 1.4);
   }
   if (e.code === "Escape") {
+    // 検分・e-Tax はそれぞれ閉じるのが先。何も開いていない PLAY 中だけポーズに入る。
     if (state === "INSPECT") closeInspect();
     else if (state === "ETAX") closeEtax();
+    else if (state === "PAUSE") closePause();
+    else if (state === "PLAY") openPause();
   }
 });
 addEventListener("keyup",   e => { keys[e.code] = false; });
@@ -2303,10 +2376,14 @@ addEventListener("keyup",   e => { keys[e.code] = false; });
 renderer.domElement.addEventListener("click", () => {
   if (state === "PLAY" && !isTouch) renderer.domElement.requestPointerLock();
 });
+/** 視点の基準感度。v22までの実測値。save.sens はこれに対する百分率。 */
+const LOOK_BASE = 0.0023;
+const lookRate = () => LOOK_BASE * (save.sens / 100);
 addEventListener("mousemove", e => {
   if (document.pointerLockElement !== renderer.domElement) return;
-  ply.yaw   -= e.movementX * 0.0023;
-  ply.pitch = Math.max(-1.2, Math.min(1.2, ply.pitch - e.movementY * 0.0023));
+  const k = lookRate();
+  ply.yaw   -= e.movementX * k;
+  ply.pitch = Math.max(-1.2, Math.min(1.2, ply.pitch - e.movementY * k));
 });
 
 /* touch controls: dual fixed sticks (FPS style) */
@@ -2557,7 +2634,7 @@ $("btnTake").addEventListener("click", () => {
   if (!inspectIt) return;
   const it = inspectIt;
   runLog.push({ short: it.short, fake: it.copy.fake,
-    anomId: it.copy.fake ? it.copy.anom.id : null,
+    anomId: it.copy.anomId,
     act: "take", ok: !it.copy.fake, revealed: false });
   it.taken = true; got++;
   itemMeshes[it.id].visible = false;
@@ -2570,9 +2647,9 @@ $("btnTear").addEventListener("click", () => {
   if (!inspectIt) return;
   const it = inspectIt;
   runLog.push({ short: it.short, fake: it.copy.fake,
-    anomId: it.copy.fake ? it.copy.anom.id : null,
+    anomId: it.copy.anomId,
     act: "tear", ok: it.copy.fake, revealed: it.copy.fake });
-  if (it.copy.fake) registerFound(it.copy.anom.id);
+  if (it.copy.fake) registerFound(it.copy.anomId);
   aggro++;
   if (!it.copy.fake) tearGenuine++;
   it.copy = makeCopy(it, MODES[mode].rp);   // 新しい一枚が湧く（また偽物かもしれない）
@@ -2588,9 +2665,17 @@ let etaxTimer = 0;
 // マイナンバーカード暗証番号の認証ゲート。
 // 【生成場所が重要】openEtax() の中で作らない（W-03）。ウィンドウを閉じて開き直しても
 // 試行回数（残り3回）が保持されるようにするため、モジュールのトップレベルで1つだけ作る。
-// 正解 0315 と最大試行回数 3 はここでだけ注入する（pin.js には書かない＝A-1, A-7）。
+// 正解と最大試行回数はここでだけ注入する（pin.js には書かない＝A-1, A-7）。
+// 正解は「その国の申告期限を、その国の書き順で書いたもの」（L-30）。
+// 日本 0315 / 米国 0415 / 中国 0630 / ロシア 3004 / スペイン 3006。
+// anoms.js も正解文字列そのものは持たない（L-34c）ので、ここで組み立てる。
 // セーブには残さない（1プレイ限り＝A-14。save 側に暗証番号関連のキーは追加しない）。
-const pin = createPinGate({ answer: "0315", maxAttempts: 3 });
+function pinAnswerFor(locale) {
+  const d = deadline(locale);
+  const pad = (n) => String(n).padStart(2, "0");
+  return d.order === "MD" ? pad(d.month) + pad(d.day) : pad(d.day) + pad(d.month);
+}
+const pin = createPinGate({ answer: pinAnswerFor(LOCALE), maxAttempts: 3 });
 
 /** #etaxPin の入力状態と pin ゲートの状態から、送信ボタンの有効/無効を決める。
  * ロック済みなら常に無効、認証済みなら常に有効、それ以外は4桁揃うまで無効にする（A-12）。 */
@@ -2657,9 +2742,7 @@ $("etaxBtn").addEventListener("click", () => {
         // 2回目のミス＝最終警告。既存の却下と同じ escalation（怪人を呼ぶ）に加え、
         // メモの手掛かりを再提示する。『いつもの』だけでは名前に結びつかないため、
         // 申告書の氏名欄（PLAYER_NAME）を引用して一歩踏み込む（答え0315そのものは書かない）。
-        html += `<br>次に間違えるとカードがロックされます。` +
-                `<br>メモには『いつもの』とだけ書いてある。` +
-                `<br>……申告書の氏名欄には、いつもの名前があった。「${PLAYER_NAME}」。`;
+        html += `<br>次に間違えるとカードがロックされます。<br>` + pinHint(LOCALE);
         if (!mob.active) enterVisit();
         else visit.huntLeft = Math.max(visit.huntLeft, 25);
       }
@@ -2692,11 +2775,11 @@ $("etaxBtn").addEventListener("click", () => {
     const bad = ITEMS.find(it => it.taken && it.copy.fake);
     if (bad) {
       etaxRejects++; aggro++;
-      const why = bad.copy.anom.reject;
+      const why = anomReject(bad.copy.anomId);
       const entry = [...runLog].reverse().find(e =>
         e.short === bad.short && e.fake && e.act === "take" && !e.revealed);
       if (entry) entry.revealed = true;
-      registerFound(bad.copy.anom.id);
+      registerFound(bad.copy.anomId);
       bad.taken = false; got--;
       bad.copy = { fake: false, anom: null };  // 差し戻しの再交付は本物（終盤の救済）
       relocateItem(bad);
@@ -2765,7 +2848,7 @@ function ending(key) {
     ? `<br><span class="new">NEW　${newFound.map(anomName).join("・")}</span>` : "";
   $("recap").innerHTML =
     (runLog.length ? `<div class="rhead">今夜の書類 ── 答え合わせ</div>${rows}` : "") +
-    `<div class="zukan">異変図鑑　${foundN} / ${ANOMS.length}${newTxt}</div>` +
+    `<div class="zukan">異変図鑑　${foundN} / ${ANOM_IDS.length}${newTxt}</div>` +
     (rankLine ? `<div class="zukan">${rankLine}</div>` : "") +
     (firstRefund ? `<div class="zukan new">高難度モード『青色申告』が解禁された。</div>` : "");
   $("etax").classList.add("hidden");
@@ -3075,7 +3158,7 @@ function refreshTitleMeta() {
   // エンディング数は EDS のキー数から数える（shiyakusho 追加で4つ目。ハードコードしない）
   const eN = Object.keys(EDS).filter(k => save.endings[k]).length;
   $("meta").textContent =
-    `異変図鑑 ${Object.keys(save.found).length}/${ANOMS.length} ／ エンディング ${eN}/${Object.keys(EDS).length}`
+    `異変図鑑 ${Object.keys(save.found).length}/${ANOM_IDS.length} ／ エンディング ${eN}/${Object.keys(EDS).length}`
     + (save.bestRank ? ` ／ 最高ランク ${save.bestRank}` : "");
 }
 refreshTitleMeta();
@@ -3089,6 +3172,64 @@ $("modeBlue").addEventListener("click", () => {
   $("modeBlue").classList.add("sel"); $("modeWhite").classList.remove("sel");
 });
 
+/* ---------- ポーズ／設定（P2-4）とクレジット（P7-1） ----------
+   ポーズ中は state を "PAUSE" にする。メインループが PLAY / ETAX / INSPECT でしか
+   進まないので、これだけで時計も怪人も止まる（別途フラグを持たない）。 */
+let pauseReturnState = "PLAY";
+
+function openPause() {
+  if (state !== "PLAY") return;
+  pauseReturnState = state;
+  state = "PAUSE";
+  document.exitPointerLock && document.exitPointerLock();
+  paintPause();
+  $("pause").classList.remove("hidden");
+  beep(420, 0.07, "triangle", 0.06);
+}
+function closePause() {
+  $("pause").classList.add("hidden");
+  $("credits").classList.add("hidden");
+  if (state === "PAUSE") state = pauseReturnState;
+  if (state === "PLAY" && !isTouch) renderer.domElement.requestPointerLock();
+}
+
+function paintPause() {
+  $("pVol").value = String(Math.round(audioPrefs.vol * 100));
+  $("pVolV").textContent = audioPrefs.muted ? "ミュート" : `${Math.round(audioPrefs.vol * 100)}%`;
+  $("pSens").value = String(save.sens);
+  $("pSensV").textContent = `${save.sens}%`;
+  $("pGamma").value = String(save.gamma);
+  $("pGammaV").textContent = (save.gamma / 100).toFixed(2);
+  $("pLang").value = LOCALE;
+  $("pLangV").textContent = "";
+}
+
+$("pVol").addEventListener("input", () => { setVolume(Number($("pVol").value) / 100); paintPause(); });
+$("pSens").addEventListener("input", () => {
+  save.sens = Number($("pSens").value); persistSave(); paintPause();
+});
+$("pGamma").addEventListener("input", () => {
+  save.gamma = Number($("pGamma").value);
+  renderer.toneMappingExposure = save.gamma / 100;
+  persistSave(); paintPause();
+});
+$("pLang").addEventListener("change", () => {
+  const v = $("pLang").value;
+  if (!LOCALES.includes(v) || v === LOCALE) return;
+  // 言語を変えると書類・異変・暗証番号の正解がまるごと入れ替わる。暗証番号ゲートは
+  // モジュール読み込み時に1つだけ作る設計（W-03）なので、途中で差し替えると
+  // 試行回数の整合が壊れる。読み込み直すのが最も安全で、セーブは残る。
+  save.locale = v;
+  persistSave();
+  location.reload();
+});
+$("pResume").addEventListener("click", closePause);
+$("pTitle").addEventListener("click", () => { location.reload(); });
+$("pCredits").addEventListener("click", () => {
+  $("credits").classList.remove("hidden");
+});
+$("cBack").addEventListener("click", () => { $("credits").classList.add("hidden"); });
+
 /* ---------- 音量スライダー（タイトル画面） ---------- */
 {
   const sl = $("volSlider"), lab = $("volVal");
@@ -3101,7 +3242,11 @@ $("modeBlue").addEventListener("click", () => {
 }
 
 /* ---------- start ---------- */
-$("startBtn").addEventListener("click", () => {
+$("startBtn").addEventListener("click", async () => {
+  // 同梱フォントを待ってから始める（P2-7）。読み込み前に書類を描くと
+  // 1枚目だけ OS フォントになり、Proton では豆腐で読めない。
+  // 待ち時間はほぼゼロ（読み込みはページ表示と同時に始めている）。
+  await fontsReady;
   MIN_PER_SEC = MODES[mode].mps;
   assignCopies();   // モード確定後に偽物を配り直す
   $("title").classList.add("hidden");
@@ -3117,6 +3262,9 @@ $("startBtn").addEventListener("click", () => {
 
 /* debug hook (テスト用) */
 window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOmen, ending, save, runLog,
+  // 検証用: 書類は目で見るしかないので tools/shot-doc.mjs から触れるようにする
+  ANOM_IDS, buildSpec, drawDoc, canApply, anomMeta,
+  DOCSPECS: () => SPECS, locale: () => LOCALE,
   monster, spawnMonster,   // 検証用: 怪人の直接制御
   pin, openEtax,           // 検証用: 暗証番号ゲート本体とe-Taxの開閉（E2Eから残り回数を観測するため）
   st: () => state, gm: () => gameMin, setMin: v => { gameMin = v; },

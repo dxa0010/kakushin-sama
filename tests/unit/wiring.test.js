@@ -41,12 +41,28 @@ describe("配線: pin.js の利用", () => {
     assert.match(imports, /normalizePin/, "normalizePin を import していない（4桁揃うまで送信不可の判定に使う）");
   });
 
-  test("W-02 正解 0315 と maxAttempts:3 を注入して gate を生成している", () => {
+  test("W-02 正解を締切から導出して注入している（maxAttempts:3）", async () => {
+    // 2026-08-19: 正解はロケールごとに違う（仕様書 L-30）ため、literal "0315" ではなく
+    // deadline() からの導出になった。日本 0315 / 米 0415 / 中 0630 / 露 3004 / 西 3006。
     const game = GAME();
-    const m = game.match(/createPinGate\(([\s\S]{0,400}?)\)/);
+    const m = game.match(/createPinGate\(\{([\s\S]{0,400}?)\}\)/);
     assert.ok(m, "createPinGate(...) の呼び出しが無い");
-    assert.match(m[1], /["']0315["']/, "正解 0315 を注入していない");
+    assert.match(m[1], /pinAnswerFor\(/, "正解を pinAnswerFor() で導出していない");
     assert.match(m[1], /maxAttempts\s*:\s*3\b/, "maxAttempts: 3 を注入していない");
+    assert.match(game, /function pinAnswerFor[\s\S]{0,300}deadline\(/,
+      "pinAnswerFor が deadline() を使っていない（締切と番号がずれる）");
+
+    // 導出結果が本番値と一致することは、実際に計算して確かめる
+    const { deadline } = await import(new URL("../../src/anoms.js", import.meta.url).href);
+    const pad = (n) => String(n).padStart(2, "0");
+    const derive = (loc) => {
+      const d = deadline(loc);
+      return d.order === "MD" ? pad(d.month) + pad(d.day) : pad(d.day) + pad(d.month);
+    };
+    assert.equal(derive("ja"), "0315", "日本語版の正解が 0315 にならない");
+    for (const [loc, want] of [["en", "0415"], ["zh-Hans", "0630"], ["ru", "3004"], ["es", "3006"]]) {
+      assert.equal(derive(loc), want, `${loc} の正解が ${want} にならない`);
+    }
   });
 
   test("W-03 gate の生成は openEtax() の外（ウィンドウを開き直しても試行回数が保持される）", () => {
@@ -55,12 +71,22 @@ describe("配線: pin.js の利用", () => {
       "openEtax の中で gate を作ると、閉じて開き直すたびに試行回数がリセットされてしまう");
   });
 
-  test("W-04 試行回数をセーブに永続化していない（save の構造も不変）", () => {
+  test("W-04 試行回数をセーブに永続化していない（save に暗証番号の状態を持たない）", () => {
+    // 2026-08-19: 設定の永続化（P2-4）で locale / sens / gamma が増えた。
+    // このテストの主旨は「暗証番号の状態を save に持たない」ことなので、
+    // 構造の丸ごと凍結ではなく、キーの過不足を見る形に変える。
     const game = GAME();
     assert.ok(!/save\.[A-Za-z_$]*[Pp]in/.test(game), "save に暗証番号の状態を書き込んでいる");
-    assert.match(game,
-      /Object\.assign\(\{ found: \{\}, endings: \{\}, runs: 0, bestRank: "", audio: null \}/,
-      "save の既定構造が変わっている（本機能では save を変更しない）");
+
+    const m = game.match(/Object\.assign\((\{[^}]*\{\}[^}]*\}[^)]*)\s*,\s*s\)/);
+    assert.ok(m, "loadSave の既定オブジェクトが見つからない");
+    const defaults = m[1];
+    for (const key of ["found", "endings", "runs", "bestRank", "audio", "locale", "sens", "gamma"]) {
+      assert.ok(new RegExp(key + "\\s*:").test(defaults),
+        `save の既定に ${key} が無い: ${defaults}`);
+    }
+    assert.ok(!/[Pp]in|attempt|locked/.test(defaults),
+      `save の既定に暗証番号の状態が混ざっている: ${defaults}`);
   });
 
   test("W-12 etaxPin の入力を normalizePin で検証して送信ボタンを制御している", () => {
@@ -83,11 +109,16 @@ describe("配線: pin.js の利用", () => {
 });
 
 describe("配線: 手掛かりの公平性とメッセージ", () => {
-  test("W-05 DOCSPECS.password の暗証番号マスクがちょうど ＊4個（8個は誤誘導）", () => {
-    const m = GAME().match(/\["暗証番号",\s*"(＊+)"\]/);
-    assert.ok(m, "DOCSPECS.password の暗証番号の行が見つからない");
-    assert.equal([...m[1]].length, 4,
-      `マスクが ${[...m[1]].length} 個になっている。実物の暗証番号は4桁なので ＊＊＊＊ にする`);
+  test("W-05 password 書類の暗証番号マスクが全ロケールでちょうど ＊4個（8個は誤誘導）", async () => {
+    // 2026-08-19: 書類データは src/anoms.js へ移った。5ロケール全部を見る。
+    const { LOCALES, docSpecs } = await import(new URL("../../src/anoms.js", import.meta.url).href);
+    for (const locale of LOCALES) {
+      const rows = docSpecs(locale).password.rows;
+      const row = rows.find((r) => /＊/.test(r[1]));
+      assert.ok(row, `${locale} の password 書類にマスク行が無い`);
+      assert.equal([...row[1]].length, 4,
+        `${locale}: マスクが ${[...row[1]].length} 個。暗証番号は4桁なので ＊＊＊＊ にする`);
+    }
   });
 
   test("W-13 ミス時のメッセージ（違います・残り回数・ロック警告）がある", () => {
@@ -185,21 +216,16 @@ describe("配線: index.html と package.json", () => {
      v21 以前はこの名前がプレイヤーに一度も提示されておらず、両異変は
      ゲーム内の情報だけでは解けなかった（L-2 違反）。名前はタイトル画面で提示する。
      名前をテストにハードコードせず実装から導出しているので、改名しても追従する。 */
-  test("L-23 異変が使う怪異の名前がタイトル画面で提示されている", () => {
+  test("L-23 異変が使う怪異の名前がタイトル画面で提示されている", async () => {
     const game = GAME();
     const html = HTML();
 
-    const grab = (id) => {
-      const at = game.indexOf('id: "' + id + '"');
-      assert.ok(at >= 0, `異変 ${id} の定義が見つからない`);
-      const m = game.slice(at, at + 400).match(/apply:\s*s\s*=>\s*\{([^}]*)\}/);
-      assert.ok(m, `異変 ${id} の apply が見つからない`);
-      const lit = m[1].match(/"([^"]+)"/);
-      assert.ok(lit, `異変 ${id} の apply に文字列リテラルが無い`);
-      return lit[1];
-    };
-    const issuer = grab("issuer");   // 例: 株式会社カクシン
-    const kami = grab("kami");       // 例: カクシン様
+    // 2026-08-19: 異変の中身は src/anoms.js へ移った。日本語版の名前で確認する。
+    void game;
+    const { localeText } = await import(new URL("../../src/anoms.js", import.meta.url).href);
+    const T = localeText("ja");
+    const issuer = T.fakeIssuer;     // 例: 株式会社カクシン
+    const kami = T.monster;          // 例: カクシン様
 
     // 2つのリテラルの最長共通部分文字列＝怪異の名前
     let token = "";

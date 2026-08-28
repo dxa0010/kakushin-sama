@@ -89,7 +89,7 @@ Valve は「オーバーレイは常時全画面のフレーム提示を要求�
   ⚠️ **明るさの既定値は動かさない。** HANDOFF 6章に「v9 の値は実機で承認された完成値」と記録がある。プレイヤー側の調整幅として足すだけにする
 - **P2-5** セーブを `localStorage`（`src/game.js:140,147`）から `userData` 配下の JSON へ移行。破損時フォールバック込み。Steam Cloud（P3-3）の前提
 - **P2-6** 多重起動防止・クラッシュログ・終了処理
-- **P2-7** 日本語フォント同梱と `@font-face` 明示（**Proton 対策・Deck 対応の必須項目**）。`THIRD-PARTY-NOTICES.md` に追記
+- ~~**P2-7** 日本語フォント同梱と `@font-face` 明示（**Proton 対策・Deck 対応の必須項目**）。`THIRD-PARTY-NOTICES.md` に追記~~ **済（2026-08-28）**<br>　Noto をサブセットして 7 face・合計 0.69MB を同梱。ja/en/ru/es は JP 系、zh-Hans は SC 系。<br>　着手前は `document.fonts` が空＝OS フォント頼みだった（Proton では全文が豆腐）。<br>　仕様と実測: `docs/test-specs/font-bundling.md`／テスト: `tests/unit/fonts.test.js`（F-01〜F-12）<br>　再生成: `node tools/charset.mjs && node tools/make-fonts.mjs`（開発機のみ。生成物はコミット済み）
 - **P2-8** 配布物の削減: 参照切れテクスチャ（v22 で参照を切った `doc_*.jpg` 等）の除去、jpg/webp 二重持ちの整理、未使用 vendor addon の削除。現状 assets 27MB
 
 ## 6. フェーズ3: Steamworks 連携

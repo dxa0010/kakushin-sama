@@ -57,6 +57,39 @@ MIT License の全文は上記ファイルに同梱しています。`postproces
 
 ---
 
+## 同梱フォント（Noto / SIL Open Font License 1.1）
+
+`assets/fonts/*.woff2` は Google Fonts の Noto シリーズを、本作が表示する文字だけに
+**サブセット**したものです。Proton / Steam Deck の Wine には日本語・中国語フォントが
+無いのが既定で、同梱しないと実機で全文が豆腐（□）になります。
+
+| ファイル | 元フォント | 用途 |
+|---|---|---|
+| `kakushin-sans-jp.woff2` | Noto Sans JP | UI・項目名（ja / en / ru / es） |
+| `kakushin-serif-jp.woff2` | Noto Serif JP | タイトル・書類の題字（ja / en / ru / es） |
+| `kakushin-sans-sc.woff2` | Noto Sans SC | UI・項目名（zh-Hans） |
+| `kakushin-serif-sc.woff2` | Noto Serif SC | タイトル・書類の題字（zh-Hans） |
+| `kakushin-mono.woff2` | Noto Sans Mono | 金額・日付・暗証番号 |
+| `kakushin-fallback-1.woff2` | Noto Sans SC | 穴埋め（`简`。日本語フォントに無い） |
+| `kakushin-fallback-2.woff2` | Noto Sans Mono | 穴埋め（`₽`。CJK 系フォントに一切無い） |
+
+- **著作権表示**: Copyright © The Noto Project Authors (https://github.com/notofonts)
+- **ライセンス**: SIL Open Font License, Version 1.1
+- **ライセンス全文**: `assets/fonts/OFL.txt`（同梱済み。**再配布の条件**）
+- **入手元**: https://github.com/google/fonts
+- **改変について**: サブセットは OFL 上の「Modified Version」にあたります。
+  OFL 1.1 は Reserved Font Name の付いた名前を改変版に使うことを禁じているため、
+  ファミリ名から `Noto` を外し `Kakushin Sans` / `Kakushin Serif` / `Kakushin Mono`
+  に改名しています。**元の名前に戻さないこと。**
+- **再生成**: `node tools/charset.mjs && node tools/make-fonts.mjs`
+  （開発機のみ。`python -m pip install fonttools brotli` と元フォントが要ります。
+  生成物をコミットするので、配信時には何も実行しません。）
+
+**ゲーム内クレジット（`index.html` の `#credits`）と内容を一致させること。**
+Steam 配布は再配布にあたるため、片方だけ直すと表示義務を満たしません。
+
+---
+
 ## 本作自身の著作物について
 
 上記以外のソースコード（`src/game.js`、`index.html`）、および

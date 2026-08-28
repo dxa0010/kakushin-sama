@@ -100,11 +100,14 @@ const AUTHORITY = {
 const TEXT = {
   ja: {
     eraName: "令和",
-    eraGenuine: "令和8年分", eraInf: "令和∞年分", eraBad: "昭和107年分",
+    // 令和8年3月に出すのは前年分＝令和7年分（src/game.js:174 が元から正しかった）。
+    // 他4ロケールも同じ関係で、2026年に申告するのは 2025 年分。
+    eraGenuine: "令和7年分", eraInf: "令和∞年分", eraBad: "昭和107年分",
     dateGenuine: "令和8年2月14日", dateBad: "令和8年2月30日",
     playerName: "三月 十五", playerNameAlt: "三月 十六",
     monster: "カクシン様", fakeIssuer: "株式会社カクシン", soul: "魂",
     title: "カクシン様 ─ 確定申告からは逃げられない",
+    labelName: "氏名", labelIssuer: "発行", sealMark: "印", curseMark: "呪", colon: "：",
     system: "確定申告", channel: "e-Tax",
   },
   en: {
@@ -114,6 +117,7 @@ const TEXT = {
     playerName: "April Fifteen", playerNameAlt: "Apryl Fifteen",
     monster: "Kakushin-sama", fakeIssuer: "KAKUSHIN Holdings, Inc.", soul: "Soul",
     title: "KAKUSHIN — No Escape from Your Tax Return",
+    labelName: "Name", labelIssuer: "Issued by", sealMark: "SEAL", curseMark: "VOID", colon: ": ",
     system: "Form 1040", channel: "e-File",
   },
   "zh-Hans": {
@@ -124,6 +128,7 @@ const TEXT = {
     // L-24:「确信」は quèxìn と読まれ KAKUSHIN と音が繋がらないので使わない。
     monster: "KAKUSHIN大人", fakeIssuer: "KAKUSHIN控股有限公司", soul: "灵魂",
     title: "KAKUSHIN — 逃不掉的个税汇算",
+    labelName: "姓名", labelIssuer: "签发", sealMark: "印", curseMark: "咒", colon: "：",
     system: "综合所得年度汇算", channel: "个人所得税",
   },
   ru: {
@@ -133,6 +138,7 @@ const TEXT = {
     playerName: "Апрелий Тридцатов", playerNameAlt: "Апрелей Тридцатов",
     monster: "Какусин-сама", fakeIssuer: "ООО «KAKUSHIN»", soul: "Душа",
     title: "KAKUSHIN — От налоговой не убежать",
+    labelName: "ФИО", labelIssuer: "Выдал", sealMark: "М.П.", curseMark: "АННУЛ.", colon: ": ",
     system: "3-НДФЛ", channel: "Личный кабинет",
   },
   es: {
@@ -142,6 +148,7 @@ const TEXT = {
     playerName: "Junio Treinta", playerNameAlt: "Iunio Treinta",
     monster: "Kakushin-sama", fakeIssuer: "KAKUSHIN Inversiones, S.L.", soul: "Alma",
     title: "KAKUSHIN — De Hacienda no se escapa",
+    labelName: "Nombre", labelIssuer: "Emitido por", sealMark: "SELLO", curseMark: "NULO", colon: ": ",
     system: "Declaración de la Renta", channel: "Renta WEB",
   },
 };
@@ -159,81 +166,81 @@ const TEXT = {
 
 const DOCS = {
   ja: {
-    shiharai: { title: "支払調書", issuer: "株式会社ホワイト商事", rows: [
+    shiharai: { short: "支払調書", title: "支払調書", issuer: "株式会社ホワイト商事", rows: [
       ["支払金額", fmt("ja", 1200000)], ["源泉徴収税額", fmt("ja", 122526)], ["区分", "原稿料"]] },
-    iryohi: { title: "医療費のお知らせ", issuer: "全国健康保険協会", rows: [
+    iryohi: { short: "医療費", title: "医療費のお知らせ", issuer: "全国健康保険協会", rows: [
       ["医療費合計", fmt("ja", 184320)], ["対象期間", "1月〜12月"], ["受診回数", "14回"]] },
-    mycard: { title: "個人番号カード", issuer: "地方公共団体情報システム機構", rows: [
+    mycard: { short: "マイナ", title: "個人番号カード", issuer: "地方公共団体情報システム機構", rows: [
       ["個人番号", "1234 5678 9012"], ["有効期限", "令和10年5月"], ["住所", "県道市町 1-2-3"]] },
-    prior: { title: "保証書", issuer: "ヨドバチカメラ", rows: [
+    prior: { short: "保証書", title: "保証書", issuer: "ヨドバチカメラ", rows: [
       ["品名", "ICカードリーダー"], ["型番", "CR-2026W"], ["購入金額", fmt("ja", 2980)]] },
-    password: { title: "パスワード控え", issuer: "本人控え", rows: [
+    password: { short: "パスワード", title: "パスワード控え", issuer: "本人控え", rows: [
       ["利用者識別番号", "1234 5678 9012 3456"], ["暗証番号", "＊＊＊＊"], ["メモ", "『いつもの』"]] },
   },
 
   en: {
     // 混同表の当たり先: m(compensation) / W(Withholding) / l(Total) / d(withheld) / O(Outpatient)
-    shiharai: { title: "Nonemployee Compensation", issuer: "Whitfield Trading LLC", rows: [
+    shiharai: { short: "1099-NEC", title: "Nonemployee Compensation", issuer: "Whitfield Trading LLC", rows: [
       ["Nonemployee compensation", fmt("en", 18400)],
       ["Federal income tax withheld", fmt("en", 2760)],
       ["Withholding agent", "Whitfield Trading LLC"]] },
-    iryohi: { title: "Medical Expense Summary", issuer: "Meridian Health Network", rows: [
+    iryohi: { short: "Medical", title: "Medical Expense Summary", issuer: "Meridian Health Network", rows: [
       ["Total medical expenses", fmt("en", 9180)],
       ["Months covered", "January–December"],
       ["Outpatient visits", "14"]] },
-    mycard: { title: "Social Security Card", issuer: "United States Social Insurance Office", rows: [
+    mycard: { short: "SSN", title: "Social Security Card", issuer: "United States Social Insurance Office", rows: [
       ["Social security number", "123-45-6789"],
       ["Issued", "May 2018"],
       ["Address", "412 Kendrick Ave, Milton City"]] },
     // 前年の申告書控え。米国の e-File は前年 AGI で本人確認する（L-27）
-    prior: { title: "Form 1040 (2024) — Taxpayer Copy", issuer: "Personal copy", rows: [
+    prior: { short: "1040 (2024)", title: "Form 1040 (2024) — Taxpayer Copy", issuer: "Personal copy", rows: [
       ["Adjusted gross income", fmt("en", 61204)],
       ["Total tax", fmt("en", 7436)],
       ["Filed on", "April 15, 2025"]] },
-    password: { title: "Password Memo", issuer: "Personal copy", rows: [
+    password: { short: "Password", title: "Password Memo", issuer: "Personal copy", rows: [
       ["User ID", "1234 5678 9012 3456"], ["PIN", "＊＊＊＊"], ["Note", "“the usual”"]] },
   },
 
   "zh-Hans": {
     // 混同表の当たり先: 额 / 类 / 医 / 费 / 号 / 编 / 户 / 备
-    shiharai: { title: "劳务报酬所得明细", issuer: "白鹭商贸有限公司", rows: [
+    shiharai: { short: "劳务报酬", title: "劳务报酬所得明细", issuer: "白鹭商贸有限公司", rows: [
       ["收入额", fmt("zh-Hans", 120000)],
       ["已预扣税额", fmt("zh-Hans", 12252)],
       ["所得类别", "稿酬所得"]] },
-    iryohi: { title: "医疗费用汇总单", issuer: "明德医疗集团", rows: [
+    iryohi: { short: "医疗费", title: "医疗费用汇总单", issuer: "明德医疗集团", rows: [
       ["医疗费合计", fmt("zh-Hans", 18432)],
       ["覆盖月份", "1月～12月"],
       ["就诊次数", "14次"]] },
-    mycard: { title: "居民身份证", issuer: "公安机关", rows: [
+    mycard: { short: "身份证", title: "居民身份证", issuer: "公安机关", rows: [
       ["公民身份号码", "1234 5678 9012"], ["证件编号", "2026 1201"], ["住址", "明德市 光明路 12 号"]] },
-    prior: { title: "上年度汇算清缴记录", issuer: "本人留存", rows: [
+    prior: { short: "上年度汇算", title: "上年度汇算清缴记录", issuer: "本人留存", rows: [
       ["已缴税额", fmt("zh-Hans", 7436)],
       ["开户银行", "白鹭银行"],
       ["申报日期", "2025年6月30日"]] },
-    password: { title: "密码备忘", issuer: "本人留存", rows: [
+    password: { short: "密码", title: "密码备忘", issuer: "本人留存", rows: [
       ["用户识别号", "1234 5678 9012 3456"], ["密码", "＊＊＊＊"], ["备注", "“老样子”"]] },
   },
 
   ru: {
     // 混同表の当たり先: ь(Стоимость) / щ(Общая, посещений) / ц(Медицинские) /
     //                   з(Название) / е・и(多数)
-    shiharai: { title: "Справка о доходах", issuer: "ООО «Белояр»", rows: [
+    shiharai: { short: "Доходы", title: "Справка о доходах", issuer: "ООО «Белояр»", rows: [
       ["Общая сумма дохода", fmt("ru", 1200000)],
       ["Удержанный налог", fmt("ru", 156000)],
       ["Название организации", "ООО «Белояр»"]] },
-    iryohi: { title: "Справка об оплате медицинских услуг", issuer: "Медцентр «Меридиан»", rows: [
+    iryohi: { short: "Медрасходы", title: "Справка об оплате медицинских услуг", issuer: "Медцентр «Меридиан»", rows: [
       ["Стоимость услуг", fmt("ru", 184320)],
       ["Медицинские услуги", "январь–декабрь"],
       ["Число посещений", "14"]] },
-    mycard: { title: "Свидетельство ИНН", issuer: "Федеральное налоговое управление", rows: [
+    mycard: { short: "ИНН", title: "Свидетельство ИНН", issuer: "Федеральное налоговое управление", rows: [
       ["Серия и номер", "12 34 567890"],
       ["Дата выдачи", "май 2018"],
       ["Адрес", "г. Мытищи, ул. Кедровая, 12"]] },
-    prior: { title: "Декларация 3-НДФЛ за 2024 год", issuer: "Личная копия", rows: [
+    prior: { short: "3-НДФЛ 2024", title: "Декларация 3-НДФЛ за 2024 год", issuer: "Личная копия", rows: [
       ["Сумма налога", fmt("ru", 156000)],
       ["Дата подачи", "30.04.2025"],
       ["Стоимость услуг представителя", fmt("ru", 8000)]] },
-    password: { title: "Памятка с паролем", issuer: "Личная копия", rows: [
+    password: { short: "Пароль", title: "Памятка с паролем", issuer: "Личная копия", rows: [
       ["Идентификационный номер", "1234 5678 9012 3456"],
       ["Пароль", "＊＊＊＊"],
       ["Примечание", "«как всегда»"]] },
@@ -243,24 +250,24 @@ const DOCS = {
     // 混同表の当たり先: í(íntegros) / ú(Número) / ó(Retención) / é(médicos) /
     //                   á(máximo) / ñ(Compañía)
     // Año は使わない。ñ→n が "Ano" になり、異変ではなく下ネタになる（L-12e）
-    shiharai: { title: "Certificado de retenciones", issuer: "Blanquil Comercial, S.L.", rows: [
+    shiharai: { short: "Retenciones", title: "Certificado de retenciones", issuer: "Blanquil Comercial, S.L.", rows: [
       ["Rendimientos íntegros", fmt("es", 18400)],
       ["Retención practicada", fmt("es", 2760)],
       ["Clave de percepción", "Actividades profesionales"]] },
-    iryohi: { title: "Certificado de gastos médicos", issuer: "Clínica Meridiano", rows: [
+    iryohi: { short: "Gastos", title: "Certificado de gastos médicos", issuer: "Clínica Meridiano", rows: [
       ["Total de gastos médicos", fmt("es", 9180)],
       ["Importe máximo deducible", fmt("es", 1500)],
       ["Compañía aseguradora", "Mutua Meridiano"]] },
-    mycard: { title: "Documento Nacional de Identidad", issuer: "Dirección General de Registro Civil", rows: [
+    mycard: { short: "DNI", title: "Documento Nacional de Identidad", issuer: "Dirección General de Registro Civil", rows: [
       ["Número de documento", "12345678Z"],
       ["Fecha de expedición", "12/05/2018"],
       ["Domicilio", "C/ Quintana 12, 3.º B, Madrid"]] },
     // casilla 505 は参照番号の取得に実際に要る（L-27）
-    prior: { title: "Declaración de la Renta 2024 — copia", issuer: "Copia personal", rows: [
+    prior: { short: "Renta 2024", title: "Declaración de la Renta 2024 — copia", issuer: "Copia personal", rows: [
       ["Casilla 505", fmt("es", 61204)],
       ["Cuota resultante", fmt("es", 7436)],
       ["Fecha de presentación", "30/06/2025"]] },
-    password: { title: "Nota de contraseña", issuer: "Copia personal", rows: [
+    password: { short: "Contraseña", title: "Nota de contraseña", issuer: "Copia personal", rows: [
       ["Número de identificación", "1234 5678 9012 3456"],
       ["Contraseña", "＊＊＊＊"],
       ["Observación", "“lo de siempre”"]] },
@@ -654,6 +661,7 @@ export function docSpecs(locale) {
   const out = {};
   for (const [key, d] of Object.entries(DOCS[locale])) {
     out[key] = {
+      short: d.short,          // 結果ログ・所持リストに出す短縮名
       title: d.title,
       issuer: d.issuer,
       era: T.eraGenuine,       // 真正な書類は全て同一の年号年（L-8a）

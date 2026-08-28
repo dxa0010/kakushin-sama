@@ -8,12 +8,59 @@
 </head>
 <body>
 <style>
+  /* ---------- 同梱フォント（P2-7） ----------
+     Proton / Steam Deck の Wine には日本語・中国語フォントが**無いのが既定**で、
+     OS フォントに頼ったままだと実機で全文が豆腐（□）になる。同梱は保険ではなく必須。
+     生成: node tools/charset.mjs && node tools/make-fonts.mjs
+     元は Noto（SIL Open Font License 1.1）。サブセットは改変にあたるため
+     Reserved Font Name「Noto」を名前に残していない。全文は assets/fonts/OFL.txt。
+
+     zh-Hans だけ SC 系を使う。日本語フォント（JIS 系）は簡体字専用の字
+     （银 汇 缴 鹭 额 户 备 编 费）を持たず、中国語の書類が丸ごと豆腐になる（実測）。
+     -1 / -2 は穴埋め。简 は日本語フォントに無く（言語選択の「简体中文」）、
+     ₽ は CJK 系フォントに一切無い。スタックの末尾に置けば字ごとに拾われる。 */
+  @font-face { font-family: "Kakushin Sans";  src: url(assets/fonts/kakushin-sans-jp.woff2) format("woff2");
+               font-weight: 100 900; font-display: block; }
+  @font-face { font-family: "Kakushin Serif"; src: url(assets/fonts/kakushin-serif-jp.woff2) format("woff2");
+               font-weight: 100 900; font-display: block; }
+  @font-face { font-family: "Kakushin Sans SC";  src: url(assets/fonts/kakushin-sans-sc.woff2) format("woff2");
+               font-weight: 100 900; font-display: block; }
+  @font-face { font-family: "Kakushin Serif SC"; src: url(assets/fonts/kakushin-serif-sc.woff2) format("woff2");
+               font-weight: 100 900; font-display: block; }
+  @font-face { font-family: "Kakushin Mono";  src: url(assets/fonts/kakushin-mono.woff2) format("woff2");
+               font-weight: 100 900; font-display: block; }
+  @font-face { font-family: "Kakushin Gap";   src: url(assets/fonts/kakushin-fallback-1.woff2) format("woff2");
+               font-display: block; }
+  @font-face { font-family: "Kakushin Gap";   src: url(assets/fonts/kakushin-fallback-2.woff2) format("woff2");
+               font-display: block; }
+
+  /* スタックは1箇所で決める。個々の規則は必ずこの変数を使うこと
+     （直接フォント名を書くと、同梱漏れが実機まで見つからない）。 */
+  :root {
+    --f-sans:  "Kakushin Sans", "Kakushin Sans SC", "Kakushin Gap",
+               "Hiragino Sans", "Yu Gothic", sans-serif;
+    --f-serif: "Kakushin Serif", "Kakushin Serif SC", "Kakushin Gap",
+               "Hiragino Mincho ProN", "Yu Mincho", serif;
+    /* 等幅は金額・日付・暗証番号に使う。元の Noto Sans Mono は CJK を持たないので、
+       「2025年6月30日」のような日付のために sans へ落ちる必要がある。 */
+    --f-mono:  "Kakushin Mono", "Kakushin Sans", "Kakushin Sans SC", "Kakushin Gap",
+               ui-monospace, "SF Mono", monospace;
+  }
+  /* zh-Hans では SC 系を先に出す。同じコードポイントでも日中で字形が違うため、
+     日本語フォントが先だと中国語の文章が日本の字形で組まれる。 */
+  html[lang="zh-Hans"] {
+    --f-sans:  "Kakushin Sans SC", "Kakushin Sans", "Kakushin Gap", sans-serif;
+    --f-serif: "Kakushin Serif SC", "Kakushin Serif", "Kakushin Gap", serif;
+    --f-mono:  "Kakushin Mono", "Kakushin Sans SC", "Kakushin Sans", "Kakushin Gap",
+               ui-monospace, monospace;
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; }
   body {
     background: #050507;
     color: #d8d4c8;
-    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    font-family: var(--f-sans);
     -webkit-user-select: none; user-select: none;
   }
   #app { position: fixed; inset: 0; }
@@ -28,7 +75,7 @@
   .hidden { display: none !important; }
 
   #title h1 {
-    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-family: var(--f-serif);
     font-size: clamp(1.6rem, 6vw, 3.2rem);
     letter-spacing: 0.12em; font-weight: 600;
     color: #cfc9b8; margin-bottom: 10px;
@@ -38,13 +85,13 @@
      kami（氏名欄＝カクシン様）は「カクシン」という名前を知っていることが判定の根拠になる。
      v21 の暗証番号と同じ「ゲーム内の情報だけで解ける」原則（docs/test-specs/anoms-i18n.md L-2）。 */
   #title .sub2 {
-    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-family: var(--f-serif);
     font-size: clamp(1rem, 2.6vw, 1.35rem);
     letter-spacing: 0.16em; color: #a49d8a; margin-bottom: 12px;
   }
   #title .sub { color: #6f6a5e; font-size: 0.9rem; letter-spacing: 0.3em; margin-bottom: 34px; }
   #title .prem {
-    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-family: var(--f-serif);
     color: #979182; line-height: 2.1; font-size: 0.95rem; margin-bottom: 34px;
   }
   .btn {
@@ -55,11 +102,52 @@
   .btn:hover, .btn:focus-visible { border-color: #b0a77c; color: #fff; outline: none; }
   #title .ctrl { margin-top: 30px; color: #55524a; font-size: 0.78rem; line-height: 1.9; }
 
+  /* ---------- ポーズ／設定（P2-4）とクレジット（P7-1） ---------- */
+  /* ポーズ中は背景を完全に塗り潰さない。ゲームが「止まっている」ことは伝えたいが、
+     部屋が消えると復帰時に自分がどこを向いていたか分からなくなる。
+     ただし HUD（時計・所持品・お知らせ文）は半透明越しに透けて見出しと重なるので、
+     設定そのものは**不透明の板**に載せる。透けてよいのは板の外側だけ。 */
+  #pause { background: rgba(5, 5, 7, 0.9); z-index: 60; }
+  #pausePanel {
+    background: #0c0c10; border: 1px solid #33302a; border-radius: 3px;
+    padding: 30px 38px 28px; max-width: 560px; width: 100%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 18px 48px rgba(0, 0, 0, 0.7);
+  }
+  #pause h2, #credits h2 {
+    font-family: var(--f-serif);
+    font-size: 1.5rem; letter-spacing: 0.18em; color: #cfc9b8; margin-bottom: 6px;
+  }
+  #pause .note { color: #6f6a5e; font-size: 0.78rem; letter-spacing: 0.12em; margin-bottom: 26px; }
+  #pauseRows { display: grid; grid-template-columns: auto 220px auto; gap: 14px 16px;
+               align-items: center; margin-bottom: 28px; }
+  #pauseRows label { color: #979182; font-size: 0.86rem; text-align: right; white-space: nowrap; }
+  #pauseRows output { color: #b8b1a0; font-size: 0.8rem; text-align: left; min-width: 4.5em; }
+  #pauseRows input[type=range] { width: 100%; accent-color: #b0a77c; }
+  #pauseRows select {
+    width: 100%; font: inherit; font-size: 0.9rem; padding: 6px 8px;
+    color: #d8d4c8; background: #14141a; border: 1px solid #55503f; border-radius: 2px;
+  }
+  #pauseBtns { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  #pauseBtns .btn { padding: 11px 26px; font-size: 0.9rem; letter-spacing: 0.14em; }
+
+  #credits { background: #050507; z-index: 70; justify-content: flex-start; padding: 40px 24px; }
+  #creditsBody {
+    max-width: 720px; width: 100%; overflow-y: auto; text-align: left;
+    color: #8f8a7c; font-size: 0.82rem; line-height: 1.95; margin: 18px 0 24px;
+  }
+  #creditsBody h3 { color: #b8b1a0; font-size: 0.9rem; letter-spacing: 0.1em;
+                    margin: 22px 0 6px; font-weight: 600; }
+  #creditsBody h3:first-child { margin-top: 0; }
+  #creditsBody p { margin-bottom: 4px; }
+  #creditsBody .lic { color: #6f6a5e; font-size: 0.76rem; }
+  #creditsBody ul { list-style: none; padding-left: 1em; }
+  #creditsBody li { color: #6f6a5e; font-size: 0.78rem; }
+
   /* ---------- HUD ---------- */
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
   #clock {
     position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-    font-family: ui-monospace, "SF Mono", monospace; font-variant-numeric: tabular-nums;
+    font-family: var(--f-mono); font-variant-numeric: tabular-nums;
     font-size: 1.7rem; letter-spacing: 0.1em; color: #b8b2a0;
     text-shadow: 0 0 12px rgba(0,0,0,0.9);
   }
@@ -90,7 +178,7 @@
   #notice {
     position: absolute; top: 34%; left: 50%; transform: translate(-50%,-50%);
     width: min(92vw, 700px); text-align: center;
-    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-family: var(--f-serif);
     font-size: 1.25rem; color: #ddd6c2; line-height: 2; letter-spacing: 0.1em;
     text-shadow: 0 1px 8px #000, 0 0 24px #000;
     opacity: 0; transition: opacity 0.5s;
@@ -140,7 +228,7 @@
     font-size: 0.78rem; letter-spacing: 0.5em; color: #8b8055; margin-bottom: 26px;
   }
   #ending .ed-text {
-    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-family: var(--f-serif);
     font-size: 1.2rem; line-height: 2.4; letter-spacing: 0.12em; margin-bottom: 26px;
     color: #d5cfbd;
   }
@@ -208,7 +296,7 @@
   }
   #hideOv .lbl {
     position: absolute; top: 20%; width: 100%; text-align: center;
-    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-family: var(--f-serif);
     color: #8f897a; font-size: 0.95rem; letter-spacing: 0.3em;
     /* 隙間を5倍にした副作用の手当て。ラベルもスリットも画面中央にあるので、明るい面が
        隙間の正面に来ると（クローゼットの奥の白い戸がまさにそれ）この暗い灰色の字が
@@ -265,6 +353,88 @@
 <div id="stickL" class="stick"><div class="knob"></div><div class="tag">MOVE</div></div>
 <div id="stickR" class="stick"><div class="knob"></div><div class="tag">LOOK</div></div>
 <div id="hideOv"><div class="lbl">クローゼットの中 ── 時計は、止まらない</div></div>
+
+<!-- ポーズ／設定（P2-4）。Esc で開く。state を "PAUSE" にするので時計も怪人も止まる。 -->
+<div id="pause" class="overlay hidden">
+ <div id="pausePanel">
+  <h2>一時停止</h2>
+  <div class="note">時計は止まっている</div>
+  <div id="pauseRows">
+    <label for="pVol">音量</label>
+    <input id="pVol" type="range" min="0" max="100" step="5">
+    <output id="pVolV"></output>
+
+    <label for="pSens">マウス感度</label>
+    <input id="pSens" type="range" min="30" max="250" step="5">
+    <output id="pSensV"></output>
+
+    <label for="pGamma">明るさ</label>
+    <input id="pGamma" type="range" min="80" max="180" step="5">
+    <output id="pGammaV"></output>
+
+    <label for="pLang">言語 / Language</label>
+    <select id="pLang">
+      <option value="ja">日本語</option>
+      <option value="en">English</option>
+      <option value="zh-Hans">简体中文</option>
+      <option value="ru">Русский</option>
+      <option value="es">Español</option>
+    </select>
+    <output id="pLangV"></output>
+  </div>
+  <div id="pauseBtns">
+    <button id="pResume" class="btn">再開する</button>
+    <button id="pCredits" class="btn">クレジット</button>
+    <button id="pTitle" class="btn">タイトルへ戻る</button>
+  </div>
+ </div>
+</div>
+
+<!-- クレジット（P7-1）。three.js と examples 由来テクスチャの MIT は著作権表示の
+     保持が再配布の条件で、Steam 配布も再配布に当たる。ゲーム内に無いと未達。
+     内容は THIRD-PARTY-NOTICES.md と一致させること（片方だけ直さない）。 -->
+<div id="credits" class="overlay hidden">
+  <h2>クレジット</h2>
+  <div id="creditsBody">
+    <h3>カクシン様 ─ 確定申告からは逃げられない</h3>
+    <p class="lic">ソースコード・3Dモデル・テクスチャ・音・書類はすべて本作のオリジナルです（下記を除く）。</p>
+
+    <h3>Three.js および同梱 addons</h3>
+    <p>Copyright © 2010-2026 three.js authors</p>
+    <p class="lic">MIT License. https://github.com/mrdoob/three.js<br>
+      ライセンス全文は配布物内の <code>vendor/three/LICENSE</code> に同梱しています。</p>
+
+    <h3>テクスチャ（three.js examples 由来）</h3>
+    <p>Copyright © 2010-2026 three.js authors</p>
+    <p class="lic">MIT License（<code>vendor/three/LICENSE</code> と同一）</p>
+    <ul>
+      <li>assets/textures/hardwood2_diffuse.jpg — 床</li>
+      <li>assets/textures/hardwood2_bump.jpg — 床のバンプ</li>
+    </ul>
+
+    <h3>フォント（Noto 由来・サブセット）</h3>
+    <p>Copyright © The Noto Project Authors</p>
+    <p class="lic">SIL Open Font License 1.1. https://github.com/notofonts<br>
+      ライセンス全文は配布物内の <code>assets/fonts/OFL.txt</code> に同梱しています。<br>
+      本作が表示する文字だけに絞ったサブセット版です。OFL の Reserved Font Name の
+      規定により、ファミリ名は <code>Kakushin Sans / Serif / Mono</code> に改名しています。</p>
+    <ul>
+      <li>Noto Sans JP・Noto Serif JP — 日本語／欧文／キリル文字</li>
+      <li>Noto Sans SC・Noto Serif SC — 簡体字中国語</li>
+      <li>Noto Sans Mono — 金額・日付・暗証番号</li>
+    </ul>
+
+    <h3>テクスチャ（ambientCG 由来）</h3>
+    <p class="lic">CC0 1.0 Universal（パブリックドメイン提供）。https://ambientcg.com/<br>
+      CC0 に帰属表示の義務はありませんが、出典を明確にするため記載しています。</p>
+    <ul>
+      <li>plaster017 — 壁　/　fabric001・fabric049 — 布地　/　leather030 — 革</li>
+      <li>cardboard001 — 段ボール　/　metal063 — 金属</li>
+      <li>concrete034 — コンクリート　/　plastic011 — プラスチック</li>
+    </ul>
+  </div>
+  <button id="cBack" class="btn">戻る</button>
+</div>
 
 <div id="inspect" class="hidden">
   <canvas id="docCv" width="440" height="580"></canvas>
