@@ -2157,9 +2157,15 @@ function makePosterTex(bad) {
     c.fillText(tr("signDo1"), 96, 178); c.fillText(tr("signDo2"), 96, 234);
   } else {
     c.fillStyle = "#2b4a7a";
-    c.font = `bold 26px ${F_SERIF()}`;
-    c.fillText(tr("posterTitle"), 96, 88); c.fillText(tr("posterAsk"), 96, 128);
-    c.font = `13px ${F_SANS()}`; c.fillStyle = "#55503f";
+    // ポスターの内寸は約 174px。日本語は「確定申告」4字で収まるが、
+    // 「¿Ya la has hecho?」「Федеральное налоговое управление」は確実にはみ出す。
+    // 書類（drawDoc）と同じく、必ず幅に収めてから描く。
+    fitFont(c, tr("posterTitle"), 164, 26, `px ${F_SERIF()}`, "bold ");
+    c.fillText(tr("posterTitle"), 96, 88);
+    fitFont(c, tr("posterAsk"), 164, 26, `px ${F_SERIF()}`, "bold ");
+    c.fillText(tr("posterAsk"), 96, 128);
+    c.fillStyle = "#55503f";
+    fitFont(c, UVAL.authority, 164, 13, `px ${F_SANS()}`);
     c.fillText(UVAL.authority, 96, 220);
   }
   const t = new THREE.CanvasTexture(cv);
@@ -2251,7 +2257,9 @@ function makeMonster() {
   fc.strokeStyle = "#555"; fc.lineWidth = 2;
   fc.strokeRect(10, 10, 236, 300);
   fc.fillStyle = "#222";
-  fc.font = `bold 26px ${F_SERIF()}`; fc.textAlign = "center";
+  fc.textAlign = "center";
+  // 顔（通知書）の見出し。内寸 236px。「HEAVY PENALTY」等は日本語より長い。
+  fitFont(fc, tr("posterHeavy"), 224, 26, `px ${F_SERIF()}`, "bold ");
   fc.fillText(tr("posterHeavy"), 128, 46);
   fc.font = `11px ${F_SANS()}`;
   for (let r = 0; r < 6; r++) {
@@ -3335,6 +3343,15 @@ window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOm
   // 検証用: 書類は目で見るしかないので tools/shot-doc.mjs から触れるようにする
   ANOM_IDS, buildSpec, drawDoc, canApply, anomMeta,
   DOCSPECS: () => SPECS, locale: () => LOCALE,
+  // 検証用: ポスターと顔のテクスチャ。3D の中では正面から見る機会が少なく、
+  // 文字が枠外へ流れていても気付けないので、描画結果を直接取り出せるようにする。
+  posterCanvas: (bad) => makePosterTex(bad).image,
+  // 顔の見出しは怪人生成の中でインラインに描いているので、幅だけ測れるようにする。
+  measureFit: (text, maxW, basePx, serif) => {
+    const c = document.createElement("canvas").getContext("2d");
+    const w = fitFont(c, text, maxW, basePx, `px ${serif ? F_SERIF() : F_SANS()}`, "bold ");
+    return { width: Math.round(w), font: c.font };
+  },
   monster, spawnMonster,   // 検証用: 怪人の直接制御
   pin, openEtax,           // 検証用: 暗証番号ゲート本体とe-Taxの開閉（E2Eから残り回数を観測するため）
   st: () => state, gm: () => gameMin, setMin: v => { gameMin = v; },
