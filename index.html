@@ -131,10 +131,20 @@
   #pauseBtns .btn { padding: 11px 26px; font-size: 0.9rem; letter-spacing: 0.14em; }
 
   #credits { background: #050507; z-index: 70; justify-content: flex-start; padding: 40px 24px; }
+  /* 中身は 1280x800（Deck の実解像度）でも 200px 以上あふれる＝実測。
+     あふれること自体は構わないが、**スクロールできると分からないのは困る**。
+     クレジットは MIT / CC0 / OFL の表示義務を果たすための画面なので、
+     「下に続きがある」ことが見えないと、義務を果たしていないのと変わらない。
+     上下の罫線でスクロール領域だと示し、スクロールバーも見える色にする。 */
   #creditsBody {
     max-width: 720px; width: 100%; overflow-y: auto; text-align: left;
-    color: #8f8a7c; font-size: 0.82rem; line-height: 1.95; margin: 18px 0 24px;
+    color: #8f8a7c; font-size: 0.82rem; line-height: 1.95; margin: 18px 0 14px;
+    border-top: 1px solid #23211c; border-bottom: 1px solid #23211c;
+    padding: 14px 4px; scrollbar-width: thin; scrollbar-color: #3f3b31 transparent;
   }
+  #creditsBody::-webkit-scrollbar { width: 8px; }
+  #creditsBody::-webkit-scrollbar-thumb { background: #3f3b31; border-radius: 4px; }
+  #creditsHint { color: #55524a; font-size: 0.72rem; letter-spacing: 0.1em; margin-bottom: 18px; }
   #creditsBody h3 { color: #b8b1a0; font-size: 0.9rem; letter-spacing: 0.1em;
                     margin: 22px 0 6px; font-weight: 600; }
   #creditsBody h3:first-child { margin-top: 0; }
@@ -433,6 +443,7 @@
       <li>concrete034 — コンクリート　/　plastic011 — プラスチック</li>
     </ul>
   </div>
+  <div id="creditsHint">▼ スクロールすると続きがあります</div>
   <button id="cBack" class="btn">戻る</button>
 </div>
 

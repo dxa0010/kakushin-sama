@@ -180,6 +180,19 @@ describe("F-06..F-10 配線とライセンス", () => {
         `${rel} に OFL の表記が無い（片方だけ直さないこと）`);
     }
     assert.ok(has("assets/fonts/OFL.txt"), "ライセンス全文の同梱は再配布の条件");
+
+    // ゲーム内クレジットは表示義務を果たすための画面。第三者の表記が
+    // **1つでも欠けたら未達**なので、3種すべてが本文にあることを見る。
+    // （Steam 配布は再配布にあたる。P7-1 参照）
+    const body = HTML().match(/<div id="creditsBody">([\s\S]*?)<\/div>\s*<div id="creditsHint"/);
+    assert.ok(body, "#creditsBody が見つからない");
+    for (const [what, re] of [
+      ["three.js の MIT", /three\.js authors[\s\S]*?MIT License/],
+      ["ambientCG の CC0", /CC0/],
+      ["Noto の OFL", /SIL Open Font License/],
+    ]) {
+      assert.match(body[1], re, `ゲーム内クレジットに ${what} の表記が無い`);
+    }
   });
 });
 
