@@ -16,7 +16,8 @@ const { beep, thump, footstep, heartbeat, clockTick, speak,
 import { createPinGate, normalizePin } from "./pin.js";
 // 書類・異変の多言語データ（純粋モジュール。tests/unit/anoms.test.js で単体検証できる）
 import { LOCALES, ANOM_IDS, docSpecs, applyAnom, canApply, anomMeta,
-         localeText, codexOrigin, pinHint, deadline } from "./anoms.js";
+         localeText, codexOrigin, pinHint, deadline, formatMoney, authority } from "./anoms.js";
+import { uiText, fill, formatDate, shiftDay, monthLabel } from "./ui.js";
 /* ============================================================
    カクシン様 ─ 確定申告からは逃げられない — prototype
    ============================================================ */
@@ -32,20 +33,20 @@ const flags = { n2130: false, n2200: false, n2300: false, tvAt: 21*60 + 50 + Mat
 
 /* ---------- items ---------- */
 const ITEMS = [
-  { id: "shiharai", short: "支払調書",  x:  6.9, z: -5.4, y: 0.35,
-    gag: "支払調書の束。1月に届いていた。開封すらしていなかった。" },
-  { id: "iryohi",   short: "医療費",    x: -7.0, z:  4.5, y: 1.15,
-    gag: "医療費のレシート束。一部、インクが消えて金額が読めない。" },
-  { id: "mycard",   short: "マイナ",    x: -5.5, z: -4.4, y: 0.75,
+  { id: "shiharai", short: "",  x:  6.9, z: -5.4, y: 0.35,
+    gagKey: "gagShiharai" },
+  { id: "iryohi",   short: "",    x: -7.0, z:  4.5, y: 1.15,
+    gagKey: "gagIryohi" },
+  { id: "mycard",   short: "",    x: -5.5, z: -4.4, y: 0.75,
     // 【暗証番号の手掛かり①：形式】必須アイテムなので、桁数と「数字だけ」は必ず伝わる
     // 900px幅で1行あたり約30字で折り返すので、<br>で区切って収める（以下のギャグも同様）
-    gag: "マイナンバーカード。電子証明書の期限は……セーフ。<br>あと2ヶ月だった。暗証番号は4桁。数字だけの、あれだ。" },
+    gagKey: "gagMycard" },
   { id: "prior",    short: "",  x:  3.6, z:  5.35, y: 0.75,
-    gag: "ICカードリーダー。テレビの裏に落ちていた。3年前に買って、使ったのは1回だけ。" },
-  { id: "password", short: "パスワード", x:  7.0, z:  2.0, y: 1.55,
+    gagKey: "gagPrior" },
+  { id: "password", short: "", x:  7.0, z:  2.0, y: 1.55,
     // 【暗証番号の手掛かり②：探索への誘導】『いつもの』で行き止まりにしないための一文。
     // ダミー3種のギャグに手掛かりを仕込んであるので、部屋を見て回る動機をここで作る
-    gag: "e-Taxパスワードのメモ。『いつもの』と書いてある。どれだ。<br>……他の紙にも書き残していた気がする。<br>部屋に、何か落ちていなかったか。" },
+    gagKey: "gagPassword" },
 ];
 // 無駄なアイテム（ダミー）：本物と紛らわしくするため、見た目（色）は本物と統一している
 // （マーカーの色で本物/ハズレを見分けられてしまうと成立しないため）。バリエーション3種。
@@ -60,11 +61,11 @@ const ITEMS = [
 // 4桁マスクで解けるようにはなっている。ここは「拾えば楽になる」ご褒美の層。
 const FAKES = [
   { x: 2.5, z: 5.0, y: 0.35, taken: false,
-    gag: "ふるさと納税の証明書……ワンストップ特例で提出済みだ。<br>寄付サイトのログインも『いつもの』にした。<br>どのサイトも、同じ4桁を使い回している。" },
+    gagKey: "gagFake1" },
   { x: -4.3, z: -3.3, y: 0.35, taken: false,
-    gag: "医療費控除の明細書……よく見たら去年の日付だった。<br>去年もこの時期、同じ4桁を打ち込んだ。<br>日付をそのまま並べただけの、覚えやすいあれを。" },
+    gagKey: "gagFake2" },
   { x: 0.3, z: 2.6, y: 0.35, taken: false,
-    gag: "領収書の束——中身は全部、深夜の牛丼屋のものだった。<br>日付は毎年、3月14日と15日に集中している。<br>この2日だけ、生活が壊れる。" },
+    gagKey: "gagFake3" },
 ];
 let got = 0;
 
@@ -93,10 +94,47 @@ let LOCALE = "ja";     // save 読み込み後に applyLocale() で確定する
 let SPECS = null;      // docSpecs(LOCALE)
 let TXT = null;        // localeText(LOCALE)
 
+/** UI 文言（ui.js）と、その差し込み値。applyLocale で作り直す。 */
+let U = null;
+let UVAL = null;
+
+/** 差し込み値をそろえる。**文言側で日付や金額を組み立てない**（仕様書 §3.3）。
+ * 期限を deadline() から引くので、期限を変えれば文言も一緒に動く。 */
+function uiValues(locale) {
+  const d = deadline(locale);
+  const prev = shiftDay(d, -1);
+  const next = shiftDay(d, 1);
+  return {
+    deadline: formatDate(locale, d.month, d.day),
+    deadlineDay: formatDate(locale, d.month, d.day),
+    deadlinePrev: formatDate(locale, prev.month, prev.day),
+    deadlineNext: formatDate(locale, next.month, next.day),
+    // 手掛かり③は同じ月の2日を並べる。月を2回書くと冗長なので分けて渡す
+    //（「3月14日と3月15日」ではなく「3月14日と15日」）。
+    mon: monthLabel(locale, d.month),
+    d1: prev.day,
+    d2: d.day,
+    name: localeText(locale).playerName,
+    monster: localeText(locale).monster,
+    authority: authority(locale),
+    taxYear: localeText(locale).eraGenuine,
+  };
+}
+
+/** UI 文言を引く。差し込み記号は uiValues と引数 extra で埋める。
+ * 埋め忘れは ui.js の fill が例外にする（黙って {deadline} と表示しない）。 */
+function tr(key, extra) {
+  const v = U[key];
+  if (v === undefined) throw new Error(`UI 文言のキーが無い: ${key}`);
+  return fill(v, extra ? { ...UVAL, ...extra } : UVAL);
+}
+
 function applyLocale(locale) {
   LOCALE = locale;
   SPECS = docSpecs(LOCALE);
   TXT = localeText(LOCALE);
+  U = uiText(LOCALE);
+  UVAL = uiValues(LOCALE);
   // 短縮名（結果ログ・所持リスト）は書類データ側が持つ。ロケールで変わるため。
   ITEMS.forEach((it) => { if (SPECS[it.id]) it.short = SPECS[it.id].short; });
 }
@@ -104,8 +142,8 @@ function applyLocale(locale) {
 
 /* ---------- モード ---------- */
 const MODES = {
-  white: { label: "白色申告", forced: 2, p: 0.25, rp: 0.35, mps: 0.45, subtleW: 0.45, base: 34120, huntBonus: 0, visitEarly: 0 },
-  blue:  { label: "青色申告", forced: 3, p: 0.5,  rp: 0.5,  mps: 0.55, subtleW: 0.75, base: 65480, huntBonus: 6, visitEarly: 4 },
+  white: { labelKey: "modeWhite", forced: 2, p: 0.25, rp: 0.35, mps: 0.45, subtleW: 0.45, base: 34120, huntBonus: 0, visitEarly: 0 },
+  blue:  { labelKey: "modeBlue", forced: 3, p: 0.5,  rp: 0.5,  mps: 0.55, subtleW: 0.75, base: 65480, huntBonus: 6, visitEarly: 4 },
 };
 let mode = "white";
 
@@ -133,6 +171,8 @@ document.documentElement.lang = LOCALE;
 // 同梱フォントの読み込みを始める。canvas は @font-face を自動では読まないので、
 // 書類を描く前にこの Promise を待つ（P2-7 / loadFonts のコメント参照）。
 const fontsReady = loadFonts();
+// 画面の文言を流し込む。type="module" は defer 相当なので、この時点で DOM は揃っている。
+applyI18n();
 function persistSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const runLog = [];    // {short, fake, anomId, act, ok, revealed}
 const newFound = [];
@@ -2112,14 +2152,15 @@ function makePosterTex(bad) {
   if (bad) {
     c.fillStyle = "#7a1f14";
     c.font = `900 46px ${F_SANS()}`;
-    c.fillText("納", 96, 66); c.fillText("税", 96, 122);
-    c.fillText("シ", 96, 178); c.fillText("ロ", 96, 234);
+    // 縦書きの1字看板。ラテン文字圏は1字ずつ「PAY!」のように積む。
+    c.fillText(tr("signPay"), 96, 66); c.fillText(tr("signTax"), 96, 122);
+    c.fillText(tr("signDo1"), 96, 178); c.fillText(tr("signDo2"), 96, 234);
   } else {
     c.fillStyle = "#2b4a7a";
     c.font = `bold 26px ${F_SERIF()}`;
-    c.fillText("確定申告", 96, 88); c.fillText("お済みですか", 96, 128);
+    c.fillText(tr("posterTitle"), 96, 88); c.fillText(tr("posterAsk"), 96, 128);
     c.font = `13px ${F_SANS()}`; c.fillStyle = "#55503f";
-    c.fillText("国税庁", 96, 220);
+    c.fillText(UVAL.authority, 96, 220);
   }
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -2211,7 +2252,7 @@ function makeMonster() {
   fc.strokeRect(10, 10, 236, 300);
   fc.fillStyle = "#222";
   fc.font = `bold 26px ${F_SERIF()}`; fc.textAlign = "center";
-  fc.fillText("重加算税", 128, 46);
+  fc.fillText(tr("posterHeavy"), 128, 46);
   fc.font = `11px ${F_SANS()}`;
   for (let r = 0; r < 6; r++) {
     fc.strokeStyle = "#888"; fc.lineWidth = 1;
@@ -2290,7 +2331,7 @@ function spawnMonster() {
   monster.visible = true;
   monster.position.set(mob.x, 0, mob.z);
   beep(85, 0.7, "sine", 0.16, 55);
-  notice("── 何かが、部屋に入ってきた。", 3.2);
+  notice(tr("omenEntered"), 3.2);
 }
 
 /* ---------- 訪問イベント（カクシン様はイレギュラーに来る） ---------- */
@@ -2327,7 +2368,7 @@ function enterVisit() {
   if (mob.active) return;
   visit.state = "active";
   clockGlitch = false;
-  if (state === "INSPECT") { closeInspect(); subtitle("──顔を上げた。", 1.8); }
+  if (state === "INSPECT") { closeInspect(); subtitle(tr("omenLookedUp"), 1.8); }
   applyLights(0.1);
   setTimeout(() => { if (mob.active) applyLights(0.6); }, 380);
   thump(0.35);
@@ -2340,7 +2381,7 @@ function endVisit() {
   visit.state = "none";
   visit.nextAt = gameMin + 18 - MODES[mode].visitEarly + Math.random() * 14 - Math.min(10, aggro * 1.5);
   restoreRoom();
-  notice("……気配が、消えた。", 2.6);
+  notice(tr("omenGone"), 2.6);
 }
 function restoreRoom() {
   applyLights(1);
@@ -2360,7 +2401,7 @@ addEventListener("keydown", e => {
     // 絵文字（🔇🔈）は使わない。同梱フォント（Noto Sans/Serif JP・SC・Mono）は
     // どれも絵文字を持たず、Proton 環境には絵文字フォント自体が無いので豆腐になる。
     // 2字のために絵文字フォントを同梱する価値は無く、言葉で足りる（P2-7）。
-    notice(m ? "ミュート" : `音量 ${Math.round(audioPrefs.vol * 100)}%`, 1.4);
+    notice(m ? tr("muted") : tr("volumeAt", { pct: Math.round(audioPrefs.vol * 100) }), 1.4);
   }
   if (e.code === "Escape") {
     // 検分・e-Tax はそれぞれ閉じるのが先。何も開いていない PLAY 中だけポーズに入る。
@@ -2585,7 +2626,7 @@ function tryInteract() {
     } else {
       const md = Math.hypot(mob.x - ply.x, mob.z - ply.z);
       if (md < 2.2 && mob.mode === "chase") {
-        notice("見られている。隠れられない！", 2.2);
+        notice(tr("seen"), 2.2);
         return;
       }
       ply.hidden = true;
@@ -2595,18 +2636,18 @@ function tryInteract() {
     return;
   }
   if (nearTarget.kind === "item") {
-    if (mob.active && mob.mode === "chase") { subtitle("それどころじゃない！", 1.6); return; }
+    if (mob.active && mob.mode === "chase") { subtitle(tr("tooBusy"), 1.6); return; }
     openInspect(nearTarget.ref);
   } else if (nearTarget.kind === "fake") {
     const f = nearTarget.ref;
     f.taken = true;
     scene.remove(fakeMeshes[nearTarget.idx]);
     // 手掛かりを仕込んで2行になったので、既定の3.6秒では読み切れない
-    notice(f.gag, 6.4);
+    notice(tr(f.gagKey), 6.4);
     beep(240, 0.3, "sawtooth", 0.08, 120);
   } else if (nearTarget.kind === "desk") {
     if (got < 5) {
-      notice(`書類がまだ足りない。（${got} / 5）`);
+      notice(tr("noticeNotEnough", { got }));
     } else {
       openEtax();
     }
@@ -2639,7 +2680,7 @@ $("btnTake").addEventListener("click", () => {
   it.taken = true; got++;
   itemMeshes[it.id].visible = false;
   refreshSlots();
-  notice(it.gag, 6.4);   // マイナ・メモは手掛かりで2行になっている（上記 FAKES と同じ理由）
+  notice(tr(it.gagKey), 6.4);   // マイナ・メモは手掛かりで2行になっている（上記 FAKES と同じ理由）
   beep(880, 0.1, "triangle", 0.12); beep(1180, 0.14, "triangle", 0.1);
   closeInspect();
 });
@@ -2655,7 +2696,7 @@ $("btnTear").addEventListener("click", () => {
   it.copy = makeCopy(it, MODES[mode].rp);   // 新しい一枚が湧く（また偽物かもしれない）
   relocateItem(it);
   beep(1600, 0.16, "sawtooth", 0.05, 320); beep(120, 0.2, "sine", 0.08);
-  notice("破り捨てた。<br><span style=\"opacity:.65\">……紙を裂く音が、静かな部屋に響いた。</span>", 3);
+  notice(tr("noticeTorn"), 3);
   closeInspect();
 });
 $("btnBack").addEventListener("click", () => closeInspect());
@@ -2696,7 +2737,7 @@ function openEtax() {
   $("etaxMsg").classList.remove("ok");
   if (st.locked) {
     // ロック後にここへ来ることは通常無い（ロック直後に市役所ENDへ遷移する）が、保険として表示する
-    $("etaxMsg").textContent = "カードがロックされています。市役所の窓口でのみ再登録できます。";
+    $("etaxMsg").textContent = tr("cardLocked");
     pinInput.value = ""; pinInput.disabled = true;
   } else if (st.authenticated) {
     $("etaxMsg").textContent = "";
@@ -2707,7 +2748,7 @@ function openEtax() {
     // 開き直したとき、試行を消費済みなら残り回数を見せる（A-13：公平性）。
     // 【初回は空にする】案内文は上の .row に既にあり、#etaxMsg はエラー色（#a12b1f）なので、
     // ここに案内を出すと「まだ何も失敗していないのに赤い文が出ている」状態になる。
-    $("etaxMsg").textContent = st.attemptsUsed > 0 ? `残り${st.attemptsLeft}回です。` : "";
+    $("etaxMsg").textContent = st.attemptsUsed > 0 ? tr("pinAttemptsLeft", { n: st.attemptsLeft }) : "";
   }
   updateEtaxBtnState();
   $("etax").classList.remove("hidden");
@@ -2737,12 +2778,12 @@ $("etaxBtn").addEventListener("click", () => {
       aggro++;
       win.classList.remove("shake"); void win.offsetWidth; win.classList.add("shake");
       pinInput.value = "";
-      let html = `暗証番号が違います。残り${r.attemptsLeft}回です。`;
+      let html = tr("pinWrong", { n: r.attemptsLeft });
       if (r.finalWarning) {
         // 2回目のミス＝最終警告。既存の却下と同じ escalation（怪人を呼ぶ）に加え、
         // メモの手掛かりを再提示する。『いつもの』だけでは名前に結びつかないため、
         // 申告書の氏名欄（PLAYER_NAME）を引用して一歩踏み込む（答え0315そのものは書かない）。
-        html += `<br>次に間違えるとカードがロックされます。<br>` + pinHint(LOCALE);
+        html += tr("pinLastChance") + pinHint(LOCALE);
         if (!mob.active) enterVisit();
         else visit.huntLeft = Math.max(visit.huntLeft, 25);
       }
@@ -2754,7 +2795,7 @@ $("etaxBtn").addEventListener("click", () => {
         // 3回目のミス。ロックの合図はちょうど1回だけ来るので、ここで ending を1回だけ呼ぶ。
         aggro++;
         win.classList.remove("shake"); void win.offsetWidth; win.classList.add("shake");
-        msg.innerHTML = "暗証番号が違います。カードがロックされました。<br>再登録は市役所の窓口でのみ受け付けます。";
+        msg.innerHTML = tr("pinLocked");
         pinInput.disabled = true;
         btn.disabled = true;
         setTimeout(() => ending("shiyakusho"), 2200);
@@ -2762,7 +2803,7 @@ $("etaxBtn").addEventListener("click", () => {
       return;
     } else {
       // invalid（送信ボタンは4桁揃うまで無効なので、通常の操作では到達しない）
-      msg.textContent = "4桁の数字で入力してください。";
+      msg.textContent = tr("pinFormat");
       updateEtaxBtnState();
       return;
     }
@@ -2770,7 +2811,7 @@ $("etaxBtn").addEventListener("click", () => {
 
   btn.disabled = true;
   msg.classList.remove("ok");
-  msg.textContent = "送信中──審査しています…";
+  msg.textContent = tr("etaxSending");
   setTimeout(() => {
     const bad = ITEMS.find(it => it.taken && it.copy.fake);
     if (bad) {
@@ -2784,7 +2825,7 @@ $("etaxBtn").addEventListener("click", () => {
       bad.copy = { fake: false, anom: null };  // 差し戻しの再交付は本物（終盤の救済）
       relocateItem(bad);
       refreshSlots();
-      msg.innerHTML = `審査結果：<b>却下</b>　『${bad.short}』──${why}。<br>該当書類は差し戻されました。<span style="opacity:.7">……部屋のどこかへ。</span>`;
+      msg.innerHTML = tr("etaxRejected", { doc: bad.short, why });
       win.classList.remove("shake"); void win.offsetWidth; win.classList.add("shake");
       thump(0.3 + etaxRejects * 0.12);
       $("vignette").style.opacity = Math.min(0.9, etaxRejects * 0.25);
@@ -2796,7 +2837,7 @@ $("etaxBtn").addEventListener("click", () => {
       btn.disabled = false;
     } else {
       msg.classList.add("ok");
-      msg.textContent = "受付結果：受付完了　受付番号 20260315230000000001";
+      msg.textContent = tr("etaxAccepted", { receipt: "20260315230000000001" });
       beep(660, 0.4, "sine", 0.12); beep(830, 0.4, "sine", 0.1); beep(990, 0.6, "sine", 0.1);
       setTimeout(() => ending("refund"), 2200);
     }
@@ -2805,11 +2846,11 @@ $("etaxBtn").addEventListener("click", () => {
 
 /* ---------- endings ---------- */
 const EDS = {
-  refund: { tag: "還付 END", text: "受付完了。<br>あなたは生き延びた。<br><br>還付金：¥34,120" },
-  late:   { tag: "期限後申告 END", text: "3月16日 0:00。<br>カクシン様は、静かに頭を下げた。<br>「期限後申告について、ご案内します」<br><br>無申告加算税があなたに課された。" },
-  sermon: { tag: "説教 END", text: "捕まった。<br><br>あなたは税務署で3時間、丁寧に説教された。<br>担当者は、最後までずっと敬語だった。" },
+  refund: { tag: "endRefundTag", text: "endRefundText", money: 34120 },
+  late:   { tag: "endLateTag", text: "endLateText" },
+  sermon: { tag: "endSermonTag", text: "endSermonText" },
   // 暗証番号を3回間違えてカードがロックされた失敗系エンディング（sermon と同様、ランク計算には関与しない・何も解禁しない）
-  shiyakusho: { tag: "市役所 END", text: "マイナンバーカードがロックされた。<br>再登録は市役所の窓口でのみ受け付けている。<br>市役所は平日9時〜17時。<br><br>今夜、あなたはe-Taxで送信できなかった。" },
+  shiyakusho: { tag: "endCityTag", text: "endCityText" },
 };
 function ending(key) {
   if (state === "END") return;
@@ -2822,24 +2863,26 @@ function ending(key) {
   if (key === "refund") {
     const pen = etaxRejects * 9000 + tearGenuine * 2500;
     const yen = Math.max(120, MODES[mode].base - pen);
-    EDS.refund.text = `受付完了。<br>あなたは生き延びた。<br><br>還付金：¥${yen.toLocaleString()}` +
-      (pen === 0
-        ? `<br><span style="font-size:.82em;opacity:.75">──完璧な申告。書類を見る目が、あなたを守った。</span>`
-        : `<br><span style="font-size:.82em;opacity:.75">──却下${etaxRejects}件、本物の破棄${tearGenuine}件。だいぶ疑われた。</span>`);
+    // 還付額は走行ごとに変わる。文言そのものを組み立てず、金額と後書きだけ差し替える
+    //（文言を上書きすると、翻訳ではなく日本語がそのまま残ってしまう）。
+    EDS.refund.money = yen;
+    EDS.refund.suffix = pen === 0
+      ? `<br><span style="font-size:.82em;opacity:.75">${tr("rankPerfect")}</span>`
+      : `<br><span style="font-size:.82em;opacity:.75">${tr("rankMistakes", { rejects: etaxRejects, torn: tearGenuine })}</span>`;
     const mistakes = etaxRejects + tearGenuine;
     const left = 23 * 60 + 59 - gameMin;
-    const rk = mistakes === 0 ? (left >= 60 ? "S ── 国税査察官" : "A ── 税理士")
-             : mistakes <= 1 ? "B ── 経理のベテラン"
-             : mistakes <= 3 ? "C ── 一般納税者" : "D ── 駆け込み申告者";
-    rankLine = `${mode === "blue" ? "【青色】" : ""}判定ランク　${rk}`;
+    const rk = mistakes === 0 ? (left >= 60 ? tr("rankS") : tr("rankA"))
+             : mistakes <= 1 ? tr("rankB")
+             : mistakes <= 3 ? tr("rankC") : tr("rankD");
+    rankLine = tr("rankLine", { blue: mode === "blue" ? tr("blueTag") : "", rank: rk });
     const RORDER = ["S", "A", "B", "C", "D"];
     if (!save.bestRank || RORDER.indexOf(rk[0]) < RORDER.indexOf(save.bestRank))
       save.bestRank = rk[0];
   }
   // 答え合わせ＋図鑑
   const rows = runLog.map(e => {
-    const truth = e.fake ? (e.revealed ? `偽物〈${anomName(e.anomId)}〉` : "偽物〈？？？〉") : "本物";
-    return `<div class="rrow ${e.ok ? "rok" : "rng"}"><span>${e.short}</span><span>${truth} → ${e.act === "take" ? "受理" : "破棄"}</span><span>${e.ok ? "○" : "×"}</span></div>`;
+    const truth = e.fake ? (e.revealed ? tr("resultFake", { anom: anomName(e.anomId) }) : tr("resultFakeUnknown")) : tr("resultGenuine");
+    return `<div class="rrow ${e.ok ? "rok" : "rng"}"><span>${e.short}</span><span>${truth} → ${e.act === "take" ? tr("actTake") : tr("actTear")}</span><span>${e.ok ? "○" : "×"}</span></div>`;
   }).join("");
   save.endings[key] = true; save.runs++;
   persistSave();
@@ -2847,16 +2890,21 @@ function ending(key) {
   const newTxt = newFound.length
     ? `<br><span class="new">NEW　${newFound.map(anomName).join("・")}</span>` : "";
   $("recap").innerHTML =
-    (runLog.length ? `<div class="rhead">今夜の書類 ── 答え合わせ</div>${rows}` : "") +
-    `<div class="zukan">異変図鑑　${foundN} / ${ANOM_IDS.length}${newTxt}</div>` +
+    (runLog.length ? `<div class="rhead">${tr("resultHead")}</div>${rows}` : "") +
+    `<div class="zukan">${tr("codex", { found: foundN, total: ANOM_IDS.length })}${newTxt}</div>` +
     (rankLine ? `<div class="zukan">${rankLine}</div>` : "") +
-    (firstRefund ? `<div class="zukan new">高難度モード『青色申告』が解禁された。</div>` : "");
+    (firstRefund ? `<div class="zukan new">${tr("blueUnlocked")}</div>` : "");
   $("etax").classList.add("hidden");
   $("inspect").classList.add("hidden");
   $("hud").classList.add("hidden");
   $("vignette").style.opacity = 0;
-  $("edTag").textContent = EDS[key].tag;
-  $("edText").innerHTML = EDS[key].text;
+  // EDS はキーだけを持つ。文言と金額はロケールから引く
+  //（還付額を文言に直書きすると、通貨記号も桁区切りも日本のままになる）。
+  const ed = EDS[key];
+  $("edTag").textContent = tr(ed.tag);
+  $("edText").innerHTML =
+    (ed.money === undefined ? tr(ed.text) : tr(ed.text, { money: formatMoney(LOCALE, ed.money) })) +
+    (ed.suffix || "");
   $("ending").classList.remove("hidden");
   document.exitPointerLock && document.exitPointerLock();
 }
@@ -2893,12 +2941,12 @@ function monsterUpdate(dt) {
       mob.mode = "leave"; visit.leaveT = 0;
     } else if (canSee) {
       mob.mode = "chase";
-      if (state === "INSPECT") { closeInspect(); subtitle("──顔を上げると、そこに居た。", 2.2); }
+      if (state === "INSPECT") { closeInspect(); subtitle(tr("omenThere"), 2.2); }
       const now = performance.now()/1000;
       if (now - mob.spokeAt > 10) {
         mob.spokeAt = now;
-        subtitle("「提出期限は、3月16日です」", 3);
-        speak("提出期限は、3月16日です");
+        subtitle(tr("monsterLine"), 3);
+        speak(tr("monsterLineBare"));
         beep(48, 1.2, "sine", 0.22, 36);
       }
     } else {
@@ -3028,18 +3076,18 @@ function clockUpdate(dt) {
     beep(1320, 0.09, "sine", 0.2); setTimeout(() => beep(1320, 0.09, "sine", 0.16), 160);
     // 【暗証番号の手掛かり④：日付を目に入れる】21:30は必ず来るので、ダミーを1つも拾わなかった
     // プレイヤーにも「3月15日」という並びが一度は提示される。氏名「三月 十五」と同じ日付
-    notice("スマホ：<b>【国税庁】確定申告の期限が近づいています</b><br>提出期限：3月15日 23:59", 4.6);
+    notice(tr("noticePhone"), 4.6);
   }
   if (gameMin >= 22*60 && !flags.n2200) {
     flags.n2200 = true; phase = 2;
     if (!mob.active && visit.state !== "omen") applyLights(1);
-    notice("22:00 ── 部屋が、暗くなった気がする。");
+    notice(tr("notice22"));
   }
   if (gameMin >= flags.tvAt && !flags.tvDone) {
     flags.tvDone = true;
     M.tv.emissive.setHex(0x8fb0e8);
     beep(300, 0.5, "sawtooth", 0.14, 90);
-    subtitle("テレビ「確定申告は、お早めに」", 3);
+    subtitle(tr("noticeTv"), 3);
     setTimeout(() => M.tv.emissive.setHex(0x000000), 5000);
   }
   if (gameMin >= 23*60 && !flags.n2300) {
@@ -3053,7 +3101,7 @@ function clockUpdate(dt) {
     }
     if (!mob.active && visit.state !== "omen") applyLights(1);
     if (visit.state === "none" && !mob.active) visit.nextAt = Math.min(visit.nextAt, gameMin + 2);
-    notice("23:00 ── 冷蔵庫が、止まった。<br>部屋が、静かになりすぎた。あと1時間しかない。");
+    notice(tr("notice23"));
   }
   if (gameMin >= 23*60 + 59) ending("late");
 }
@@ -3093,10 +3141,10 @@ function frame(now) {
       if (nearTarget) {
         promptEl.classList.remove("hidden");
         promptEl.textContent =
-          nearTarget.kind === "desk"   ? (got < 5 ? `PC ── 書類が足りない（${got}/5）` : "［E］e-Taxを開く") :
-          nearTarget.kind === "closet" ? (ply.hidden ? "［E］クローゼットを出る" : "［E］クローゼットに隠れる") :
-          nearTarget.kind === "item"   ? "［E］書類を検分する" :
-          "［E］調べる";
+          nearTarget.kind === "desk"   ? (got < 5 ? tr("pcNotEnough", { got }) : tr("promptEtax")) :
+          nearTarget.kind === "closet" ? (ply.hidden ? tr("promptUnhide") : tr("promptHide")) :
+          nearTarget.kind === "item"   ? tr("promptInspect") :
+          tr("promptExamine");
       } else promptEl.classList.add("hidden");
     }
     if (state === "INSPECT") clockUpdate(dt);   // 検分中も時計は止まらない
@@ -3154,12 +3202,12 @@ function refreshTitleMeta() {
   const blueOpen = !!save.endings.refund;
   const mb = $("modeBlue");
   mb.disabled = !blueOpen;
-  mb.textContent = blueOpen ? "青色申告" : "青色申告（還付ENDで解禁）";
+  mb.textContent = blueOpen ? tr("modeBlue") : tr("modeBlueLocked");
   // エンディング数は EDS のキー数から数える（shiyakusho 追加で4つ目。ハードコードしない）
   const eN = Object.keys(EDS).filter(k => save.endings[k]).length;
   $("meta").textContent =
-    `異変図鑑 ${Object.keys(save.found).length}/${ANOM_IDS.length} ／ エンディング ${eN}/${Object.keys(EDS).length}`
-    + (save.bestRank ? ` ／ 最高ランク ${save.bestRank}` : "");
+    tr("saveLine", { found: Object.keys(save.found).length, total: ANOM_IDS.length, endings: eN, endTotal: Object.keys(EDS).length })
+    + (save.bestRank ? tr("saveBest", { rank: save.bestRank }) : "");
 }
 refreshTitleMeta();
 $("modeWhite").addEventListener("click", () => {
@@ -3171,6 +3219,31 @@ $("modeBlue").addEventListener("click", () => {
   mode = "blue";
   $("modeBlue").classList.add("sel"); $("modeWhite").classList.remove("sel");
 });
+
+/* ---------- 画面の文言を流し込む（P2-9） ----------
+   index.html の静的な文言は data-t / data-th を持つ。ここで一括で埋める。
+   data-t  = textContent（素のテキスト）
+   data-th = innerHTML（<b> や <br> を含む文言）
+
+   **クレジット画面（#credits）の中身は対象外。** ライセンス表記の義務で
+   置いてあるものなので、日本語のままにしてある（仕様書 §1.1 / §3.4）。
+   見出し・案内・戻るボタンだけは data-t を持つので翻訳される。 */
+function applyI18n() {
+  for (const el of document.querySelectorAll("[data-t]")) {
+    el.textContent = tr(el.dataset.t);
+  }
+  for (const el of document.querySelectorAll("[data-th]")) {
+    el.innerHTML = tr(el.dataset.th);
+  }
+  // 題字は怪異の名前そのもの。作品タイトルの一部なので anoms.js から取る。
+  $("titleName").textContent = TXT.monster;
+  document.title = TXT.title;
+  // 複数行をまとめて組む箇所（<br> 区切り）。
+  $("prem").innerHTML = ["premise1", "premise2", "premise3", "premise4", "premise5"]
+    .map((k) => tr(k)).join("<br>");
+  $("ctrl").innerHTML =
+    [tr("ctrlPc"), tr("ctrlTouch"), "", tr("ctrlHint1"), tr("ctrlHint2"), tr("ctrlHint3")].join("<br>");
+}
 
 /* ---------- ポーズ／設定（P2-4）とクレジット（P7-1） ----------
    ポーズ中は state を "PAUSE" にする。メインループが PLAY / ETAX / INSPECT でしか
@@ -3195,7 +3268,7 @@ function closePause() {
 
 function paintPause() {
   $("pVol").value = String(Math.round(audioPrefs.vol * 100));
-  $("pVolV").textContent = audioPrefs.muted ? "ミュート" : `${Math.round(audioPrefs.vol * 100)}%`;
+  $("pVolV").textContent = audioPrefs.muted ? tr("muted") : `${Math.round(audioPrefs.vol * 100)}%`;
   $("pSens").value = String(save.sens);
   $("pSensV").textContent = `${save.sens}%`;
   $("pGamma").value = String(save.gamma);
@@ -3235,7 +3308,7 @@ $("cBack").addEventListener("click", () => { $("credits").classList.add("hidden"
   const sl = $("volSlider"), lab = $("volVal");
   const paint = () => {
     sl.value = String(Math.round(audioPrefs.vol * 100));
-    lab.textContent = audioPrefs.muted ? "ミュート" : `${Math.round(audioPrefs.vol * 100)}%`;
+    lab.textContent = audioPrefs.muted ? tr("muted") : `${Math.round(audioPrefs.vol * 100)}%`;
   };
   paint();   // 保存された設定を復元して表示
   sl.addEventListener("input", () => { setVolume(Number(sl.value) / 100); paint(); });
@@ -3254,10 +3327,7 @@ $("startBtn").addEventListener("click", async () => {
   audioInit();
   state = "PLAY";
   if (!isTouch) renderer.domElement.requestPointerLock();
-  notice(
-    mode === "blue"
-      ? "3月15日 21:00 ── 自宅。<br>青色申告。書類は多く、偽物は巧妙だ。<br><span style=\"opacity:.6\">……今夜は、あちらも本気らしい。</span>"
-      : "3月15日 21:00 ── 自宅。<br>まだ、何もやっていない。<br><span style=\"opacity:.6\">……今夜の書類は、どこか様子がおかしい。</span>", 4.6);
+  notice(mode === "blue" ? tr("noticeStartBlue") : tr("noticeStartWhite"), 4.6);
 });
 
 /* debug hook (テスト用) */

@@ -20,6 +20,9 @@ const read = (rel) => {
   }
 };
 const GAME = () => read("src/game.js");
+/* 2026-08-28（P2-9）: 画面の文言は src/ui.js へ移した。
+   game.js にはキーだけが残るので、文言そのものはこちらで見る。 */
+const UI = () => read("src/ui.js");
 const HTML = () => read("index.html");
 
 /** 先頭が column 0 の `}` で閉じる関数の本体を取り出す（game.js のトップレベル関数の書式） */
@@ -122,10 +125,15 @@ describe("配線: 手掛かりの公平性とメッセージ", () => {
   });
 
   test("W-13 ミス時のメッセージ（違います・残り回数・ロック警告）がある", () => {
-    const game = GAME();
-    assert.match(game, /暗証番号が違います/, "ミス時のメッセージが無い");
-    assert.match(game, /残り/, "残り回数の表示が無い");
-    assert.match(game, /ロックされます/, "2回目ミスのロック警告が無い");
+    // 文言は ui.js へ移った（P2-9）。game.js 側はキーの参照を、
+    // 文言そのものは ui.js の日本語を見る。
+    const game = GAME(), ui = UI();
+    for (const key of ["pinWrong", "pinAttemptsLeft", "pinLastChance", "pinLocked"]) {
+      assert.ok(game.includes(`"${key}"`), `game.js が ${key} を使っていない`);
+    }
+    assert.match(ui, /暗証番号が違います/, "ミス時のメッセージが無い");
+    assert.match(ui, /残り/, "残り回数の表示が無い");
+    assert.match(ui, /ロックされます/, "2回目ミスのロック警告が無い");
   });
 
   test("W-14 2回目のミスでメモの手掛かりを再提示している", () => {
@@ -146,10 +154,15 @@ describe("配線: 市役所 END", () => {
     const m = game.match(/shiyakusho\s*:\s*\{([\s\S]*?)\}/);
     assert.ok(m, "EDS に shiyakusho が無い");
     const entry = m[1];
-    assert.match(entry, /tag:\s*"市役所 END"/, 'tag が "市役所 END" でない');
-    assert.match(entry, /ロック/, "text にカードがロックされた旨が無い");
-    assert.match(entry, /平日/, "text に市役所の受付（平日9時〜17時）が無い");
-    assert.match(entry, /<br>/, "既存3つと同じ文体（<br>で短い断定を並べる）になっていない");
+    // tag は文言そのものではなくキーになった（P2-9）。
+    assert.match(entry, /tag:\s*"endCityTag"/, 'tag が "endCityTag" でない');
+    assert.match(UI(), /endCityTag:\s*"市役所 END"/, 'ui.js の ja に「市役所 END」が無い');
+    assert.match(entry, /text:\s*"endCityText"/, 'text が "endCityText" でない');
+    const cityText = UI().match(/endCityText:\s*"([^"]*)"/);
+    assert.ok(cityText, "ui.js の ja に endCityText が無い");
+    assert.match(cityText[1], /ロック/, "text にカードがロックされた旨が無い");
+    assert.match(cityText[1], /平日/, "text に市役所の受付（平日9時〜17時）が無い");
+    assert.match(cityText[1], /<br>/, "既存3つと同じ文体（<br>で短い断定を並べる）になっていない");
   });
 
   test("W-07 ending(\"shiyakusho\") を呼んでいる", () => {
@@ -166,19 +179,28 @@ describe("配線: 市役所 END", () => {
 });
 
 describe("回帰: 既存の挙動を壊していない", () => {
-  test("W-09 既存3エンディングの tag と text が一字も変わっていない", () => {
-    const game = GAME();
+  test("W-09 既存3エンディングの日本語が一字も変わっていない", () => {
+    /* 2026-08-28（P2-9）: 文言は ui.js へ移した。日付と金額は差し込みになったので
+       「3月16日」「¥34,120」はもう文字列に含まれない（含めてはいけない＝U-15）。
+       このテストの主旨は「既存の結末の日本語を勝手に推敲しない」ことなので、
+       検査先を ui.js の ja に移し、差し込み部分を除いた本文で見る。 */
+    const ui = UI();
     const originals = [
-      'refund: { tag: "還付 END", text: "受付完了。<br>あなたは生き延びた。<br><br>還付金：¥34,120" }',
+      ['endRefundTag', '還付 END'],
+      ['endRefundText', '受付完了。<br>あなたは生き延びた。<br><br>還付金：{money}'],
+      ['endLateTag', '期限後申告 END'],
       // 2026-08-19: 「怪人」→「カクシン様」に変更。文言の推敲ではなく公平性の修正。
       // 変更前は「カクシン」という名前がプレイヤーに一度も提示されず、
       // 異変 issuer（発行元＝株式会社カクシン）を却下する根拠がゲーム内に存在しなかった。
       // タイトル画面とこの END で名乗ることで、却下判定が演繹可能になる。
-      'late:   { tag: "期限後申告 END", text: "3月16日 0:00。<br>カクシン様は、静かに頭を下げた。<br>「期限後申告について、ご案内します」<br><br>無申告加算税があなたに課された。" }',
-      'sermon: { tag: "説教 END", text: "捕まった。<br><br>あなたは税務署で3時間、丁寧に説教された。<br>担当者は、最後までずっと敬語だった。" }',
+      // 2026-08-28: 名前も差し込み（{monster}）になった。出典は anoms.js の localeText。
+      ['endLateText', '{deadlineNext} 0:00。<br>{monster}は、静かに頭を下げた。<br>「期限後申告について、ご案内します」<br><br>無申告加算税があなたに課された。'],
+      ['endSermonTag', '説教 END'],
+      ['endSermonText', '捕まった。<br><br>あなたは税務署で3時間、丁寧に説教された。<br>担当者は、最後までずっと敬語だった。'],
     ];
-    for (const line of originals) {
-      assert.ok(game.includes(line), `既存エンディングの定義が変わっている:\n${line}`);
+    for (const [key, want] of originals) {
+      assert.ok(ui.includes(`${key}: "${want}"`),
+        `既存エンディングの日本語が変わっている: ${key}\n  期待: ${want}`);
     }
   });
 
@@ -186,7 +208,8 @@ describe("回帰: 既存の挙動を壊していない", () => {
     const game = GAME();
     for (const needle of [
       "etaxRejects++",
-      "審査結果：<b>却下</b>",
+      // 2026-08-28（P2-9）: 文言は ui.js の etaxRejected へ。ここはキーの参照を見る。
+      'tr("etaxRejected"',
       "if (!mob.active) enterVisit();",
       "visit.huntLeft = Math.max(visit.huntLeft, 25)",
       'ending("refund")',
@@ -246,14 +269,26 @@ describe("配線: index.html と package.json", () => {
 
     // オーバーレイのどこかにあるだけでは不足。操作説明（.ctrl, 0.78rem の灰色文字）は
     // 読み飛ばされうるので、必ず目に入る <h1> にあることを要求する。
-    // ※この assert は「h1 から名前を消す」変異で実際に落ちることを確認済み。
-    const h1 = titleScreen.match(/<h1>([\s\S]*?)<\/h1>/);
-    assert.ok(h1, 'タイトル画面に <h1> が無い');
-    assert.ok(h1[1].includes(token),
-      `怪異の名前「${token}」がタイトル画面の <h1> に無い（見つかった h1: ${h1[1]}）。` +
-      `異変 issuer / kami を却下する根拠がゲーム内に存在しなくなる（L-2 公平性）`);
+    //
+    // 2026-08-28（P2-9）: 多言語化で <h1> は空になり、実行時に流し込む形になった。
+    // 守る性質は変わらない ──「名前が開始前に必ず目に入る」こと。
+    // そこで (a) h1 の器がタイトル画面にあること、(b) それを monster で埋める配線が
+    // game.js にあること、(c) どのロケールでも名前が空でないこと、の3点で見る。
+    const h1 = titleScreen.match(/<h1\s+id="titleName"\s*>([\s\S]*?)<\/h1>/);
+    assert.ok(h1, 'タイトル画面に <h1 id="titleName"> が無い');
+    assert.match(GAME(), /\$\("titleName"\)\.textContent\s*=\s*TXT\.monster/,
+      'h1 に怪異の名前を流し込む配線が無い。' +
+      '異変 issuer / kami を却下する根拠がゲーム内に存在しなくなる（L-2 公平性）');
 
-    // <title> にも入れる（ストア名・タブ名・口コミで使われる同じトークン）
+    const { LOCALES } = await import(new URL("../../src/anoms.js", import.meta.url).href);
+    for (const loc of LOCALES) {
+      const name = localeText(loc).monster;
+      assert.ok(name && name.trim().length >= 2,
+        `${loc}: 怪異の名前が空（タイトルに何も出ない）`);
+    }
+
+    // <title> にも入れる（ストア名・タブ名・口コミで使われる同じトークン）。
+    // こちらは静的な日本語のままなので、従来どおりリテラルで見る。
     const head = html.match(/<title>([^<]*)<\/title>/);
     assert.ok(head && head[1].includes(token),
       `<title> に「${token}」が無い: ${head && head[1]}`);

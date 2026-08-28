@@ -351,7 +351,7 @@
 
 <div id="hud" class="hidden">
   <div id="clock">21:00</div>
-  <div id="datebar">3月15日 ── 自宅</div>
+  <div id="datebar" data-t="datebar"></div>
   <div id="items"></div>
   <div id="prompt" class="hidden"></div>
   <div id="subtitle"></div>
@@ -362,23 +362,23 @@
 
 <div id="stickL" class="stick"><div class="knob"></div><div class="tag">MOVE</div></div>
 <div id="stickR" class="stick"><div class="knob"></div><div class="tag">LOOK</div></div>
-<div id="hideOv"><div class="lbl">クローゼットの中 ── 時計は、止まらない</div></div>
+<div id="hideOv"><div class="lbl" data-t="hideOverlay"></div></div>
 
 <!-- ポーズ／設定（P2-4）。Esc で開く。state を "PAUSE" にするので時計も怪人も止まる。 -->
 <div id="pause" class="overlay hidden">
  <div id="pausePanel">
-  <h2>一時停止</h2>
-  <div class="note">時計は止まっている</div>
+  <h2 data-t="pauseTitle"></h2>
+  <div class="note" data-t="pauseNote"></div>
   <div id="pauseRows">
-    <label for="pVol">音量</label>
+    <label for="pVol" data-t="optVolume"></label>
     <input id="pVol" type="range" min="0" max="100" step="5">
     <output id="pVolV"></output>
 
-    <label for="pSens">マウス感度</label>
+    <label for="pSens" data-t="optSens"></label>
     <input id="pSens" type="range" min="30" max="250" step="5">
     <output id="pSensV"></output>
 
-    <label for="pGamma">明るさ</label>
+    <label for="pGamma" data-t="optGamma"></label>
     <input id="pGamma" type="range" min="80" max="180" step="5">
     <output id="pGammaV"></output>
 
@@ -393,9 +393,9 @@
     <output id="pLangV"></output>
   </div>
   <div id="pauseBtns">
-    <button id="pResume" class="btn">再開する</button>
-    <button id="pCredits" class="btn">クレジット</button>
-    <button id="pTitle" class="btn">タイトルへ戻る</button>
+    <button id="pResume" class="btn" data-t="resume"></button>
+    <button id="pCredits" class="btn" data-t="credits"></button>
+    <button id="pTitle" class="btn" data-t="toTitle"></button>
   </div>
  </div>
 </div>
@@ -404,7 +404,7 @@
      保持が再配布の条件で、Steam 配布も再配布に当たる。ゲーム内に無いと未達。
      内容は THIRD-PARTY-NOTICES.md と一致させること（片方だけ直さない）。 -->
 <div id="credits" class="overlay hidden">
-  <h2>クレジット</h2>
+  <h2 data-t="creditsTitle"></h2>
   <div id="creditsBody">
     <h3>カクシン様 ─ 確定申告からは逃げられない</h3>
     <p class="lic">ソースコード・3Dモデル・テクスチャ・音・書類はすべて本作のオリジナルです（下記を除く）。</p>
@@ -443,50 +443,50 @@
       <li>concrete034 — コンクリート　/　plastic011 — プラスチック</li>
     </ul>
   </div>
-  <div id="creditsHint">▼ スクロールすると続きがあります</div>
-  <button id="cBack" class="btn">戻る</button>
+  <div id="creditsHint" data-t="creditsScrollHint"></div>
+  <button id="cBack" class="btn" data-t="back"></button>
 </div>
 
 <div id="inspect" class="hidden">
   <canvas id="docCv" width="440" height="580"></canvas>
-  <div id="inspectHint">よく見ろ。偽物には、どこか一箇所だけ「ありえない」がある。<br>検分している間も、時計は進む。</div>
+  <div id="inspectHint"><span data-t="inspectHint1"></span><br><span data-t="inspectHint2"></span></div>
   <div id="inspectBtns">
-    <button id="btnTake" class="btn">本物だ ── 受け取る</button>
-    <button id="btnTear" class="btn">偽物だ ── 破り捨てる</button>
-    <button id="btnBack" class="btn">そっと戻す</button>
+    <button id="btnTake" class="btn" data-t="inspectTake"></button>
+    <button id="btnTear" class="btn" data-t="inspectTear"></button>
+    <button id="btnBack" class="btn" data-t="inspectBack"></button>
   </div>
 </div>
 
 <div id="etax" class="hidden">
   <div id="etaxWin">
-    <div class="bar"><span>e-Tax（国税電子申告・納税システム）</span><span id="etaxClose" style="cursor:pointer;padding:0 8px">×</span></div>
+    <div class="bar"><span data-t="etaxTitle"></span><span id="etaxClose" style="cursor:pointer;padding:0 8px">×</span></div>
     <div class="body">
-      <h2>令和7年分 所得税及び復興特別所得税の申告</h2>
-      <div class="row">申告書データの作成が完了しました。<br>内容を確認のうえ、送信してください。</div>
-      <div class="row">マイナンバーカードの暗証番号（4桁）を入力してください。</div>
+      <h2 data-t="etaxSubtitle"></h2>
+      <div class="row"><span data-t="etaxReady1"></span><br><span data-t="etaxReady2"></span></div>
+      <div class="row" data-t="etaxPinAsk"></div>
       <input id="etaxPin" type="text" maxlength="4" inputmode="numeric" autocomplete="off">
       <div id="etaxMsg"></div>
-      <button id="etaxBtn" disabled>送信する</button>
+      <button id="etaxBtn" disabled data-t="etaxSend"></button>
     </div>
   </div>
 </div>
 
 <div id="title" class="overlay">
-  <h1>カクシン様</h1>
-  <div class="sub2">確定申告からは逃げられない</div>
-  <div class="sub">KAKUSHIN — NO ESCAPE FROM YOUR TAX RETURN</div>
-  <div class="prem">3月15日、午後9時。あなたの名前は「三月 十五」。<br>まだ、何もやっていない。<br>書類を5つ集め、e-Taxで送信せよ。<br>ただし──部屋の書類には、偽物が混ざっている。<br>期限は今夜、23時59分。</div>
+  <h1 id="titleName"></h1>
+  <div class="sub2" data-t="titleSub"></div>
+  <div class="sub" data-t="titleBrand"></div>
+  <div class="prem" id="prem"></div>
   <div id="modeSel">
-    <button id="modeWhite" class="btn mbtn sel">白色申告</button>
-    <button id="modeBlue" class="btn mbtn">青色申告</button>
+    <button id="modeWhite" class="btn mbtn sel" data-t="modeWhite"></button>
+    <button id="modeBlue" class="btn mbtn" data-t="modeBlue"></button>
   </div>
   <div id="volRow">
-    <span>音量</span>
+    <span data-t="optVolume"></span>
     <input id="volSlider" type="range" min="0" max="100" step="5" value="80">
     <span id="volVal">80%</span>
   </div>
-  <button id="startBtn" class="btn">開 始</button>
-  <div class="ctrl">移動：WASD ／ 視点：マウス ／ 調べる：E またはクリック ／ ミュート：M<br>スマホ：左スティック移動 ／ 右スティック視点 ／ ボタンで調べる<br><br>書類は拾う前に検分できる。偽物には一箇所だけ「ありえない」がある。<br>偽物のまま送信すると、審査で却下され──あれが、来る。<br>カクシン様は常には居ない。だが、部屋の異変は前触れだ。クローゼットには隠れられる。</div>
+  <button id="startBtn" class="btn" data-t="start"></button>
+  <div class="ctrl" id="ctrl"></div>
   <div id="meta"></div>
 </div>
 
@@ -494,7 +494,7 @@
   <div class="ed-tag" id="edTag"></div>
   <div class="ed-text" id="edText"></div>
   <div id="recap"></div>
-  <button class="btn" onclick="location.reload()">もう一度</button>
+  <button class="btn" onclick="location.reload()" data-t="again"></button>
 </div>
 
 <script type="importmap">

@@ -90,6 +90,7 @@ Valve は「オーバーレイは常時全画面のフレーム提示を要求�
 - **P2-5** セーブを `localStorage`（`src/game.js:140,147`）から `userData` 配下の JSON へ移行。破損時フォールバック込み。Steam Cloud（P3-3）の前提
 - **P2-6** 多重起動防止・クラッシュログ・終了処理
 - ~~**P2-7** 日本語フォント同梱と `@font-face` 明示（**Proton 対策・Deck 対応の必須項目**）。`THIRD-PARTY-NOTICES.md` に追記~~ **済（2026-08-28）**<br>　Noto をサブセットして 7 face・合計 0.69MB を同梱。ja/en/ru/es は JP 系、zh-Hans は SC 系。<br>　着手前は `document.fonts` が空＝OS フォント頼みだった（Proton では全文が豆腐）。<br>　仕様と実測: `docs/test-specs/font-bundling.md`／テスト: `tests/unit/fonts.test.js`（F-01〜F-12）<br>　再生成: `node tools/charset.mjs && node tools/make-fonts.mjs`（開発機のみ。生成物はコミット済み）
+- **P2-9** UI 文言の多言語化（**済 2026-08-28**）<br>　HUD・ポーズ・タイトル・演出文・アイテム説明・暗証番号 UI・結末・ランク・3D看板を5言語化。<br>　着手前は暗証番号の手掛かり3つがすべて日本語のみで、**日本語以外では詰んで進めなかった**。<br>　クレジット（`#credits`）はライセンス表記なので日本語のまま（利用者の指示）。<br>　仕様と実測: `docs/test-specs/ui-i18n.md`／テスト: `tests/unit/ui.test.js`（U-01〜U-16）<br>　副次効果: 同梱フォントが 0.69MB → 0.47MB
 - **P2-8** 配布物の削減: 参照切れテクスチャ（v22 で参照を切った `doc_*.jpg` 等）の除去、jpg/webp 二重持ちの整理、未使用 vendor addon の削除。現状 assets 27MB
 
 ## 6. フェーズ3: Steamworks 連携
