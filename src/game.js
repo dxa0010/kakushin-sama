@@ -2446,11 +2446,18 @@ function makeMonster() {
   const boot    = new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 2.4, 2.4), color: 0x4a3f31, roughness: 0.45, metalness: 0.08, envMapIntensity: 4.0 }); // 使い込んだ革のブーツ
   const bootSole= new THREE.MeshStandardMaterial({ color: 0x17140f, roughness: 0.95 });                                      // 靴底
   const strapM  = new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 3.5, 3.5), color: 0x6a5238, roughness: 0.45, envMapIntensity: 4.0 }); // 革ベルト・紙の縛り
+  /* 前掛けの革。ベルトと同じ強い艶（roughness 0.45 / envMap 4.0）を使うと、
+     胸に黒光りする甲羅を着けたように見える。艶を落として、外套より一段明るくし、
+     「布の上に革を一枚あてている」という層の重なりが読めるようにする。 */
+  const apronM  = new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 4.5, 4.5), color: 0x5b4a38,
+                                                   roughness: 0.78, metalness: 0.02, envMapIntensity: 1.1 });
   const bladeM  = new THREE.MeshStandardMaterial({ color: 0xb4bac0, roughness: 0.30, metalness: 0.88, envMapIntensity: 5.0 }); // 金具（鎖・鋲・バックル）
   /* 刃だけは別材質にする。金具と同じ磨いた鋼だと、90cm の大鉈が「綺麗な銀色の板」に
      見えて質量が伝わらない。錆色・粗さ 0.65 の鈍い反射に落とし、刃先には血糊を重ねる。
      鎖や鋲の鋭いハイライトは暗所で怪人の動きを伝える情報なので、そちらは光らせたまま。 */
-  const bladeRust = new THREE.MeshStandardMaterial({ color: 0x2b2c29, roughness: 0.55, metalness: 0.86, envMapIntensity: 1.2 });
+  /* 刃は錆びた鋼の明度まで上げる。得物が見えることは演出ではなく操作の前提。
+     暗所で「何を持っているか」「今どう構えているか」が読めないと駆け引きにならない。 */
+  const bladeRust = new THREE.MeshStandardMaterial({ color: 0x6a6055, roughness: 0.52, metalness: 0.80, envMapIntensity: 2.2 });
   const goreM   = new THREE.MeshStandardMaterial({ color: 0x2a0e0a, roughness: 0.94, metalness: 0.0 });   // こびりついた血糊
   const handleM = new THREE.MeshStandardMaterial({ color: 0x241f1b, roughness: 0.7, envMapIntensity: 2.0 });                 // マチェーテの柄
   /* 書類そのものを衣装の一部として体に纏わせる（v25）。この怪人は「確定申告の化身」
@@ -2517,8 +2524,8 @@ function makeMonster() {
     envMapIntensity: 0.10, normalScale: new THREE.Vector2(0.38, 0.38),
     alphaMap: tornTex, alphaTest: 0.5, side: THREE.DoubleSide,
   });
-  const rag     = tornMat(0x2c3024, 0.96);   // ほつれた布片（裾から垂れる切れ端）
-  const ragDark = tornMat(0x12150e, 0.98);   // 同・裏地側
+  const rag     = tornMat(0x3e4436, 0.96);   // ほつれた布片（裾から垂れる切れ端）
+  const ragDark = tornMat(0x1e2218, 0.98);   // 同・裏地側
   /* 【外套は「面」であって「短冊の山」ではない】板を何十枚も並べると、
      どれだけ角度と丈を振っても**1着の衣ではなく布切れの山**に見える。
      衣は連続した面で、裂けているのは裾と縁だけ――そこで、円筒の一部（arc）で
@@ -2552,15 +2559,88 @@ function makeMonster() {
     envMapIntensity: 0.10, normalScale: new THREE.Vector2(0.38, 0.38),
     alphaMap: hemTex, alphaTest: 0.5, side: THREE.DoubleSide,
   });
-  const coatOut = hemMat(0x2c3024, 0.96);    // 外套の表
-  const coatIn  = hemMat(0x101309, 0.98);    // 外套の裏地
+  /* 【真っ黒にしない】外套を漆黒にすると、暗い部屋では顔の紙と手以外が完全に闇へ溶けて、
+     巨体も得物も見えなくなる。ホラーの絵としては強いが、**得物を振り上げる予備動作が
+     読めない**＝理不尽な死になる。輪郭がかろうじて拾える程度まで明度を上げる。 */
+  const coatOut = hemMat(0x3e4436, 0.96);    // 外套の表
+  const coatIn  = hemMat(0x1a1e14, 0.98);    // 外套の裏地
   /* 頭巾の裏当て。外套と同じ最暗色にしないと、板の隙間から覗いたときに
      そこだけ明るい「禿頭」として読めてしまう。頭皮も同じ暗さに合わせる。 */
-  const hoodM  = new THREE.MeshStandardMaterial({ ...loadPBRSet("fabric049", 13, 13), color: 0x14170e,
+  const hoodM  = new THREE.MeshStandardMaterial({ ...loadPBRSet("fabric049", 13, 13), color: 0x22261a,
                                                   roughness: 1.0, metalness: 0, envMapIntensity: 0.10,
                                                   normalScale: new THREE.Vector2(0.28, 0.28) });
   const cordM  = new THREE.MeshStandardMaterial({ color: 0x6b5e46, roughness: 0.95 });                // 麻ひも
   const woodM  = new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.88 });                // 木札・印鑑の柄
+
+  /* === 体を「組み合わせたプリミティブ」から「1枚の皮膚」へ ===
+     この怪人の造形がいつまでも人形に見える最大の理由は、**関節が球、腕が円柱のまま
+     互いに突き刺さっている**こと。輪郭に硬い交差線が出るので、材質をどう作り込んでも
+     「部品を組んだ物」に見える。スカルプトは使えないが、
+     ・体の芯を capsule の距離場（SDF）として定義し、
+     ・その合成を smooth-min（滑らかな和）で取り、
+     ・各パーツの頂点をその等値面まで寄せる
+     という手順なら、**継ぎ目に肉が付いて1枚の連続面になる**。
+     頂点を動かすだけなので三角形は増えず、部品の配置コードもそのまま使える。
+
+     距離場は z を 0.78 で割った空間で測る。胴も肩も奥行きが幅の 0.7〜0.8 なので、
+     真円のカプセルを潰した空間で評価すれば、扁平な体をそのまま表せる。 */
+  const BONE_ZS = 0.78;
+  /** [ax, ay, az, bx, by, bz, r] — すべて z を BONE_ZS で割った空間での値 */
+  const BONES = [
+    [0, 1.04, 0.038, 0, 1.50, 0.077, 0.262],      // 胴
+    [-0.13, 1.43, 0.115, 0.13, 1.43, 0.115, 0.210], // 胸板
+    [0, 1.47, -0.085, 0, 1.52, -0.085, 0.202],    // 背の丸み
+    [-0.17, 0.98, 0.026, 0.17, 0.98, 0.026, 0.182], // 骨盤
+    [-0.30, 1.60, 0.064, 0.30, 1.60, 0.064, 0.138], // 肩
+    [0, 1.71, 0.077, 0, 1.79, 0.083, 0.100],      // 首
+    // 左腕（肘を前へ突き出す。arm(-1, 1.35, 0.020) と揃える）
+    [-0.330, 1.53, 0.098, -0.302, 1.30, 0.146, 0.085],
+    [-0.302, 1.30, 0.146, -0.352, 1.09, 0.318, 0.074],
+    // 右腕（肩を落として後ろへ引きずる。arm(1, -0.20, -0.038) と揃える）
+    [0.330, 1.47, 0.059, 0.302, 1.24, 0.070, 0.085],
+    [0.302, 1.24, 0.070, 0.352, 0.98, 0.077, 0.074],
+    // 脚
+    [-0.155, 0.92, 0.045, -0.155, 0.50, 0.083, 0.107],
+    [-0.155, 0.50, 0.083, -0.160, 0.16, 0.122, 0.088],
+    [0.155, 0.92, 0.045, 0.155, 0.50, 0.083, 0.107],
+    [0.155, 0.50, 0.083, 0.160, 0.16, 0.122, 0.088],
+  ];
+  /** 滑らかな最小値。k が大きいほど継ぎ目に肉が付く */
+  const smin = (a, b, k) => {
+    const h = Math.max(0, Math.min(1, 0.5 + 0.5 * (b - a) / k));
+    return b * (1 - h) + a * h - k * h * (1 - h);
+  };
+  function sdfBody(px, py, pz) {
+    const z = pz / BONE_ZS;
+    let d = 1e9;
+    for (const [ax, ay, az, bx, by, bz, br] of BONES) {
+      const abx = bx - ax, aby = by - ay, abz = bz - az;
+      const apx = px - ax, apy = py - ay, apz = z - az;
+      const ll = abx * abx + aby * aby + abz * abz;
+      const t = ll < 1e-9 ? 0 : Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / ll));
+      const dx = apx - abx * t, dy = apy - aby * t, dz = apz - abz * t;
+      d = smin(d, Math.sqrt(dx * dx + dy * dy + dz * dz) - br, 0.072);
+    }
+    return d;
+  }
+  /** 頂点を SDF の表面（f=0）へ寄せる。ニュートン法を数回まわすだけで十分収束する。 */
+  function weldToBody(geo) {
+    const pos = geo.attributes.position, e = 0.004;
+    for (let i = 0; i < pos.count; i++) {
+      let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      for (let k = 0; k < 5; k++) {
+        const d = sdfBody(x, y, z);
+        if (Math.abs(d) < 0.0012) break;
+        const gx = sdfBody(x + e, y, z) - sdfBody(x - e, y, z);
+        const gy = sdfBody(x, y + e, z) - sdfBody(x, y - e, z);
+        const gz = sdfBody(x, y, z + e) - sdfBody(x, y, z - e);
+        const gl = Math.hypot(gx, gy, gz) || 1e-6;
+        x -= d * gx / gl; y -= d * gy / gl; z -= d * gz / gl;
+      }
+      pos.setXYZ(i, x, y, z);
+    }
+    geo.computeVertexNormals();
+  }
 
   /* --- 部品を材質ごとに溜める --- */
   const bucket = new Map();
@@ -2573,7 +2653,7 @@ function makeMonster() {
     // mergeGeometries は属性の顔ぶれが完全に一致していないと通らない。
     // インデックスの有無も混在させられない（ExtrudeGeometry は非インデックス、
     // BoxGeometry はインデックス付き）ので、非インデックスに揃えてから足す。
-    for (const name of Object.keys(geo.attributes)) if (!["position", "normal", "uv"].includes(name)) geo.deleteAttribute(name);
+    for (const name of Object.keys(geo.attributes)) if (!["position", "normal", "uv", "color"].includes(name)) geo.deleteAttribute(name);
     if (o.uv && geo.attributes.uv) {
       const uv = geo.attributes.uv;
       for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * o.uv, uv.getY(i) * o.uv);
@@ -2591,6 +2671,21 @@ function makeMonster() {
       }
       geo.computeVertexNormals();
     }
+    /* 【素のプリミティブに見えるのをやめる】円柱は円柱、球は球のままだと、
+       材質をどれだけ作り込んでも「木製のデッサン人形」から出られない。スカルプトは
+       使えないが、**法線方向へ低周波のノイズで頂点を押し引きする**ことはできる。
+       同じ三角形数のまま輪郭が揺らぎ、肉のたるみや布の凹凸として読めるようになる。 */
+    if (o.noise) {
+      const pos = geo.attributes.position, nrm = geo.attributes.normal;
+      const A = o.noise.amp, F = o.noise.freq;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        const n = Math.sin(x * F + 1.3) * Math.sin(y * F * 1.31 + 2.1) * Math.sin(z * F * 0.93 + 0.7)
+                + 0.5 * Math.sin(x * F * 2.17 + 4.2) * Math.sin(y * F * 2.03 + 1.1) * Math.sin(z * F * 1.87 + 3.3);
+        pos.setXYZ(i, x + nrm.getX(i) * n * A, y + nrm.getY(i) * n * A, z + nrm.getZ(i) * n * A);
+      }
+      geo.computeVertexNormals();
+    }
     _p.set(o.x || 0, o.y || 0, o.z || 0);
     // order は回転の適用順。既定の XYZ は「rz→ry→rx」の順に効く。コートのパネルのように
     // 「先に向きを決めて（ry）、そのうえで自分の軸で傾ける（rx）」ものは YXZ を使う。
@@ -2599,6 +2694,23 @@ function makeMonster() {
     _m.compose(_p, _q, _s);
     if (o.pre) _m.premultiply(o.pre);
     geo.applyMatrix4(_m);
+    // 体のパーツは、ここで距離場の表面へ寄せて1枚の皮膚に融かす
+    if (o.weld) weldToBody(geo);
+    /* 【汚しを頂点カラーに焼く】テクスチャを増やさずに情報量を足せる唯一の手。
+       ・足元ほど暗い（泥と埃は下から上がる）
+       ・下を向いた面ほど暗い（環境光が回り込まない＝簡易AO）
+       これが無いと、どの面も同じ明るさで返ってきて「のっぺりした樹脂」に見える。
+       ワールド座標で見たいので、必ず行列を掛けたあとに計算すること。 */
+    {
+      const pos = geo.attributes.position, nrm = geo.attributes.normal;
+      const col = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) {
+        const low  = 0.50 + 0.50 * Math.min(1, Math.max(0, pos.getY(i) / 1.30));
+        const face = 0.72 + 0.28 * Math.max(0, nrm.getY(i));
+        col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = low * face;
+      }
+      geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    }
     const flat = geo.index ? geo.toNonIndexed() : geo;
     if (flat !== geo) geo.dispose();
     if (!bucket.has(mat)) bucket.set(mat, []);
@@ -2668,14 +2780,14 @@ function makeMonster() {
      v24 は円柱の端面が突き合わさるだけで、寄りで見ると関節が「切断面」だった。 */
   for (const s of [-1, 1]) {
     const hx = s * 0.155;
-    cap(0.116, 0.28, clothDark, { x: hx, y: 0.665, z: 0.035, rx: -0.05, uv: 2.0 });      // 太もも
-    sph(0.106, clothDark, { x: hx, y: 0.47, z: 0.065, uv: 1.4 });                        // 膝
-    cap(0.095, 0.24, clothDark, { x: hx, y: 0.30, z: 0.085, rx: 0.03, uv: 1.8 });        // すね
+    cap(0.116, 0.28, clothDark, { x: hx, y: 0.665, z: 0.035, rx: -0.05, uv: 2.0, weld: true, noise: { amp: 0.013, freq: 18 } }, 22);   // 太もも
+    sph(0.106, clothDark, { x: hx, y: 0.47, z: 0.065, uv: 1.4, weld: true }, 24, 16);                        // 膝
+    cap(0.095, 0.24, clothDark, { x: hx, y: 0.30, z: 0.085, rx: 0.03, uv: 1.8, weld: true, noise: { amp: 0.011, freq: 20 } }, 22);     // すね
     // ズボンの裾。ブーツの上に一段かぶせて、布と革の境目を作る（境目が無いと一本の棒に見える）
     cyl(0.128, 0.134, 0.12, clothDark, { x: hx, y: 0.335, z: 0.088, uv: 1.6 }, 20, true);
     // ブーツ（シャフト＝すねの筒 → 甲 → つま先 → 底 → かかと）
-    cyl(0.104, 0.116, 0.28, boot, { x: s * 0.166, y: 0.185, z: 0.095, uv: 1.6 }, 20);
-    rbox(0.178, 0.130, 0.235, 0.030, boot, { x: s * 0.172, y: 0.075, z: 0.140, uv: 1.4 });
+    cyl(0.104, 0.116, 0.28, boot, { x: s * 0.166, y: 0.185, z: 0.095, uv: 1.6, noise: { amp: 0.009, freq: 22 } }, 24);
+    rbox(0.178, 0.130, 0.235, 0.030, boot, { x: s * 0.172, y: 0.075, z: 0.140, uv: 1.4, noise: { amp: 0.007, freq: 26 } });
     rbox(0.156, 0.090, 0.120, 0.035, boot, { x: s * 0.172, y: 0.052, z: 0.250, uv: 1.0 });
     rbox(0.192, 0.034, 0.360, 0.012, bootSole, { x: s * 0.172, y: 0.017, z: 0.150 });
     rbox(0.184, 0.040, 0.110, 0.010, bootSole, { x: s * 0.172, y: 0.048, z: 0.020 });
@@ -2689,10 +2801,10 @@ function makeMonster() {
      v24 は半径 0.33 の円柱1本だったので、真横から見ると厚みの無い板だった。
      かといって球を積むと団子になる（v25初稿）。**扁平に潰した1本のカプセル**を芯にして、
      胸板と背の丸みだけを薄い膨らみとして足す。 */
-  cap(0.270, 0.42, cloth, { y: 1.285, z: 0.035, sx: 1.04, sz: 0.72, uv: 2.8 });          // 胴
-  sph(0.225, cloth, { y: 1.42, z: 0.130, sx: 1.26, sy: 0.90, sz: 0.42, uv: 2.0 });       // 胸板の張り
-  sph(0.205, cloth, { y: 1.47, z: -0.080, sx: 1.32, sy: 1.06, sz: 0.42, uv: 2.0 });      // 猫背の丸み
-  sph(0.250, clothDark, { y: 0.97, z: 0.020, sx: 1.10, sy: 0.72, sz: 0.76, uv: 2.4 });   // 骨盤
+  cap(0.270, 0.42, cloth, { y: 1.285, z: 0.035, sx: 1.04, sz: 0.72, uv: 2.8, weld: true, noise: { amp: 0.022, freq: 11 } }, 28);          // 胴
+  sph(0.225, cloth, { y: 1.42, z: 0.130, sx: 1.26, sy: 0.90, sz: 0.42, uv: 2.0, weld: true, noise: { amp: 0.018, freq: 13 } }, 26, 16);       // 胸板の張り
+  sph(0.205, cloth, { y: 1.47, z: -0.080, sx: 1.32, sy: 1.06, sz: 0.42, uv: 2.0, weld: true, noise: { amp: 0.018, freq: 13 } }, 26, 16);      // 猫背の丸み
+  sph(0.250, clothDark, { y: 0.97, z: 0.020, sx: 1.10, sy: 0.72, sz: 0.76, uv: 2.4, weld: true, noise: { amp: 0.018, freq: 12 } }, 26, 16);   // 骨盤
 
   /* === 腰・ベルト ===
      ベルトは上着の裾に「わずかに食い込ませる」。裾より外に出すと腰に浮き輪をはめたように見える。
@@ -2707,8 +2819,8 @@ function makeMonster() {
      肩は横倒しのカプセル1本。円柱だと端面が丸見えになり、球を左右に置くと
      肩幅が一気に広がって寸胴になる。袖の縫い目・襟の縁のような
      太さ1cmの輪は置かない（離れると消え、寄るとノイズにしかならなかった）。 */
-  cap(0.158, 0.36, cloth, { y: 1.600, z: 0.050, rz: Math.PI / 2, sz: 0.80, uv: 2.2 });
-  sph(0.200, cloth, { y: 1.640, z: 0.025, sx: 1.30, sy: 0.55, sz: 0.78, uv: 2.2 });      // 僧帽筋
+  cap(0.158, 0.36, cloth, { y: 1.600, z: 0.050, rz: Math.PI / 2, sz: 0.80, uv: 2.2, weld: true, noise: { amp: 0.016, freq: 14 } }, 24);
+  sph(0.200, cloth, { y: 1.640, z: 0.025, sx: 1.30, sy: 0.55, sz: 0.78, uv: 2.2, weld: true, noise: { amp: 0.014, freq: 15 } }, 24, 14);      // 僧帽筋
   cyl(0.140, 0.180, 0.16, cloth, { y: 1.715, z: 0.055, sz: 0.90, uv: 2.0 }, 24, true);   // 立った襟
 
 
@@ -2720,7 +2832,7 @@ function makeMonster() {
     .multiply(new THREE.Matrix4().makeRotationZ(0.19))
     .multiply(new THREE.Matrix4().makeRotationX(-0.07))
     .multiply(new THREE.Matrix4().makeTranslation(0, -1.72, -0.06));
-  cap(0.092, 0.05, skin, { y: 1.775, z: 0.060 });
+  cap(0.092, 0.05, skin, { y: 1.775, z: 0.060, weld: true }, 22);
   // 頭は少し縦長の楕円体。露出する頭頂/後頭は暗い頭皮(scalp)にして白いオーブ化を防ぐ。
   /* 頭は頭巾より確実に小さく作る。v25 の作り直しの途中まで頭（半径0.185・縦1.10）が
      頭巾（0.216）より高く、後ろから見ると布を突き抜けた**つるりとした禿頭**が出ていた。
@@ -2741,12 +2853,12 @@ function makeMonster() {
      右肩を落として大鉈を引きずらせ、左肘を前へ突き出すだけで、
      止まっていても「こちらへ歩いてくる途中」の姿勢として読める。 */
   const arm = (s, fwd, dy) => {
-    cap(0.090, 0.23, cloth, { x: s * 0.318, y: 1.395 + dy, z: 0.050 + fwd * 0.02, rz: s * -0.045, uv: 1.9 });   // 上腕
-    sph(0.085, cloth, { x: s * 0.334, y: 1.175 + dy, z: 0.065 + fwd * 0.05, uv: 1.3 });                          // 肘
+    cap(0.090, 0.23, cloth, { x: s * 0.318, y: 1.395 + dy, z: 0.050 + fwd * 0.02, rz: s * -0.045, uv: 1.9, weld: true, noise: { amp: 0.011, freq: 20 } }, 22);   // 上腕
+    sph(0.085, cloth, { x: s * 0.334, y: 1.175 + dy, z: 0.065 + fwd * 0.05, uv: 1.3, weld: true }, 24, 16);                          // 肘
     /* 前腕は長め。拳が膝の高さ近くまで垂れると、直立した人型から離れて
        霊長類寄りの不安な輪郭になる（部品数を変えずに印象だけが変わる）。 */
-    cap(0.079, 0.27, cloth, { x: s * 0.346, y: 0.950 + dy, z: 0.078 + fwd * 0.10, rx: -fwd * 0.16, uv: 1.8 });   // 前腕
-    cyl(0.084, 0.092, 0.065, clothDark, { x: s * 0.354, y: 0.812 + dy, z: 0.088 + fwd * 0.13, uv: 1.2 }, 18);    // 袖口
+    cap(0.079, 0.27, cloth, { x: s * 0.346, y: 0.950 + dy, z: 0.078 + fwd * 0.10, rx: -fwd * 0.16, uv: 1.8, weld: true, noise: { amp: 0.010, freq: 22 } }, 22);   // 前腕
+    cyl(0.088, 0.096, 0.070, clothDark, { x: s * 0.354, y: 0.812 + dy, z: 0.088 + fwd * 0.13, uv: 1.2, weld: true }, 20);    // 袖口
     sph(0.066, skin, { x: s * 0.358, y: 0.780 + dy, z: 0.092 + fwd * 0.14 }, 18, 12);                            // 手首
     const hx = s * 0.362, hz = 0.098 + fwd * 0.15, hy = 0.725 + dy;
     /* 【手は指を1本ずつ作る】球を重ねたミトンは、風船で作った手にしか見えなかった。
@@ -2798,15 +2910,28 @@ function makeMonster() {
      **巻き縁**にする。断面が丸まれば、切りっぱなしの板ではなく折り返した布に見える。 */
   const CAPE_T0 = Math.PI * 0.28, CAPE_TL = Math.PI * 1.44;
   drapeArc(0.316, 0.418, 0.52, coatOut, { y: 1.440, z: 0.035, sz: 0.78, uv: 1.0 }, CAPE_T0, CAPE_TL, 6, 0.10);
-  drapeArc(0.302, 0.400, 0.50, coatIn,  { y: 1.446, z: 0.035, sz: 0.78, uv: 1.0 }, CAPE_T0 + 0.04, CAPE_TL - 0.08, 6, 0.09);
-  for (const th of [CAPE_T0, CAPE_T0 + CAPE_TL]) {
-    const rmid = 0.367;
-    // 巻き縁は布と同じ材質・同じ暗さで。革にすると胸の脇に黒い棒が2本立って見える
-    cap(0.014, 0.44, clothDark, { x: Math.sin(th) * rmid, y: 1.436, z: 0.035 + Math.cos(th) * rmid * 0.78,
-                                  rz: (Math.sin(th) > 0 ? -1 : 1) * 0.10, uv: 2.0 }, 8);
-  }
+  // 裏地は 3cm 内側へ。表と裏が 1.6cm しか離れていないと、縁が「紙一枚」に見える
+  drapeArc(0.286, 0.372, 0.50, coatIn,  { y: 1.446, z: 0.035, sz: 0.78, uv: 1.0 }, CAPE_T0 + 0.04, CAPE_TL - 0.08, 6, 0.09);
+  /* 【巻き縁は入れない】切り口を隠すために縁へ筒を通してみたが、太さ1.4cmの棒が
+     胸の左右に2本立っているようにしか見えず、消したはずの「板」が形を変えて戻ってきた。
+     切り口はケープの開きを広げて体の側面へ逃がすだけにして、
+     空いた胸には**面の大きい革の前掛け**を1枚あてる（下の apron）。 */
+
+  /* 胸から腹を覆う革の前掛け。ケープを開いたぶん、正面は胴の円柱がむき出しになり、
+     縦のシワだけが走った「溝つきのドラム缶」に見えていた。ここに 55cm 級の面を
+     1枚置くと、正面の読みどころがひとつ決まる。徴税人の前掛けという意味も通る。 */
+  drapeArc(0.318, 0.352, 0.66, apronM, { y: 1.240, z: 0.030, sz: 0.76, uv: 2.0 },
+           Math.PI * 1.735, Math.PI * 0.53, 3, 0.045, { y: -0.180, amt: 0.10, w: 0.10 }, 40, 10);
+  // 前掛けを吊る肩紐。これが無いと前掛けではなく胸当て（防具）に見える
+  for (const sd of [-1, 1])
+    cap(0.017, 0.30, strapM, { x: sd * 0.148, y: 1.575, z: 0.230 - sd * 0.010, rx: -0.28, rz: sd * 0.30, uv: 2.0 }, 8);
+  // 腹の物入れ。ここから申告書がのぞいているのが、この怪人の職能そのものになる
+  rbox(0.235, 0.155, 0.044, 0.014, apronM, { y: 1.010, z: 0.303, rx: 0.06, uv: 1.4 });
+  for (let i = 0; i < 3; i++)
+    plate(0.118, 0.155, paperM, { x: (i - 1) * 0.054, y: 1.084, z: 0.316 - i * 0.007,
+                                  rx: 0.20, rz: (i - 1) * 0.12 });
   drapeArc(0.338, 0.436, 0.98, coatOut, { y: 0.980, z: 0.030, sz: 0.74, uv: 1.0 }, Math.PI * 0.17, Math.PI * 1.66, 8, 0.16, { y: 0.080, amt: 0.13, w: 0.13 });
-  drapeArc(0.322, 0.416, 0.96, coatIn,  { y: 0.990, z: 0.030, sz: 0.74, uv: 1.0 }, Math.PI * 0.16, Math.PI * 1.68, 8, 0.14, { y: 0.070, amt: 0.13, w: 0.13 });
+  drapeArc(0.306, 0.392, 0.96, coatIn,  { y: 0.990, z: 0.030, sz: 0.74, uv: 1.0 }, Math.PI * 0.16, Math.PI * 1.68, 8, 0.14, { y: 0.070, amt: 0.13, w: 0.13 });
   /* 裾から垂れる切れ端。面だけだと裾の裂け目が同じ高さで揃って見えるので、
      長さの違う布片を数枚だけ足して輪郭の下端を散らす（枚数は控えめに）。 */
   for (let i = 0; i < 9; i++) {
@@ -2901,7 +3026,11 @@ function makeMonster() {
   rbox(0.105, 0.290, 0.013, 0.004, goreM, { x: -0.104, y: -0.520, z: 0, rz: -0.05, pre: mac });
 
   /* --- ここまでの部品を材質ごとに1メッシュへ統合する --- */
-  for (const [mat, geos] of bucket) g.add(new THREE.Mesh(mergeGeometries(geos, false), mat));
+  // 頂点カラーの汚しは、統合したメッシュの材質すべてで有効にする
+  for (const [mat, geos] of bucket) {
+    mat.vertexColors = true;
+    g.add(new THREE.Mesh(mergeGeometries(geos, false), mat));
+  }
 
   /* === 顔＝紙の通知書プレート（+z 面）===
      ユーザー要望で「前の顔」（ホッケーマスク導入前のデザイン）に戻したまま、

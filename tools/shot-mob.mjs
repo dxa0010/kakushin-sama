@@ -82,17 +82,17 @@ if (!dark) await page.evaluate(({ MOB, CAM }) => {
     if (o.isAmbientLight) { o.color.setHex(0xffffff); o.intensity = 0.55; }
     if (o.isHemisphereLight) { o.color.setHex(0xffffff); o.intensity = 0.45; }
   });
-  const key = new THREE.DirectionalLight(0xfff2e0, 3.0);
+  const key = new THREE.DirectionalLight(0xfff2e0, 5.2);
   key.position.set(MOB.x - 2.2, 3.4, CAM.z - 1.0);
   key.target.position.set(MOB.x, 1.0, MOB.z);
   scene.add(key, key.target);
-  const fill = new THREE.DirectionalLight(0xcfd8ff, 1.2);
+  const fill = new THREE.DirectionalLight(0xcfd8ff, 2.2);
   fill.position.set(MOB.x + 3.0, 2.0, MOB.z + 2.0);
   fill.target.position.set(MOB.x, 1.0, MOB.z);
   scene.add(fill, fill.target);
   /* リム（背後からの縁光）。真っ黒に近い衣装は、正面から当てるだけでは
      どこが前でどこが後ろか分からない。輪郭に光を回すと形が読める。 */
-  const rim = new THREE.DirectionalLight(0xfff0d8, 2.6);
+  const rim = new THREE.DirectionalLight(0xfff0d8, 3.4);
   rim.position.set(MOB.x + 1.2, 3.0, MOB.z + 3.2);
   rim.target.position.set(MOB.x, 1.2, MOB.z);
   scene.add(rim, rim.target);
