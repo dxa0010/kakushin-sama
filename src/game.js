@@ -2617,8 +2617,15 @@ function relock() {
 addEventListener("pointerlockerror", () => {
   if (state === "PLAY" && !isTouch) notice(tr("clickToLook"), 2.2);
 });
+/* 【クリックでも調べる】タイトルのヘルプは v1 から「調べる：E またはクリック」と
+   言っているが、実際にクリックを受けていたのは #prompt だけだった。ポインタロック中は
+   カーソルが無くその要素をクリックできないので、**通常プレイ中はクリックが死んでいた**。
+   ロックを持っていないクリックは「視点を掛け直す」ためのもの（clickToLook の案内）なので、
+   そのクリックで手前のものを拾ってしまわないよう、掛け直しと interact は排他にする。 */
 renderer.domElement.addEventListener("click", () => {
-  if (state === "PLAY" && !isTouch) renderer.domElement.requestPointerLock();
+  if (state !== "PLAY" || isTouch) return;
+  if (document.pointerLockElement === renderer.domElement) tryInteract();
+  else renderer.domElement.requestPointerLock();
 });
 /** 視点の基準感度。v22までの実測値。save.sens はこれに対する百分率。 */
 const LOOK_BASE = 0.0023;
