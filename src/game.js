@@ -404,7 +404,7 @@ function relocateItem(it) {
   const [x, z, y] = pool[Math.floor(Math.random() * pool.length)];
   it.x = x; it.z = z; it.y = y;
   const m = itemMeshes[it.id];
-  m.position.set(x, y + 0.35, z); m.visible = true;
+  m.position.set(x, y + 0.35, z); m.userData.baseY = y + 0.35; showGlow(m, true);
 }
 
 /* ---------- three basics ---------- */
@@ -620,6 +620,23 @@ function applyQuality() {
       // mapSize はテクスチャ確保後に変えても反映されない。捨てて作り直させる。
       if (o.shadow.map) { o.shadow.map.dispose(); o.shadow.map = null; }
     }
+    /* 【静的な光源の影は焼いて固定する（v24）】
+       renderer.shadowMap.autoUpdate は既定 true なので、v23 までは**部屋・家具・壁が
+       1ミリも動かないのに、影を落とす7灯ぶんの影マップを毎フレーム描き直していた**。
+       PointLight はキューブ＝1灯6面なので、点光源5灯＋スポット2灯で1フレーム32パス。
+       実測で GPU 15.98ms のうち 12.5ms（78%）、draw call 4691本のうち 3762本がこれ。
+
+       light.shadow.autoUpdate は**光源ごと**に効く（WebGLShadowMap が光源単位で
+       `autoUpdate === false && needsUpdate === false` を見てスキップする）。そこで
+       視線に追従する懐中電灯だけ毎フレーム更新し、残りは needsUpdate で一度だけ
+       焼いて固定する。実測 15.98 → 6.20ms、46.5 → 60.6fps。
+
+       代償として、**焼いた6灯は怪人の影を出さなくなる**（影マップは1枚の深度テクスチャ
+       なので「静的な部分だけ焼く」はできない）。怪人の影は懐中電灯が落とすものだけになる。
+       焼き直しが要るのは影を落とす形状が動いたときだけで、照明の減光（applyLights）は
+       intensity しか触らないため再焼成は不要。 */
+    o.shadow.autoUpdate = !!o.userData.dynamicShadow;
+    if (!o.shadow.autoUpdate) o.shadow.needsUpdate = true;   // 次の1フレームで焼き直す
   });
 }
 
@@ -2271,6 +2288,8 @@ flash.castShadow = true;
 // 暗い部屋を手探りで進むという体験そのものが失われる。天井灯の落ち影は動かないので
 // 情報量が少なく、削っても遊びには効かない。
 flash.userData.keepShadow = true;
+// 同じ理由で、**影を毎フレーム焼き直す唯一の光源**でもある（applyQuality を参照）。
+flash.userData.dynamicShadow = true;
 flash.shadow.mapSize.set(2048, 2048);
 flash.shadow.bias = -0.002;
 flash.shadow.normalBias = 0.04;
@@ -2288,12 +2307,35 @@ function makeGlow(x, y, z, color) {
     new THREE.OctahedronGeometry(0.021),                      // 存在感をさらに抑える（0.085→1/4）
     new THREE.MeshLambertMaterial({ color: 0xd8cba8, emissive: color, emissiveIntensity: 0.75 })
   );
+  // マーカーは動く（拾う・湧き直す）が、静的な光源の影マップは焼いて固定してある。
+  // 落ち影を持たせると、動いたあとに古い位置の影が residue として残る。2cm の粒なので
+  // 影そのものに情報は無く、落とさないのが正しい。
+  core.userData.noShadow = true;
   grp.add(core);
   const l = new THREE.PointLight(color, 0.22 * 3.2, 1.0, 2);  // 明かりもさらに減光（0.34→0.22）・レンジ短縮（1.5→1.0）
   grp.add(l);
   grp.position.set(x, y, z);
+  grp.userData.on = true;
+  grp.userData.baseY = y;           // 上下動の基準（frame の item bobbing が使う）
+  grp.userData.lit = l.intensity;   // 点け直すときの明るさ（applyLights は触らない）
   scene.add(grp);
   return grp;
+}
+/* 【マーカーを消すときシーンから光源を外さないこと（v24）】
+   three.js はシーン内のライトの**本数をシェーダに焼き込んで**プログラムを作る。
+   本数が変わると視界にある全マテリアルのプログラムが作り直しになり、その完了を
+   getProgramInfoLog が同期待ちするので、メインスレッドがまるごと止まる。
+   マーカーは1個ずつ PointLight を抱えていて（本物5＋フェイク3＝8灯）、v23 までは
+   受理で `visible = false`、フェイク回収で `scene.remove` していた。**そのたびに
+   本数が1つ減り、実測で毎回 4.2〜4.4秒の完全停止**（RTX 3060 Ti で、である）。
+   1周に8回起きるので合計30秒以上フリーズしていた。テストプレイの「何か選択した
+   前後でしっかり止まってる（ロード挟んでる？）感じ」はこれ。
+   そこで**光源は必ずシーンに残したまま、明るさを0にして芯だけ隠す**。本数が
+   変わらないのでプログラムは1本も増えず、停止は完全に消える（実測で 28→28 本）。 */
+function showGlow(grp, on) {
+  grp.userData.on = on;
+  grp.children[0].visible = on;                                 // 光る芯
+  grp.children[1].intensity = on ? grp.userData.lit : 0;        // 光源は外さない
 }
 // 本物・ダミー共通の色（見た目で真贋がバレないよう統一。※真贋は拾って中身を見て判断させる）
 const ITEM_MARK_COLOR = 0xd9a441;
@@ -2964,7 +3006,7 @@ function tryInteract() {
   } else if (nearTarget.kind === "fake") {
     const f = nearTarget.ref;
     f.taken = true;
-    scene.remove(fakeMeshes[nearTarget.idx]);
+    showGlow(fakeMeshes[nearTarget.idx], false);   // scene.remove は光源の本数を変える（showGlow のコメント参照）
     // 手掛かりを仕込んで2行になったので、既定の3.6秒では読み切れない
     notice(tr(f.gagKey), 6.4);
     beep(240, 0.3, "sawtooth", 0.08, 120);
@@ -3002,7 +3044,7 @@ $("btnTake").addEventListener("click", () => {
     anomId: it.copy.anomId,
     act: "take", ok: !it.copy.fake, revealed: false });
   it.taken = true; got++;
-  itemMeshes[it.id].visible = false;
+  showGlow(itemMeshes[it.id], false);
   refreshSlots();
   notice(tr(it.gagKey), 6.4);   // マイナ・メモは手掛かりで2行になっている（上記 FAKES と同じ理由）
   beep(880, 0.1, "triangle", 0.12); beep(1180, 0.14, "triangle", 0.1);
@@ -3586,11 +3628,13 @@ function frame(now) {
     const t = now / 1000;
     for (const id in itemMeshes) {
       const m = itemMeshes[id];
-      if (!m.visible) continue;
+      if (!m.userData.on) continue;
       m.children[0].rotation.y = t * 1.4;
-      m.position.y += Math.sin(t * 2.2) * 0.0009;
+      /* 加算ではなく代入。v23 まで `+=` で積分していたため、振幅がフレームレート依存
+         （60fpsで約2.5cm、144fpsで約6cm）になっていた。基準の高さからの変位で置く。 */
+      m.position.y = m.userData.baseY + Math.sin(t * 2.2) * 0.02;
     }
-    fakeMeshes.forEach(m => { m.children[0].rotation.y = t * 1.4; });
+    fakeMeshes.forEach(m => { if (m.userData.on) m.children[0].rotation.y = t * 1.4; });
 
     drawMinimap();
 
