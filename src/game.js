@@ -2305,25 +2305,6 @@ flash.target = flashTarget;
    照射の的（flashTarget）は画面中央のまま動かさないので、狙いはズレず酔いも出ない。 */
 const FLASH_OFF = { right: 0.30, down: 0.20 };
 const flashRight = new V3();
-/* 【怪人の影を1灯だけ買い戻す（v24）】静的な光源の影を焼いた代償として、天井灯は
-   怪人の影を落とさなくなった。そこで「怪人にいちばん近い天井灯の位置から怪人を照らす
-   SpotLight」を1灯だけ動的に置く。PointLight を1灯動的に残すとキューブ6面ぶんの
-   パスが要るが、SpotLight なら1パスで済み、angle を絞れば影マップ生成時に部屋の
-   メッシュがフラスタムカリングでほとんど落ちる。
-   **castShadow は常に true のまま**にしてある（切り替えるとライトの本数が変わり、
-   全マテリアルの再コンパイル＝数秒の停止を招く。showGlow のコメントを参照）。
-   怪人が居ない間のコストは shadow.autoUpdate を false にして止める。 */
-const mobLight = new THREE.SpotLight(0xffdca8, 0, 7.5, 0.5, 0.6, 2);
-mobLight.castShadow = true;
-mobLight.userData.dynamicShadow = true;
-mobLight.shadow.mapSize.set(1024, 1024);
-mobLight.shadow.bias = -0.0008;
-mobLight.shadow.normalBias = 0.03;
-mobLight.shadow.camera.near = 0.5;
-mobLight.shadow.camera.far = 8;
-const mobLightTarget = new THREE.Object3D();
-scene.add(mobLight, mobLightTarget);
-mobLight.target = mobLightTarget;
 
 /* ---------- item props ---------- */
 const itemMeshes = {};
@@ -3652,21 +3633,6 @@ function frame(now) {
     flash.position.copy(camera.position).addScaledVector(flashRight, FLASH_OFF.right);
     flash.position.y -= FLASH_OFF.down;
     flashTarget.position.copy(camera.position.clone().add(dir.multiplyScalar(6)));
-    // 怪人の影を買い戻す1灯（いちばん近い天井灯の位置から怪人を照らす）
-    if (mob.active && monster.visible) {
-      let best = roomLights[0], bd = Infinity;
-      for (const l of roomLights) {
-        const d = Math.hypot(l.position.x - mob.x, l.position.z - mob.z);
-        if (d < bd) { bd = d; best = l; }
-      }
-      mobLight.position.copy(best.position);
-      mobLightTarget.position.set(mob.x, 0.2, mob.z);
-      mobLight.intensity = best.intensity * 0.55;   // 天井灯の減光にそのまま追随させる
-      mobLight.shadow.autoUpdate = true;
-    } else {
-      mobLight.intensity = 0;
-      mobLight.shadow.autoUpdate = false;   // 影パスを止める（castShadow は触らない＝本数不変）
-    }
 
     // item bobbing
     const t = now / 1000;
@@ -3890,8 +3856,8 @@ window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOm
   // 検証用（v23）: 画質プリセットとポーズの開閉。tools/smoke-v23.mjs が
   // 「オーバーレイ中に描画を止めているか」「low で影が1灯になるか」を見るのに使う。
   quality: () => QUALITY, applyQuality, openPause, closePause,
-  // 検証用（v24）: 懐中電灯のオフセットと怪人用の影灯を撮影ハーネスから切り替える
-  FLASH_OFF, mobLight, roomLights, monster, showGlow,
+  // 検証用（v24）: 懐中電灯のオフセットを撮影ハーネスから切り替える
+  FLASH_OFF, roomLights, monster, showGlow,
   // 検証用（v23）: パンくず追跡。足跡を任意に敷いてから怪人を走らせて、
   // 間仕切り壁を回り込めるかを tools/smoke-v23.mjs で確かめる。
   trail, trailPush, trailTarget, endVisit,
