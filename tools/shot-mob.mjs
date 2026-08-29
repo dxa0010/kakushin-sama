@@ -20,6 +20,11 @@
      --studio      部屋を隠して無地の背景で撮る（造形・シルエットの判定用）
      --dark        ゲーム本来の暗さのまま撮る（既定は inspectLight で明るくする）
      --views a,b   撮るビューを絞る（既定は全部）
+     --empty       怪人を隠して**背景だけ**を同じ画角で撮る（シルエット抽出の下地）
+
+   シルエットを数値で比べるときは、--studio と --studio --empty の2回撮って
+   tools/silhouette-diff.mjs に --plate で渡す。背景は無地に見えても後処理の
+   ビネットで周辺が落ちているので、色だけでは図と地を分けられない。
    ============================================================ */
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
@@ -41,10 +46,11 @@ const VIEWS = {
 };
 
 const argv = process.argv.slice(2);
-let OUT = "C:/tmp/mob", studio = false, dark = false, only = null;
+let OUT = "C:/tmp/mob", studio = false, dark = false, only = null, empty = false;
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--out") OUT = argv[++i];
   else if (argv[i] === "--studio") studio = true;
+  else if (argv[i] === "--empty") empty = true;
   else if (argv[i] === "--dark") dark = true;
   else if (argv[i] === "--views") only = argv[++i].split(",");
 }
@@ -115,18 +121,19 @@ if (studio) await page.evaluate(() => {
 /* 怪人を毎tick固定する。mob.active=false なので monsterUpdate は座標に触らないが、
    保険として setInterval で押さえる（描画フックを挟むと画が黒くなる事例があったため、
    composer には一切触らない）。 */
-await page.evaluate(({ MOB }) => {
+await page.evaluate(({ MOB, empty }) => {
   const d = window.__dbg;
   d.mob.active = false;
-  d.monster.visible = true;
+  window.__mobHide = empty;          // --empty のときは毎tick隠し続ける
+  d.monster.visible = !empty;
   d.monster.position.set(MOB.x, 0, MOB.z);
   window.__mobRy = Math.PI;
   setInterval(() => {
-    d.monster.visible = true;
+    d.monster.visible = !window.__mobHide;
     d.monster.position.set(MOB.x, 0, MOB.z);
     d.monster.rotation.set(0, window.__mobRy, 0);
   }, 16);
-}, { MOB });
+}, { MOB, empty });
 
 for (const [name, [ry, ty, distScale]] of views) {
   await page.evaluate(({ ry, ty, distScale, MOB, CAM }) => {
