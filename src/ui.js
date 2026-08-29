@@ -67,7 +67,7 @@ T.ja = {
   inspectHint2: "検分している間も、時計は進む。",
   inspectTake: "本物だ ── 受け取る",
   inspectTear: "偽物だ ── 破り捨てる",
-  inspectBack: "そっと戻す",
+  inspectBack: "保留する ── 手放す",
 
   // ---- ポーズ／設定 ----
   pauseTitle: "一時停止",
@@ -115,6 +115,7 @@ T.ja = {
   notice22: "22:00 ── 部屋が、暗くなった気がする。",
   notice23: "23:00 ── 冷蔵庫が、止まった。<br>部屋が、静かになりすぎた。あと1時間しかない。",
   noticeTorn: "破り捨てた。<br><span style=\"opacity:.65\">……紙を裂く音が、静かな部屋に響いた。</span>",
+  noticeBailed: "手放した。<br><span style=\"opacity:.65\">……その書類は、部屋のどこかへ紛れた。</span>",
   noticeNotEnough: "書類がまだ足りない。（{got} / 5）",
   omenEntered: "── 何かが、部屋に入ってきた。",
   omenLookedUp: "──顔を上げた。",
@@ -217,7 +218,7 @@ T.en = {
   inspectHint2: "The clock keeps running while you inspect.",
   inspectTake: "Genuine ── accept it",
   inspectTear: "Forged ── tear it up",
-  inspectBack: "Put it back quietly",
+  inspectBack: "Set it aside ── let it go",
 
   // ---- ポーズ/設定 ----
   pauseTitle: "Paused",
@@ -265,6 +266,7 @@ T.en = {
   notice22: "10:00 PM ── the room feels darker than before.",
   notice23: "11:00 PM ── the refrigerator stopped.<br>The room has gone too quiet. One hour left.",
   noticeTorn: "Torn up.<br><span style=\"opacity:.65\">…the sound of tearing paper filled the quiet room.</span>",
+  noticeBailed: "You let it go.<br><span style=\"opacity:.65\">…that document is somewhere else in the flat now.</span>",
   noticeNotEnough: "Still not enough documents. ({got} / 5)",
   omenEntered: "── something has entered the room.",
   omenLookedUp: "── it raised its head.",
@@ -362,7 +364,7 @@ T["zh-Hans"] = {
   inspectHint2: "查验的时候，时钟照样在走。",
   inspectTake: "是真的 ── 收下",
   inspectTear: "是假的 ── 撕掉",
-  inspectBack: "轻轻放回去",
+  inspectBack: "暂缓 ── 放手",
 
   // ---- ポーズ／設定 ----
   pauseTitle: "暂停",
@@ -410,6 +412,7 @@ T["zh-Hans"] = {
   notice22: "22:00 ── 房间好像变暗了。",
   notice23: "23:00 ── 冰箱停了。<br>房间安静得过头了。只剩一个小时。",
   noticeTorn: "撕掉了。<br><span style=\"opacity:.65\">……撕纸的声音在安静的房间里回响。</span>",
+  noticeBailed: "放手了。<br><span style=\"opacity:.65\">……那份文件已经混进房间的某处。</span>",
   noticeNotEnough: "文件还不够。（{got} / 5）",
   omenEntered: "── 有什么东西，进了房间。",
   omenLookedUp: "──抬起了头。",
@@ -507,7 +510,7 @@ T.ru = {
   inspectHint2: "Пока вы осматриваете, часы идут.",
   inspectTake: "Подлинный ── принять",
   inspectTear: "Подделка ── порвать",
-  inspectBack: "Тихо положить обратно",
+  inspectBack: "Отложить ── выпустить из рук",
 
   // ---- ポーズ/設定 ----
   pauseTitle: "Пауза",
@@ -555,6 +558,7 @@ T.ru = {
   notice22: "22:00 ── кажется, в комнате стало темнее.",
   notice23: "23:00 ── холодильник затих.<br>В комнате стало слишком тихо. Остался час.",
   noticeTorn: "Порвано.<br><span style=\"opacity:.65\">…звук рвущейся бумаги разнёсся по тихой комнате.</span>",
+  noticeBailed: "Вы отпустили его.<br><span style=\"opacity:.65\">…этот документ теперь где-то в квартире.</span>",
   noticeNotEnough: "Документов всё ещё не хватает. ({got} / 5)",
   omenEntered: "── что-то вошло в комнату.",
   omenLookedUp: "──оно подняло голову.",
@@ -654,7 +658,7 @@ T.es = {
   inspectHint2: "Mientras examinas, el reloj sigue corriendo.",
   inspectTake: "Auténtico ── aceptarlo",
   inspectTear: "Falso ── romperlo",
-  inspectBack: "Dejarlo con cuidado",
+  inspectBack: "Aplazar ── soltarlo",
 
   // ---- ポーズ/設定 ----
   pauseTitle: "Pausa",
@@ -702,6 +706,7 @@ T.es = {
   notice22: "22:00 ── parece que la habitación se ha oscurecido.",
   notice23: "23:00 ── la nevera se ha parado.<br>La habitación se ha quedado demasiado silenciosa. Queda una hora.",
   noticeTorn: "Roto.<br><span style=\"opacity:.65\">…el sonido del papel al rasgarse llenó la habitación en silencio.</span>",
+  noticeBailed: "Lo has soltado.<br><span style=\"opacity:.65\">…ese documento está ahora en otra parte del piso.</span>",
   noticeNotEnough: "Aún faltan documentos. ({got} / 5)",
   omenEntered: "── algo ha entrado en la habitación.",
   omenLookedUp: "──levantó la cabeza.",

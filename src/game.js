@@ -210,14 +210,25 @@ const anomName = (id) => (id && ANOM_IDS.includes(id) ? anomMeta(id, LOCALE).nam
 /** 却下理由。プレイヤーが見たものと必ず一致させる。 */
 const anomReject = (id) => anomMeta(id, LOCALE).reject;
 
+/* 複製ごとの固定シード（v24）。異変の細部（年号のどちら／誤字の位置／化ける項目名）は
+   applyAnom が rng で決める。ここを毎回 Math.random で振ると、同じ紙を開き直すたびに
+   細部が変わり、**「変化した＝偽物」で間違い探しを迂回できてしまう**（本物は不変なので）。
+   複製に紐づくシードから引けば、同じ一枚は何度開いても必ず同じ絵になる。 */
+const mulberry32 = (a) => () => {
+  a = (a + 0x6D2B79F5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
 function makeCopy(it, p) {
-  if (Math.random() >= p) return { fake: false, anomId: null };
+  const seed = (Math.random() * 4294967296) >>> 0;
+  if (Math.random() >= p) return { fake: false, anomId: null, seed };
   const d = SPECS[it.id];
   const ok = ANOM_IDS.filter(id => canApply(id, d, LOCALE));
   const subtle = ok.filter(id => anomMeta(id, LOCALE).sub);
   const obvious = ok.filter(id => !anomMeta(id, LOCALE).sub);
   const pool = (Math.random() < MODES[mode].subtleW && subtle.length) ? subtle : obvious;
-  return { fake: true, anomId: pool[Math.floor(Math.random() * pool.length)] };
+  return { fake: true, anomId: pool[Math.floor(Math.random() * pool.length)], seed };
 }
 function assignCopies() {
   const order = [...ITEMS.keys()].sort(() => Math.random() - 0.5);
@@ -236,7 +247,7 @@ function buildSpec(it) {
   // 埋まっている（L-8 / L-9d）。異変は applyAnom() が複製に当てて返す（L-16）。
   const d = SPECS[it.id];
   const s = { ...d, rows: d.rows.map(r => [...r]), stampFlip: false, mirror: false };
-  return it.copy.fake ? applyAnom(it.copy.anomId, s, LOCALE, Math.random) : s;
+  return it.copy.fake ? applyAnom(it.copy.anomId, s, LOCALE, mulberry32(it.copy.seed)) : s;
 }
 /* canvas のフォントスタック（P2-7）。
    CSS 側は var(--f-serif) 等で一元化しているが、canvas の c.font は CSS 変数を
@@ -2578,7 +2589,7 @@ addEventListener("keydown", e => {
   }
   if (e.code === "Escape") {
     // 検分・e-Tax はそれぞれ閉じるのが先。何も開いていない PLAY 中だけポーズに入る。
-    if (state === "INSPECT") closeInspect();
+    if (state === "INSPECT") bailInspect();   // Esc も「保留」と同じ扱い（抜け道にしない）
     else if (state === "ETAX") closeEtax();
     else if (state === "PAUSE") closePause();
     else if (state === "PLAY") openPause();
@@ -3005,7 +3016,22 @@ $("btnTear").addEventListener("click", () => {
   notice(tr("noticeTorn"), 3);
   closeInspect();
 });
-$("btnBack").addEventListener("click", () => closeInspect());
+/* 「保留」＝判断から降りる（v24）。怪人が来たときに検分を中断して逃げる手段は残す。
+   ただしタダではない: **その一枚は手を離れ、部屋のどこかへ湧き直す**（破棄と同じ
+   relocate。ただし aggro も還付ペナルティも図鑑登録も無い。払うのは探し直す時間だけ）。
+   複製も引き直すので「保留して開き直して見比べる」も成立しない。
+   怪人の出現でこちらの都合と関係なく閉じられる場合（enterVisit / 発見時）は、
+   プレイヤーが選んだ結果ではないので relocate しない。 */
+function bailInspect() {
+  if (!inspectIt) return;
+  const it = inspectIt;
+  it.copy = makeCopy(it, MODES[mode].rp);
+  relocateItem(it);
+  beep(300, 0.1, "triangle", 0.05);
+  notice(tr("noticeBailed"), 3);
+  closeInspect();
+}
+$("btnBack").addEventListener("click", bailInspect);
 
 /* ---------- e-Tax sequence（審査＝真贋の清算） ---------- */
 let etaxTimer = 0;
