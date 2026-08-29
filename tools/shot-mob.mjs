@@ -36,7 +36,7 @@ const VIEWS = {
   back:  [0,            1.05, 1.0],   // 背中（頭頂の頭皮・襟・裾）
   left:  [-Math.PI / 2, 1.05, 1.0],   // 左腕側（-x）
   head:  [Math.PI,      1.87, 0.34],  // 顔の寄り（マスクと頭部の取り合い）
-  hand:  [Math.PI / 2,  0.80, 0.42],  // 右手とマチェーテの握りの寄り
+  hand:  [Math.PI * 0.72, 0.70, 0.30],  // 右手と大鉈の握りの寄り（拳の高さに合わせる）
   foot:  [Math.PI,      0.18, 0.42],  // ブーツの接地とすねの取り合い
 };
 
@@ -82,14 +82,20 @@ if (!dark) await page.evaluate(({ MOB, CAM }) => {
     if (o.isAmbientLight) { o.color.setHex(0xffffff); o.intensity = 0.55; }
     if (o.isHemisphereLight) { o.color.setHex(0xffffff); o.intensity = 0.45; }
   });
-  const key = new THREE.DirectionalLight(0xfff2e0, 2.2);
+  const key = new THREE.DirectionalLight(0xfff2e0, 3.0);
   key.position.set(MOB.x - 2.2, 3.4, CAM.z - 1.0);
   key.target.position.set(MOB.x, 1.0, MOB.z);
   scene.add(key, key.target);
-  const fill = new THREE.DirectionalLight(0xcfd8ff, 1.0);
+  const fill = new THREE.DirectionalLight(0xcfd8ff, 1.2);
   fill.position.set(MOB.x + 3.0, 2.0, MOB.z + 2.0);
   fill.target.position.set(MOB.x, 1.0, MOB.z);
   scene.add(fill, fill.target);
+  /* リム（背後からの縁光）。真っ黒に近い衣装は、正面から当てるだけでは
+     どこが前でどこが後ろか分からない。輪郭に光を回すと形が読める。 */
+  const rim = new THREE.DirectionalLight(0xfff0d8, 2.6);
+  rim.position.set(MOB.x + 1.2, 3.0, MOB.z + 3.2);
+  rim.target.position.set(MOB.x, 1.2, MOB.z);
+  scene.add(rim, rim.target);
 }, { MOB, CAM });
 
 /* 部屋を隠す。怪人・ライト・カメラだけ残して背景を無地にすると、
