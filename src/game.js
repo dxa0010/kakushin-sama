@@ -8,6 +8,7 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 // 音の生成エンジン（ゲーム非依存。tools/audio-lab.html から単体試聴できる）
 import * as Audio from "./audio.js";
 const { beep, thump, footstep, heartbeat, clockTick, speak,
@@ -2393,134 +2394,526 @@ scene.add(poster);
 /* ---------- 怪人「カクシン様」 ---------- */
 // グループの正面はローカル +z（mob更新で monster.lookAt(ply) するため、
 // マスク面は必ず +z を向くように組む）。全高 ≈ 2.05m の大柄・前傾姿勢。
+//
+/* 【v25で作り直した理由】方向性（大柄・前傾・黒い作業着・通知書の顔・マチェーテ）は
+   そのままに、「解像度」だけを上げる。v24 までは 35 個の素の円柱／箱を並べた造りで、
+   四面図（tools/shot-mob.mjs）に出た欠点が3つあった。
+   ・円柱の分割が 10〜14 しかなく、輪郭が多角形として見えていた。
+   ・**円柱の平らな端面がそのまま露出**していて、肩・襟・胴の上端が「開いた樽」に見えた。
+     関節も上腕と前腕が段差で突き合わさるだけで、肘・膝・手首が存在しない。
+   ・作業着の法線タイリングが粗く（1.4×2.2）、縦に積んだ円柱に横縞が乗って
+     「タイヤ積み」に見えていた。v24 は normalScale を 0.22 まで落として誤魔化していたが、
+     縞の原因はタイリングの粗さなので、細かくして布の織り目に戻すのが本筋。
+
+   【なぜ形を増やしてもコストが上がらないか】部品はすべて材質ごとのバケツに溜めて、
+   最後に mergeGeometries で1メッシュに統合する。怪人は内部が一切アニメーションしない
+   剛体なので統合して失うものが無く、**部品 35 個・ドローコール 35 → 部品 100 超・
+   ドローコール 10** になる。頂点は増えるがドローコールとシェーダ切り替えは減るので、
+   v24 で 1869 まで落としたドローコール予算を食わない。 */
 function makeMonster() {
   const g = new THREE.Group();
 
   // --- 怪人専用マテリアル（この個体だけで使うのでローカル定義） ---
-  const skin    = new THREE.MeshStandardMaterial({ color: 0x5f5346, roughness: 0.9 });           // くすんだ肌（手・首）暗め＝発光防止
-  const scalp   = new THREE.MeshStandardMaterial({ color: 0x1c1915, roughness: 0.92 });          // 頭頂（汚れた髪/頭皮）＝白いオーブ化を防ぐ
-  const boot    = new THREE.MeshStandardMaterial({ color: 0x1a1712, roughness: 0.8, metalness: 0.05 }); // 黒い作業ブーツ
-  const bootSole= new THREE.MeshStandardMaterial({ color: 0x0d0b09, roughness: 0.9 });           // 靴底
-  const strapM  = new THREE.MeshStandardMaterial({ color: 0x3a2f24, roughness: 0.7 });           // マスクの革ストラップ
-  const bladeM  = new THREE.MeshStandardMaterial({ color: 0xb4bac0, roughness: 0.32, metalness: 0.85 }); // マチェーテの刃
-  const handleM = new THREE.MeshStandardMaterial({ color: 0x241f1b, roughness: 0.7 });           // マチェーテの柄
-  // 作業着: workClothを流用しつつ、この個体用に法線タイリングを弱めた別インスタンス
-  // （furniture側の見た目を変えないようにclone。リブの主張を抑えて「厚手の上着」に見せる）
-  const cloth = M.workCloth.clone();
-  // リブが「タイヤ積み」に見えないよう法線をかなり弱め、粗さを上げて縞状ハイライトを消す
-  if (cloth.normalMap) { cloth.normalScale = new THREE.Vector2(0.22, 0.22); }
-  cloth.roughness = 0.97; cloth.metalness = 0.0;
-  const cm = (w, h, d, mat, x, y, z, ry = 0) => {   // ローカル簡易ボックス
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z); if (ry) m.rotation.y = ry; g.add(m); return m;
-  };
-  const cyl = (rt, rb, h, mat, x, y, z, seg = 10) => {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
-    m.position.set(x, y, z); g.add(m); return m;
-  };
+  // 【明度を分ける】v24 は上着もズボンもブーツも同じ真っ黒で、四面図では全身が
+  // 1枚のシルエットに潰れていた。上着／ズボン／革で明度と色相をずらすと、
+  // 暗い部屋でも「服を着た体」として面が分かれて見える。
+  const clothSet = loadPBRSet("fabric049", 9, 9);       // タイリングを細かく＝縞ではなく織り目に見せる
+  /* 【暗闇で輪郭が消えるのを止める】v25の中盤まで、部屋の照明下では顔の紙以外が
+     真っ黒に溶けて、巨体も得物もシルエットとして見えていなかった。原因は
+     「一様に粗い黒」で、拡散反射しか返さないため光源の位置に関係なく同じ暗さになること。
+     scene.environment（RoomEnvironment）は環境強度 0.06 まで絞ってあるが、
+     **envMapIntensity は材質ごとに掛かる**ので、この個体だけ 2〜5 倍に上げれば、
+     部屋の見た目を一切変えずに怪人の縁だけが鈍く光る。粗さも革は 0.45 まで下げて
+     「濡れた革」に寄せる（0.2 まで落とすとプラスチックになるので下げすぎない）。 */
+  const cloth     = new THREE.MeshStandardMaterial({ ...clothSet, color: 0x33372f, roughness: 0.88, metalness: 0,
+                                                     envMapIntensity: 2.2, normalScale: new THREE.Vector2(0.55, 0.55) });   // 上着（暗いオリーブ）
+  const clothDark = new THREE.MeshStandardMaterial({ ...loadPBRSet("fabric049", 9, 9), color: 0x1f231d, roughness: 0.92, metalness: 0,
+                                                     envMapIntensity: 2.0, normalScale: new THREE.Vector2(0.55, 0.55) });   // 前立て・ポケット・ズボン
+  const skin    = new THREE.MeshStandardMaterial({ color: 0x4a3f35, roughness: 0.72, envMapIntensity: 2.5 });                // くすんだ肌（手・首）暗め＝発光防止
+  const scalp   = new THREE.MeshStandardMaterial({ color: 0x1c1915, roughness: 0.92 });                                      // 頭頂（汚れた髪/頭皮）＝白いオーブ化を防ぐ
+  const boot    = new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 2.4, 2.4), color: 0x2a2620, roughness: 0.45, metalness: 0.08, envMapIntensity: 4.0 }); // 黒い作業ブーツ
+  const bootSole= new THREE.MeshStandardMaterial({ color: 0x0d0b09, roughness: 0.95 });                                      // 靴底
+  const strapM  = new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 3.5, 3.5), color: 0x3a2f24, roughness: 0.45, envMapIntensity: 4.0 }); // 革ベルト・マスクの縛り
+  const bladeM  = new THREE.MeshStandardMaterial({ color: 0xb4bac0, roughness: 0.30, metalness: 0.88, envMapIntensity: 5.0 }); // 刃・金具
+  const handleM = new THREE.MeshStandardMaterial({ color: 0x241f1b, roughness: 0.7, envMapIntensity: 2.0 });                 // マチェーテの柄
+  /* 書類そのものを衣装の一部として体に纏わせる（v25）。この怪人は「確定申告の化身」
+     なので、腰から下げた申告書の束・体に貼り付いた通知・首から提げた木札が、
+     そのままシルエットを壊す装飾になる。紙は1枚の共通テクスチャで、部品ごとに
+     UV を 0..1 で使うため、何枚下げても統合後は1ドローコールに収まる。 */
+  const scv = document.createElement("canvas");
+  scv.width = 128; scv.height = 176;
+  const sc = scv.getContext("2d");
+  sc.fillStyle = "#cfc7b1"; sc.fillRect(0, 0, 128, 176);
+  for (let i = 0; i < 10; i++) {
+    sc.fillStyle = `rgba(120,104,74,${0.05 + Math.random() * 0.10})`;
+    sc.fillRect(Math.random() * 128, Math.random() * 176, 10 + Math.random() * 40, 6 + Math.random() * 30);
+  }
+  sc.strokeStyle = "#6d6552"; sc.lineWidth = 2; sc.strokeRect(8, 8, 112, 160);
+  sc.fillStyle = "rgba(52,46,34,0.6)";
+  for (let r = 0; r < 9; r++) sc.fillRect(18, 26 + r * 16, 30 + Math.random() * 64, 4);
+  sc.strokeStyle = "rgba(150,40,34,0.55)"; sc.lineWidth = 4;
+  sc.beginPath(); sc.arc(96, 44, 20, 0, 7); sc.stroke();
+  const scrapTex = new THREE.CanvasTexture(scv);
+  scrapTex.colorSpace = THREE.SRGBColorSpace; scrapTex.anisotropy = MAXANISO;
+  const paperM = new THREE.MeshStandardMaterial({ map: scrapTex, color: 0x9a9484, roughness: 0.98, metalness: 0, side: THREE.DoubleSide });
+  const cordM  = new THREE.MeshStandardMaterial({ color: 0x6b5e46, roughness: 0.95 });                // 麻ひも
+  const woodM  = new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.88 });                // 木札・印鑑の柄
 
-  // === 脚（わずかに開く。前傾で膝が前に出るイメージ） ===
+  /* 形を崩すための乱数。**固定シード**にする――毎回 Math.random で振ると
+     リロードのたびに別人になり、四面図での比較（改修前後の差分）が成立しない。 */
+  const rr7 = mulberry32(0x51A2C3);
+
+  /* --- 部品を材質ごとに溜める --- */
+  const bucket = new Map();
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(),
+        _p = new THREE.Vector3(), _s = new THREE.Vector3();
+  /** geo を o={x,y,z,rx,ry,rz,sx,sy,sz,uv,pre} で配置して材質バケツへ入れる。
+   *  uv は UV の倍率（部品の大きさに応じて織り目の密度を揃えるため）。
+   *  pre は親の行列（マチェーテのようにグループごと傾ける部品で使う）。 */
+  function put(geo, mat, o = {}) {
+    // mergeGeometries は属性の顔ぶれが完全に一致していないと通らない。
+    // インデックスの有無も混在させられない（ExtrudeGeometry は非インデックス、
+    // BoxGeometry はインデックス付き）ので、非インデックスに揃えてから足す。
+    for (const name of Object.keys(geo.attributes)) if (!["position", "normal", "uv"].includes(name)) geo.deleteAttribute(name);
+    if (o.uv && geo.attributes.uv) {
+      const uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * o.uv, uv.getY(i) * o.uv);
+    }
+    _p.set(o.x || 0, o.y || 0, o.z || 0);
+    // order は回転の適用順。既定の XYZ は「rz→ry→rx」の順に効く。コートのパネルのように
+    // 「先に向きを決めて（ry）、そのうえで自分の軸で傾ける（rx）」ものは YXZ を使う。
+    _q.setFromEuler(_e.set(o.rx || 0, o.ry || 0, o.rz || 0, o.order || "XYZ"));
+    _s.set(o.sx == null ? 1 : o.sx, o.sy == null ? 1 : o.sy, o.sz == null ? 1 : o.sz);
+    _m.compose(_p, _q, _s);
+    if (o.pre) _m.premultiply(o.pre);
+    geo.applyMatrix4(_m);
+    const flat = geo.index ? geo.toNonIndexed() : geo;
+    if (flat !== geo) geo.dispose();
+    if (!bucket.has(mat)) bucket.set(mat, []);
+    bucket.get(mat).push(flat);
+  }
+  /* RoundedBoxGeometry の segments は 1 で足りる（1面 3×3＝108三角）。2 にすると
+     1個 300三角になり、外套のパネルだけで 2万5千三角を食う。角が丸いことが分かれば
+     目的は果たしているので、ここは最小で置く。 */
+  const rbox = (w, h, d, r, mat, o)         => put(new RoundedBoxGeometry(w, h, d, 1, r), mat, o);
+  const cyl  = (rt, rb, h, mat, o, seg = 20, open = false) => put(new THREE.CylinderGeometry(rt, rb, h, seg, 1, open), mat, o);
+  const cap  = (r, len, mat, o, seg = 18)   => put(new THREE.CapsuleGeometry(r, len, 6, seg), mat, o);
+  const sph  = (r, mat, o, w = 22, h = 14)  => put(new THREE.SphereGeometry(r, w, h), mat, o);
+  const tor  = (r, tube, mat, o, seg = 24)  => put(new THREE.TorusGeometry(r, tube, 8, seg), mat, o);
+  // 前を開けたコート・後ろだけのフードのように、**筒や球の一部**が要る場面のためのヘルパ。
+  const arc  = (rt, rb, h, mat, o, t0, tlen, seg = 22) => put(new THREE.CylinderGeometry(rt, rb, h, seg, 1, true, t0, tlen), mat, o);
+  const dome = (r, mat, o, p0, plen, tlen = Math.PI * 0.62, seg = 22) => put(new THREE.SphereGeometry(r, seg, 14, p0, plen, 0, tlen), mat, o);
+  const plate= (w, h, mat, o)                          => put(new THREE.PlaneGeometry(w, h, 1, 1), mat, o);
+
+  /* === 骨格の寸法（全高 ≈ 2.10m）===
+     足首 0.12 / 膝 0.47 / 股 0.90 / ベルト 1.06 / 胸 1.42 / 肩 1.60 / 襟 1.72 / 頭 1.90
+     肩幅 0.61・胸幅 0.57・胴の奥行 0.39。**幅より縦に伸ばす**のがこの怪人の要点で、
+     v25 の初稿は胸・腹・背を別々の球で積んだせいで肩幅 0.99m の団子になり、
+     怖い大男ではなく丸いマスコットになっていた。 */
+
+  /* === 脚 ===
+     太もも／すねをカプセル（＝両端が丸い）にして、膝・足首に球を入れる。
+     v24 は円柱の端面が突き合わさるだけで、寄りで見ると関節が「切断面」だった。 */
   for (const s of [-1, 1]) {
-    // 太もも
-    cyl(0.13, 0.15, 0.55, cloth, s * 0.17, 0.62, 0.02);
-    // すね
-    cyl(0.11, 0.12, 0.55, cloth, s * 0.19, 0.15, 0.06);
-    // ブーツ（甲＋つま先＋底）
-    cm(0.22, 0.16, 0.30, boot, s * 0.19, 0.02, 0.12);
-    cm(0.22, 0.10, 0.14, boot, s * 0.19, 0.05, 0.30);   // つま先
-    cm(0.24, 0.04, 0.46, bootSole, s * 0.19, -0.05, 0.16); // 靴底
+    const hx = s * 0.155;
+    cap(0.116, 0.28, clothDark, { x: hx, y: 0.665, z: 0.035, rx: -0.05, uv: 2.0 });      // 太もも
+    sph(0.106, clothDark, { x: hx, y: 0.47, z: 0.065, uv: 1.4 });                        // 膝
+    cap(0.095, 0.24, clothDark, { x: hx, y: 0.30, z: 0.085, rx: 0.03, uv: 1.8 });        // すね
+    // ズボンの裾。ブーツの上に一段かぶせて、布と革の境目を作る（境目が無いと一本の棒に見える）
+    cyl(0.128, 0.134, 0.12, clothDark, { x: hx, y: 0.335, z: 0.088, uv: 1.6 }, 20, true);
+    // ブーツ（シャフト＝すねの筒 → 甲 → つま先 → 底 → かかと）
+    cyl(0.104, 0.116, 0.28, boot, { x: s * 0.166, y: 0.185, z: 0.095, uv: 1.6 }, 20);
+    rbox(0.178, 0.130, 0.235, 0.030, boot, { x: s * 0.172, y: 0.075, z: 0.140, uv: 1.4 });
+    rbox(0.156, 0.090, 0.120, 0.035, boot, { x: s * 0.172, y: 0.052, z: 0.250, uv: 1.0 });
+    rbox(0.192, 0.034, 0.360, 0.012, bootSole, { x: s * 0.172, y: 0.017, z: 0.150 });
+    rbox(0.184, 0.040, 0.110, 0.010, bootSole, { x: s * 0.172, y: 0.048, z: 0.020 });
+    // 締めベルト2本＋金具。革の輪を回すだけで「編み上げの作業ブーツ」に見える
+    for (const [by, br] of [[0.215, 0.118], [0.290, 0.112]]) {
+      tor(br, 0.011, strapM, { x: s * 0.166, y: by, z: 0.095, rx: Math.PI / 2, uv: 2.0 });
+      rbox(0.030, 0.024, 0.014, 0.004, bladeM, { x: s * 0.166, y: by, z: 0.095 + br });
+    }
   }
 
-  // === 胴（大柄・厚い胸板。太めのバレル型で寸胴に。前傾のため上部を +z へ） ===
-  // 上半身は樽のように太く、腰でもあまり絞らない（砂時計に見えないよう rb を大きめに）
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.31, 0.74, 14), cloth);
-  torso.position.set(0, 1.22, 0.05); torso.rotation.x = 0.08; g.add(torso);
-  // 腹〜作業着の裾（胴とほぼ同径でつなぎ、寸胴の塊に見せる）
-  cyl(0.31, 0.32, 0.30, cloth, 0, 0.88, 0.03, 14);
-  // 開いたジャケットの前立て（濃い縦帯）
-  cm(0.11, 0.70, 0.02, strapM, 0, 1.22, 0.32, 0);
+  /* === 胴（大柄・厚い胸板・猫背）===
+     v24 は半径 0.33 の円柱1本だったので、真横から見ると厚みの無い板だった。
+     かといって球を積むと団子になる（v25初稿）。**扁平に潰した1本のカプセル**を芯にして、
+     胸板と背の丸みだけを薄い膨らみとして足す。 */
+  cap(0.270, 0.42, cloth, { y: 1.285, z: 0.035, sx: 1.04, sz: 0.72, uv: 2.8 });          // 胴
+  sph(0.225, cloth, { y: 1.42, z: 0.130, sx: 1.26, sy: 0.90, sz: 0.42, uv: 2.0 });       // 胸板の張り
+  sph(0.205, cloth, { y: 1.47, z: -0.080, sx: 1.32, sy: 1.06, sz: 0.42, uv: 2.0 });      // 猫背の丸み
+  sph(0.250, clothDark, { y: 0.97, z: 0.020, sx: 1.10, sy: 0.72, sz: 0.76, uv: 2.4 });   // 骨盤
 
-  // === 肩（怒り肩・盛り上がった僧帽筋。太く高く、首の露出を隠す） ===
-  const shoulders = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.70, 12), cloth);
-  shoulders.position.set(0, 1.60, 0.03); shoulders.rotation.z = Math.PI / 2; g.add(shoulders);
-  for (const s of [-1, 1]) cyl(0.14, 0.11, 0.16, cloth, s * 0.33, 1.64, 0.02); // 肩の盛り上がり
-  // 立った襟（首の付け根を覆い、細い首が浮かないように。少し高く）
-  cyl(0.15, 0.18, 0.16, cloth, 0, 1.75, 0.035, 12);
+  /* === 腰・ベルト ===
+     ベルトは上着の裾に「わずかに食い込ませる」。v25初稿は裾より 6cm も外に出ていて、
+     腰に浮き輪をはめたように見えていた。 */
+  cyl(0.288, 0.272, 0.26, cloth, { y: 0.99, z: 0.025, sz: 0.74, uv: 2.4 }, 24, true);    // 上着の裾
+  /* 【輪を潰すのは sy であって sz ではない】Matrix4.compose は拡大→回転の順に効くので、
+     rx=π/2 で寝かせた輪では**ローカルYが世界Zになる**。sz を掛けてもチューブの太さが
+     変わるだけで輪は真円のままになり、扁平な胴（奥行 0.39）に真円のベルト（直径 0.60）が
+     はまって、v25 の2稿目まで「腰に浮き輪」に見えていた。 */
+  tor(0.278, 0.020, strapM, { y: 1.060, z: 0.025, rx: Math.PI / 2, sy: 0.76, uv: 3.0 }); // ベルト
+  rbox(0.072, 0.054, 0.026, 0.007, bladeM, { y: 1.060, z: 0.025 + 0.226 });              // バックル
+  /* 開いたジャケットの襟。v25 の2稿目は前立てを2枚の板として胸の中央に並べたので、
+     胸に長方形のプレートを貼った「防具」に見えていた。上で広く下で狭い V にすると、
+     同じ部品数のまま「前を開けた作業着」として読める。 */
+  for (const s of [-1, 1]) {
+    rbox(0.100, 0.52, 0.030, 0.010, clothDark, { x: s * 0.105, y: 1.37, z: 0.212, rz: s * 0.19, uv: 1.6 });
+    rbox(0.090, 0.100, 0.022, 0.007, clothDark, { x: s * 0.185, y: 1.155, z: 0.185, uv: 1.0 });  // 腰ポケット
+    rbox(0.098, 0.026, 0.026, 0.005, clothDark, { x: s * 0.185, y: 1.212, z: 0.189, uv: 0.8 });  // ポケットのフラップ
+  }
+  for (let i = 0; i < 3; i++) sph(0.011, bladeM, { y: 1.16 + i * 0.115, z: 0.238 }, 10, 8);       // 前を留めるボタン
 
-  // === 首（太い・短い）＋頭 ===
-  cyl(0.13, 0.15, 0.12, skin, 0, 1.80, 0.045);
+  /* === 肩・襟（怒り肩。首の露出を隠す） ===
+     肩は横倒しのカプセル1本。円柱だと端面が丸見えになり、球を左右に置くと
+     肩幅が一気に広がって寸胴になる。 */
+  cap(0.155, 0.30, cloth, { y: 1.600, z: 0.050, rz: Math.PI / 2, sz: 0.80, uv: 2.2 });
+  sph(0.200, cloth, { y: 1.640, z: 0.025, sx: 1.30, sy: 0.55, sz: 0.78, uv: 2.2 });      // 僧帽筋
+  for (const s of [-1, 1])                                                                // 袖の縫い目
+    tor(0.116, 0.010, clothDark, { x: s * 0.272, y: 1.520, z: 0.045, rx: Math.PI / 2, sy: 0.92, uv: 2.0 });
+  cyl(0.140, 0.180, 0.16, cloth, { y: 1.715, z: 0.055, sz: 0.90, uv: 2.0 }, 24, true);   // 立った襟（開いた筒）
+  tor(0.143, 0.013, clothDark, { y: 1.788, z: 0.055, rx: Math.PI / 2, sy: 0.90, uv: 2.4 }); // 襟の縁
+
+  /* === 首・頭 ===
+     【首を傾げさせる】直立して正対した頭は、どれだけ質感を上げても「人形」に見える。
+     首の付け根（0, 1.72, 0.06）を軸に傾けて固定すると、こちらを覗き込む角度が生まれる。
+     頭・フード・紙は全部この行列を通すので、傾きは1か所で決まる。 */
+  const headM = new THREE.Matrix4().makeTranslation(0, 1.72, 0.06)
+    .multiply(new THREE.Matrix4().makeRotationZ(0.19))
+    .multiply(new THREE.Matrix4().makeRotationX(-0.07))
+    .multiply(new THREE.Matrix4().makeTranslation(0, -1.72, -0.06));
+  cap(0.092, 0.05, skin, { y: 1.775, z: 0.060 });
   // 頭は少し縦長の楕円体。露出する頭頂/後頭は暗い頭皮(scalp)にして白いオーブ化を防ぐ。
-  // マスクはこの前面に載せる。襟に近づけて neck gap をなくすため 1.90→1.87 に下げる
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.185, 16, 16), scalp);
-  head.position.set(0, 1.87, 0.05); head.scale.set(1.0, 1.12, 1.05); g.add(head);
+  sph(0.185, scalp, { y: 1.900, z: 0.075, sy: 1.10, sz: 1.02, pre: headM }, 32, 20);
+  sph(0.105, scalp, { y: 1.875, z: -0.045, sy: 0.94, sz: 0.80, pre: headM }, 20, 12);    // 後頭のふくらみ
+  sph(0.098, scalp, { y: 1.790, z: 0.125, sx: 1.10, sy: 0.70, pre: headM }, 20, 12);     // 顎（紙の下に隠れる）
+  /* 紙を顔に縛り付けている革ひも。v24 では紙が頭の前に浮いているだけで、
+     「なぜ落ちないのか」が絵の中に無かった。ただし**輪は横1本だけ**にする。
+     v25初稿は縦にも回したせいで、後ろから見ると頭頂に稜線が立って兜に見えた。 */
+  tor(0.176, 0.008, strapM, { y: 1.808, z: 0.070, rx: Math.PI / 2, sy: 1.04, uv: 3.0, pre: headM });
+  for (const s of [-1, 1]) rbox(0.026, 0.020, 0.013, 0.004, bladeM, { x: s * 0.152, y: 1.808, z: 0.110, pre: headM });
 
-  // --- 顔＝紙の通知書プレート（+z 面に配置）。ユーザー要望で「前の顔」（ホッケーマスク導入前の
-  // デザイン）に戻した。文言だけ更新：「源泉徴収票」→「重加算税」（仮装・隠蔽への懲罰的な追徴税で、
-  // 確定申告ホラーというテーマに直球で刺さるので採用）。以前は素の円柱ボディに直接貼っていたが、
-  // 今の頭部球（半径0.185・z scale 1.05＝前面 z≈0.244）より少し前に置いて食い込みを避ける。
-  //
-  // 【v22で写真テクスチャから戻した】monster_face.jpg は解像度と陰影があるぶん「作り込んだ顔」に
-  // 見えてしまい、この怪人の怖さの源――事務書類がそのまま顔になっている無機質さ――が薄れた。
-  // MeshBasic（陰影を受けない）なのも意図的で、暗い部屋でも紙面が白く平坦に浮く。
-  const fcv = document.createElement("canvas");
-  fcv.width = 256; fcv.height = 320;
-  const fc = fcv.getContext("2d");
-  fc.fillStyle = "#e8e4d8"; fc.fillRect(0, 0, 256, 320);
-  fc.strokeStyle = "#555"; fc.lineWidth = 2;
-  fc.strokeRect(10, 10, 236, 300);
-  fc.fillStyle = "#222";
-  fc.textAlign = "center";
-  // 顔（通知書）の見出し。内寸 236px。「HEAVY PENALTY」等は日本語より長い。
-  fitFont(fc, tr("posterHeavy"), 224, 26, `px ${F_SERIF()}`, "bold ");
-  fc.fillText(tr("posterHeavy"), 128, 46);
-  fc.font = `11px ${F_SANS()}`;
-  for (let r = 0; r < 6; r++) {
-    fc.strokeStyle = "#888"; fc.lineWidth = 1;
-    fc.strokeRect(20, 66 + r * 40, 216, 34);
+  /* === 腕 ===
+     上腕→肘→前腕→袖口→手首→拳→指、と関節を全部置く。
+     右腕(+x)はマチェーテを下げてまっすぐ、左腕(-x)はやや前へ。 */
+  const arm = (s, fwd) => {
+    cap(0.090, 0.23, cloth, { x: s * 0.278, y: 1.395, z: 0.050 + fwd * 0.02, rz: s * -0.045, uv: 1.9 });   // 上腕
+    sph(0.085, cloth, { x: s * 0.290, y: 1.175, z: 0.065 + fwd * 0.05, uv: 1.3 });                          // 肘
+    /* 前腕は長め。拳が膝の高さ近くまで垂れると、直立した人型から離れて
+       霊長類寄りの不安な輪郭になる（部品数を変えずに印象だけが変わる）。 */
+    cap(0.079, 0.27, cloth, { x: s * 0.299, y: 0.950, z: 0.078 + fwd * 0.10, rx: -fwd * 0.16, uv: 1.8 });   // 前腕
+    cyl(0.084, 0.092, 0.065, clothDark, { x: s * 0.306, y: 0.812, z: 0.088 + fwd * 0.13, uv: 1.2 }, 18);    // 袖口
+    sph(0.066, skin, { x: s * 0.309, y: 0.780, z: 0.092 + fwd * 0.14 }, 18, 12);                            // 手首
+    const hx = s * 0.313, hz = 0.098 + fwd * 0.15;
+    sph(0.083, skin, { x: hx, y: 0.725, z: hz, sy: 1.06, sz: 1.16 }, 20, 14);                               // 拳
+    for (let i = 0; i < 4; i++)                                                                             // 指（握り込んだ4本）
+      cap(0.024, 0.030, skin, { x: hx + (i - 1.5) * 0.028 * s, y: 0.699, z: hz + 0.070, rx: Math.PI / 2 - 0.35 }, 10);
+    cap(0.026, 0.040, skin, { x: hx - s * 0.070, y: 0.730, z: hz + 0.030, rz: s * 1.15 }, 12);              // 親指
+  };
+  arm(-1, 1);   // 左腕（やや前へ）
+  arm(1, 0);    // 右腕（下ろした腕）
+
+  /* === 外套と装具（v25のブラッシュアップ）===
+     ここまでで「黒い服を着た大男」にはなったが、輪郭は太った人型のままで、
+     遠目に何者かが分からない。造形の質を決めるのは面の細かさより**輪郭が持つ情報**なので、
+     輪郭を壊す層を重ねる。この怪人は確定申告の化身なので、下げる物はすべて書類まわりの
+     道具（申告書の束・麻ひも・印鑑・体に貼り付いた通知）で揃う。 */
+
+  /* 膝まで届く外套。**1枚の円弧ではなく、縦のパネルを重ねて作る。**
+     厚みゼロの円弧は真横から見ると1本の線になり、背中に板を括り付けたように見えた
+     （v25の5稿目）。厚みのあるパネルを少しずつ重ねて並べると、
+     縁が互いに落ち影を作って重い布に見え、丈を不揃いにするだけで裾が裂けて見える。 */
+  for (let i = 0; i < 13; i++) {
+    const a = Math.PI * (0.24 + 1.52 * (i / 12));
+    /* 【崩しの量が足りないと装甲板になる】v25 の中盤まで、丈のばらつきが ±0.09、
+       傾きが ±0.04rad しかなく、整然と垂直に並んだ直方体＝メカの装甲板に見えていた。
+       丈 ±20%・傾き ±15° まで振ると、部品数を増やさずに引き裂かれた布として読める。
+       さらに左半身だけ丈を詰めて数枚を欠落させ、左右対称の退屈さを壊す。 */
+    if (Math.sin(a) < -0.55 && i % 3 === 0) continue;                              // 左半身は数枚が失われている
+    const len = (0.76 + (rr7() - 0.5) * 0.30) * (Math.sin(a) < -0.3 ? 0.74 : 1);
+    const rad = 0.315 + rr7() * 0.030;
+    const top = 1.395 - rr7() * 0.075;
+    put(new RoundedBoxGeometry(0.250, len, 0.030, 1, 0.012), i % 3 === 1 ? clothDark : cloth,
+        { x: Math.sin(a) * rad, y: top - len / 2, z: 0.030 + Math.cos(a) * rad * 0.86,
+          rx: -0.06 + (rr7() - 0.5) * 0.30, ry: a, rz: (rr7() - 0.5) * 0.52, order: "YXZ", uv: 1.6 });
   }
-  fc.fillStyle = "#111";
-  fc.fillRect(52, 130, 42, 30);   // 目
-  fc.fillRect(162, 130, 42, 30);  // 目
+  /* 隙間を埋める内側の層。パネルを1枚並べただけでは、外へ倒したぶん裾で隙間が開いて
+     「腰みの」に見える。半ステップずらした短い層を内側に入れると、隙間の奥が
+     暗く埋まって、布が重なっているように見える。 */
+  for (let i = 0; i < 12; i++) {
+    const a = Math.PI * (0.30 + 1.46 * ((i + 0.5) / 12));
+    const len = 0.60 + rr7() * 0.22;
+    rbox(0.235, len, 0.024, 0.010, clothDark,
+         { x: Math.sin(a) * 0.288, y: 1.360 - len / 2, z: 0.030 + Math.cos(a) * 0.288 * 0.86,
+           rx: -0.04, ry: a, rz: (rr7() - 0.5) * 0.24, order: "YXZ", uv: 1.4 });
+  }
+
+  // 肩から背に落ちる短い肩布。外套と丈を変えて2つの塊に分けると、
+  // 後ろ姿が「のっぺりした釣鐘」ではなくなる。
+  for (let i = 0; i < 9; i++) {
+    const a = Math.PI * (0.30 + 1.40 * (i / 8));
+    const len = 0.30 + ((i * 7) % 4) * 0.035;
+    rbox(0.185, len, 0.026, 0.010, clothDark,
+         { x: Math.sin(a) * 0.285, y: 1.545 - len / 2, z: 0.035 + Math.cos(a) * 0.285 * 0.86,
+           rx: -0.10, ry: a, order: "YXZ", uv: 1.2 });
+  }
+  // 裾のさらに下、細く裂けた布。輪郭の下端をぼかす
+  for (let i = 0; i < 16; i++) {
+    const a = Math.PI * (0.26 + 1.48 * (i / 15));
+    const len = 0.07 + rr7() * 0.19;
+    const rad = 0.320 + rr7() * 0.026;
+    rbox(0.048, len, 0.014, 0.006, cloth,
+         { x: Math.sin(a) * rad, y: 0.660 - len / 2, z: 0.030 + Math.cos(a) * rad * 0.86,
+           rx: -0.16 + (rr7() - 0.5) * 0.34, ry: a, rz: (rr7() - 0.5) * 0.62, order: "YXZ", uv: 0.8 });
+  }
+
+  /* 襷（たすき）掛けの革帯。左右対称の塊を1本の斜線が横切るだけで、
+     正面のシルエットが一気に読めるようになる。胸の丸みに沿わせるため、
+     直線を5つに割って中央ほど前に出す。 */
+  const sash = [[0.215, 1.605], [0.110, 1.445], [-0.010, 1.290], [-0.135, 1.150], [-0.240, 1.030]];
+  for (let i = 0; i < sash.length - 1; i++) {
+    const [x0, y0] = sash[i], [x1, y1] = sash[i + 1];
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    rbox(Math.hypot(x1 - x0, y1 - y0) + 0.02, 0.078, 0.026, 0.008, strapM,
+         { x: cx, y: cy, z: 0.205 - 0.42 * cx * cx, rz: Math.atan2(y1 - y0, x1 - x0), uv: 1.4 });
+  }
+  for (const [bx, by] of [[0.155, 1.525], [-0.180, 1.090]])                 // 帯の金具
+    rbox(0.036, 0.052, 0.030, 0.007, bladeM, { x: bx, y: by, z: 0.205 - 0.42 * bx * bx });
+
+  /* 左腰に下げた申告書の束。紙は1枚のテクスチャを部品ごとに 0..1 で使うので、
+     何枚下げても統合後は1ドローコールに収まる。 */
+  for (let i = 0; i < 6; i++) {
+    const t = i / 5;
+    plate(0.150, 0.215, paperM,
+          { x: -0.300 - t * 0.014, y: 0.905 - ((i * 3) % 4) * 0.016, z: 0.150 + (t - 0.5) * 0.055,
+            ry: -1.05 + t * 0.30, rz: -0.12 + ((i * 7) % 5 - 2) * 0.05 });
+  }
+  cyl(0.007, 0.007, 0.13, cordM, { x: -0.296, y: 1.035, z: 0.152, rz: 0.14 }, 8);   // 束を吊る麻ひも
+  tor(0.028, 0.006, cordM, { x: -0.296, y: 0.998, z: 0.152, rx: Math.PI / 2 }, 12); // 結び目
+
+  /* 右腰の鎖と印鑑。金属の小さな連なりは、暗い場面で唯一ハイライトを拾う部品になり、
+     怪人が動いていることが遠目にも分かる。 */
+  for (let i = 0; i < 5; i++)
+    tor(0.013, 0.0038, bladeM, { x: 0.232 + i * 0.003, y: 1.008 - i * 0.021, z: 0.170,
+                                 rx: i % 2 ? Math.PI / 2 : 0 }, 10);
+  cyl(0.024, 0.026, 0.070, woodM, { x: 0.244, y: 0.865, z: 0.170 }, 14);            // 印鑑の柄
+  cyl(0.028, 0.028, 0.011, bladeM, { x: 0.244, y: 0.825, z: 0.170 }, 14);           // 朱肉の付いた印面
+
+  /* 体に貼り付いた通知書。剥がれかけて浮いているのを、角度をばらして表す。
+     「書類が本人に取り憑いている」ことが一目で分かる部品で、
+     この怪人がただの黒い大男でない理由そのもの。 */
+  for (const [px, py, pz, ry, rz, sc] of [
+    [ 0.245, 1.640,  0.075, -0.85,  0.30, 0.75],
+    [-0.235, 1.545,  0.130,  0.95, -0.22, 0.62],
+    [ 0.055, 1.150,  0.245, -0.12,  0.42, 0.55],
+    [-0.150, 0.700,  0.185,  0.55,  0.18, 0.68],
+    [ 0.180, 0.640, -0.140,  2.60, -0.28, 0.60],
+    [-0.060, 1.660, -0.190,  3.05,  0.12, 0.70],
+  ]) plate(0.135 * sc, 0.190 * sc, paperM, { x: px, y: py, z: pz, ry, rz, rx: 0.12 });
+
+  // 左前腕に巻いた麻ひも（右手は得物を握るので、巻くのは左だけ＝左右を非対称にする）
+  for (const [wy, wr] of [[0.862, 0.086], [0.905, 0.084], [0.985, 0.087]])
+    tor(wr, 0.010, cordM, { x: -0.300, y: wy, z: 0.170 + (wy - 0.93) * 0.28, rx: Math.PI / 2 + 0.10, sy: 0.94 }, 14);
+
+  /* 立ち上がった襟。頭の後ろに立てて紙の顔を額縁のように囲む。
+     v25 の3稿目まで、後頭が滑らかなドームのまま出ていて兜に見えていた。
+     襟で隠してしまえば、頭の造形に頼らず「顔＝紙」だけを見せられる。 */
+  arc(0.212, 0.168, 0.19, cloth, { y: 1.800, z: -0.010, sz: 0.88, uv: 2.0 }, Math.PI * 0.46, Math.PI * 1.08);
+  arc(0.198, 0.160, 0.18, clothDark, { y: 1.798, z: -0.010, sz: 0.88, uv: 2.0 }, Math.PI * 0.46, Math.PI * 1.08);
+  /* 目深なフード。後頭と頭頂だけを覆い、前は開けて紙の顔を額縁に入れる。
+     v25 の6稿目まで、外套を着せたあとも頭だけが**滑らかな禿頭の球**のまま残っていて、
+     そこだけ造形の解像度が落ちて見えていた。頭は隠してしまうのがいちばん強い。
+     球の一部（phi の範囲）で作るので、前面には面が生えない。 */
+  dome(0.226, clothDark, { y: 1.878, z: 0.048, sz: 1.18, sy: 1.02, uv: 2.0, pre: headM }, Math.PI * 0.75, Math.PI * 1.50);
+  // 後ろへ垂れる頭巾の裾。真球のままだと兜（ヘルメット）にしか見えない
+  for (let i = 0; i < 5; i++) {
+    const a = Math.PI * (0.72 + 0.56 * (i / 4));
+    const dl = 0.30 + (i % 3) * 0.05;
+    rbox(0.150, dl, 0.024, 0.010, clothDark,
+         { x: Math.sin(a) * 0.200, y: 1.845 - dl / 2, z: 0.048 + Math.cos(a) * 0.200 * 1.15,
+           rx: -0.05, ry: a, order: "YXZ", uv: 1.2, pre: headM });
+  }
+  /* 裏地は外側よりわずかに広く・深く取る。開いた面の切り口（厚みゼロの縁）が
+     そのまま見えると紙のフードに見えるので、縁から裏地が一筋のぞくようにする。
+     縁を革の輪で隠す手も試したが、輪が紙の顔を横切って見出しを潰した。 */
+  dome(0.214, cloth,     { y: 1.878, z: 0.048, sz: 1.18, sy: 1.02, uv: 2.0, pre: headM }, Math.PI * 0.72, Math.PI * 1.56, Math.PI * 0.68);
+
+  /* === マチェーテ（右手に。刃を下向き・やや前へ） ===
+     柄を拳の中に通し、指の関節がその上に乗るように配置する（v24 は刃が拳の底から
+     生えているだけで、握っているように見えなかった）。 */
+  /* 【小さいと得物に見えない】v25 の中盤までの刃は長さ 0.62m・幅 6cm しかなく、
+     引きの絵では手元の細い線にしか見えなかった。長さ 0.90m・幅 13cm の
+     「処刑人の大鉈」まで太らせ、切っ先が床すれすれを引きずる角度で固定する。 */
+  const mac = new THREE.Matrix4().compose(
+    new THREE.Vector3(0.313, 0.729, 0.112),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0.60, 0, 0.13)),
+    new THREE.Vector3(1, 1, 1));
+  cyl(0.028, 0.032, 0.26, handleM, { y: 0.02, pre: mac }, 14);                       // 柄（拳を貫通させる）
+  cyl(0.040, 0.036, 0.036, handleM, { y: 0.160, pre: mac }, 14);                     // 柄頭
+  for (const y of [-0.04, 0.01, 0.06]) tor(0.031, 0.006, strapM, { y, rx: Math.PI / 2, pre: mac }, 14); // 柄の革巻き
+  rbox(0.090, 0.024, 0.038, 0.006, bladeM, { y: -0.104, pre: mac });                 // ヒルト
+  /* 刃は押し出しで作る。v24 は「箱＋円錐＋背の箱」で、真横から見ると幅の変化が無い
+     ただの板だった。マチェーテの特徴は先端側で腹が膨らむ片刃の輪郭なので、
+     その輪郭をそのまま形にする。ベベルを入れると縁に細いハイライトが乗って刃に見える。 */
+  const bs = new THREE.Shape();
+  bs.moveTo(0.000, -0.120);        // 峰（ヒルト側）
+  bs.lineTo(0.016, -0.820);        // 峰（先端側）
+  bs.lineTo(-0.038, -0.900);       // 切っ先
+  bs.lineTo(-0.132, -0.735);       // 腹（いちばん幅が出るところ）
+  bs.lineTo(-0.104, -0.430);
+  bs.lineTo(-0.070, -0.120);       // 刃（ヒルト側）
+  bs.closePath();
+  put(new THREE.ExtrudeGeometry(bs, { depth: 0.011, bevelEnabled: true, bevelThickness: 0.0022, bevelSize: 0.0022, bevelSegments: 1, curveSegments: 1 }),
+      bladeM, { z: -0.0055, pre: mac });
+
+  /* --- ここまでの部品を材質ごとに1メッシュへ統合する --- */
+  for (const [mat, geos] of bucket) g.add(new THREE.Mesh(mergeGeometries(geos, false), mat));
+
+  /* === 顔＝紙の通知書プレート（+z 面）===
+     ユーザー要望で「前の顔」（ホッケーマスク導入前のデザイン）に戻したまま、
+     文言は「重加算税」（仮装・隠蔽への懲罰的な追徴税）。
+     【v22で写真テクスチャから戻した】monster_face.jpg は解像度と陰影があるぶん
+     「作り込んだ顔」に見えてしまい、この怪人の怖さの源――事務書類がそのまま顔に
+     なっている無機質さ――が薄れた。
+     【v25で MeshBasic をやめた】陰影を受けないので、頭に縛り付けた紙ではなく
+     画面に貼った UI に見えていた。MeshStandard にして面の傾きぶんの陰影を戻しつつ、
+     emissiveMap で「暗い部屋でも白く浮く」という v22 の意図は残す。 */
+  const FW = 512, FH = 640;
+  const fcv = document.createElement("canvas");
+  fcv.width = FW; fcv.height = FH;
+  const fc = fcv.getContext("2d");
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  fc.fillStyle = "#e8e4d8"; fc.fillRect(0, 0, FW, FH);
+  // 古紙のむら。単色の紙は「塗った板」に見えるので、薄い染みを散らして面に情報を足す
+  for (let i = 0; i < 26; i++) {
+    const x = rnd(0, FW), y = rnd(0, FH), r = rnd(18, 90);
+    const gr = fc.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(150,132,96,${rnd(0.03, 0.09)})`);
+    gr.addColorStop(1, "rgba(150,132,96,0)");
+    fc.fillStyle = gr; fc.beginPath(); fc.arc(x, y, r, 0, 7); fc.fill();
+  }
+  fc.strokeStyle = "#555"; fc.lineWidth = 4; fc.strokeRect(20, 20, FW - 40, FH - 40);
+  fc.lineWidth = 1.5; fc.strokeRect(30, 30, FW - 60, FH - 60);
+  // 見出し。内寸 448px。「HEAVY PENALTY」等は日本語より長いので fitFont で詰める
+  fc.fillStyle = "#222"; fc.textAlign = "center";
+  fitFont(fc, tr("posterHeavy"), 448, 52, `px ${F_SERIF()}`, "bold ");
+  fc.fillText(tr("posterHeavy"), FW / 2, 96);
+  fc.strokeStyle = "#333"; fc.lineWidth = 2;
+  fc.beginPath(); fc.moveTo(56, 118); fc.lineTo(FW - 56, 118); fc.stroke();
+  // 明細の表。枠だけでなく、かすれた印字を灰色の帯で入れて「印刷物」にする
+  for (let r = 0; r < 6; r++) {
+    const y = 140 + r * 78;
+    fc.strokeStyle = "#8d8878"; fc.lineWidth = 2; fc.strokeRect(44, y, FW - 88, 66);
+    fc.strokeStyle = "#b3ae9e"; fc.lineWidth = 1;
+    fc.beginPath(); fc.moveTo(160, y); fc.lineTo(160, y + 66); fc.stroke();
+    fc.fillStyle = "rgba(60,56,48,0.55)";
+    fc.fillRect(58, y + 26, rnd(52, 92), 9);
+    for (let c = 0; c < 3; c++) fc.fillRect(178 + c * 96, y + 26, rnd(40, 84), 9);
+  }
+  // 綴じ穴（左端）。紙であることが輪郭以外からも分かる
+  for (const hy of [200, 440]) {
+    fc.fillStyle = "#8a8474"; fc.beginPath(); fc.arc(36, hy, 11, 0, 7); fc.fill();
+    fc.fillStyle = "#cdc7b6"; fc.beginPath(); fc.arc(36, hy - 2, 9, 0, 7); fc.fill();
+  }
+  // 朱印。文字を入れると charset とロケールに縛られるので、二重丸と放射線だけの意匠にする
+  fc.save(); fc.translate(FW - 108, 176); fc.rotate(-0.22);
+  fc.strokeStyle = "rgba(168,40,36,0.72)"; fc.lineWidth = 6;
+  fc.beginPath(); fc.arc(0, 0, 52, 0, 7); fc.stroke();
+  fc.lineWidth = 3; fc.beginPath(); fc.arc(0, 0, 40, 0, 7); fc.stroke();
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    fc.beginPath(); fc.moveTo(Math.cos(a) * 14, Math.sin(a) * 14);
+    fc.lineTo(Math.cos(a) * 36, Math.sin(a) * 36); fc.stroke();
+  }
+  fc.restore();
+  // 目の穴。切り抜いた紙の縁がほつれて見えるよう、黒の周りに不定形の影を置く
+  for (const ex of [138, 330]) {
+    fc.fillStyle = "rgba(20,18,14,0.30)";
+    fc.beginPath();
+    for (let i = 0; i <= 12; i++) {
+      const a = i / 12 * Math.PI * 2, rr = 1 + Math.random() * 0.28;
+      const px = ex + 22 + Math.cos(a) * 40 * rr, py = 292 + Math.sin(a) * 30 * rr;
+      i ? fc.lineTo(px, py) : fc.moveTo(px, py);
+    }
+    fc.closePath(); fc.fill();
+    fc.fillStyle = "#0a0908"; fc.fillRect(ex, 268, 44, 48);
+  }
+  // 折り目。縦の谷と山を1本ずつ入れる（法線を作らずに影だけで折れを示す）
+  fc.fillStyle = "rgba(90,84,68,0.16)"; fc.fillRect(FW / 2 - 3, 30, 3, FH - 60);
+  fc.fillStyle = "rgba(255,252,242,0.35)"; fc.fillRect(FW / 2, 30, 3, FH - 60);
+  /* 【綺麗な紙は怖くない】ここまでの描画は「刷りたての通知書」で、白く整っていた。
+     縁から内へ向かって血と泥の色で沈ませ、擦れと破れを足す。中央（見出しと目）は
+     読めるまま残す――暗い部屋で情報として機能しているのはそこだけなので、
+     汚しは輪郭側にだけ寄せる。 */
+  const grime = fc.createRadialGradient(FW / 2, FH * 0.44, FW * 0.22, FW / 2, FH * 0.5, FW * 0.78);
+  grime.addColorStop(0, "rgba(38,26,16,0)");
+  grime.addColorStop(0.55, "rgba(38,26,16,0.30)");
+  grime.addColorStop(1, "rgba(24,14,8,0.78)");
+  fc.fillStyle = grime; fc.fillRect(0, 0, FW, FH);
+  for (let i = 0; i < 14; i++) {                     // 錆色の染み（乾いた血のつもり）
+    const x = rnd(0, FW), y = rnd(0, FH), r = rnd(14, 58);
+    const st = fc.createRadialGradient(x, y, 0, x, y, r);
+    st.addColorStop(0, `rgba(86,32,20,${rnd(0.10, 0.32)})`);
+    st.addColorStop(1, "rgba(86,32,20,0)");
+    fc.fillStyle = st; fc.beginPath(); fc.arc(x, y, r, 0, 7); fc.fill();
+  }
+  fc.strokeStyle = "rgba(30,22,14,0.5)"; fc.lineWidth = 2;   // 擦れた折り筋
+  for (let i = 0; i < 7; i++) {
+    fc.beginPath();
+    let x = rnd(0, FW), y = rnd(0, FH);
+    fc.moveTo(x, y);
+    for (let k = 0; k < 4; k++) { x += rnd(-70, 70); y += rnd(-60, 60); fc.lineTo(x, y); }
+    fc.stroke();
+  }
   const faceTex = new THREE.CanvasTexture(fcv);
   faceTex.colorSpace = THREE.SRGBColorSpace;
-  const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.34, 0.43),
-    new THREE.MeshBasicMaterial({ map: faceTex })
-  );
-  face.position.set(0, 1.87, 0.27);
+  faceTex.anisotropy = MAXANISO;
+  /* 紙を頭に「巻き付ける」。v25 の最初の2稿は平面を頭の前に置いただけで、
+     紙の端と頭の表面が横で 10cm も離れ、顔ではなく**手前に掲げた看板**に見えていた。
+     ・横方向は弧長を保って円筒に巻く（θ = x / FR）。伸ばして貼るのではなく、
+       実際の紙のように曲げるので、印字の間隔が端で詰まらない。
+     ・縦方向は巻かない。1枚の紙は縦横同時には曲がらず、上下の端が浮いて反る。
+       この「反り」があるかどうかが、紙に見えるか板に見えるかの分かれ目になる。
+     ・上端の角は少し内へ寄せる。真四角だと後ろから見たとき頭の輪郭の外に
+       白い角が2つ飛び出して、耳のように見えてしまう。 */
+  const FR = 0.205, FPW = 0.290, FPH = 0.375;    // 巻き付ける半径・紙の幅・高さ
+  const fgeo = new THREE.PlaneGeometry(FPW, FPH, 20, 16);
+  const fp = fgeo.attributes.position;
+  for (let i = 0; i < fp.count; i++) {
+    const x = fp.getX(i), y = fp.getY(i);
+    const v = y / (FPH / 2);
+    const th = (x / (FR)) * (1 - 0.10 * Math.max(0, v));   // 上端ほど幅を絞る
+    const lift = 0.012 * v * v;                            // 上下の端が浮いて反る
+    fp.setXYZ(i, Math.sin(th) * (FR + lift), y, Math.cos(th) * (FR + lift));
+  }
+  fgeo.computeVertexNormals();
+  const face = new THREE.Mesh(fgeo, new THREE.MeshStandardMaterial({
+    map: faceTex, roughness: 0.94, metalness: 0,
+    // 「暗い部屋でも紙面が白く平坦に浮く」という v22 の狙いは emissive で残す。
+    // ただし 0.42 では明るい場所で白飛びして、印字も折り目も全部消えていた。
+    emissive: 0xffffff, emissiveMap: faceTex, emissiveIntensity: 0.20,
+  }));
+  face.position.set(0, 1.893, 0.075);      // 頭の中心（巻き付けの軸）に合わせる
+  face.rotation.x = 0.05;                  // わずかに見下ろす角度
+  face.updateMatrix(); face.applyMatrix4(headM);   // 頭と同じだけ傾ける
   g.add(face);
-
-  // === 腕（左右）。太めで大柄。右腕(+x)を下ろしマチェーテ、左腕はやや前へ ===
-  // 左腕（-x）：肩→上腕→前腕→拳
-  cyl(0.10, 0.09, 0.44, cloth, -0.37, 1.40, 0.06);                  // 上腕
-  cyl(0.085, 0.078, 0.42, cloth, -0.41, 1.02, 0.15);                // 前腕（やや前）
-  cyl(0.10, 0.10, 0.13, skin, -0.43, 0.80, 0.19);                   // 拳
-  // 右腕（+x）：下ろした腕
-  cyl(0.10, 0.09, 0.46, cloth, 0.37, 1.38, 0.04);                   // 上腕
-  cyl(0.085, 0.078, 0.44, cloth, 0.40, 0.98, 0.06);                 // 前腕
-  const rHand = cyl(0.10, 0.10, 0.14, skin, 0.42, 0.76, 0.08);      // 右拳（マチェーテ把持）
-
-  // === マチェーテ（右手に。刃を下向き・やや前へ） ===
-  const macheteGrp = new THREE.Group();
-  // 柄
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.024, 0.16, 8), handleM);
-  handle.position.y = 0.0; macheteGrp.add(handle);
-  // 柄頭
-  const pommel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.03, 8), handleM);
-  pommel.position.y = 0.09; macheteGrp.add(pommel);
-  // 刃（下向き。先端に向かって幅が出る片刃のイメージ）
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.60, 0.012), bladeM);
-  blade.position.y = -0.40; macheteGrp.add(blade);
-  // 刃先の尖り
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.10, 4), bladeM);
-  tip.position.y = -0.73; tip.rotation.x = Math.PI; tip.rotation.y = Math.PI / 4; macheteGrp.add(tip);
-  // 峰側の背（少し厚み）
-  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.58, 0.02), bladeM);
-  spine.position.set(-0.022, -0.39, 0); macheteGrp.add(spine);
-  // 右拳の位置に配置し、わずかに前傾＆外へ倒す
-  macheteGrp.position.set(0.42, 0.72, 0.12);
-  macheteGrp.rotation.set(0.35, 0, 0.12);
-  g.add(macheteGrp);
+  /* 紙の裏。DoubleSide で1枚に済ませると、横から見たとき**印字面と同じ白**が
+     裏側にも出て、頭の横に明るい板が立っているように見える。実際の紙の裏は
+     刷られていない鈍い生成りなので、裏面だけ別マテリアルで持つ。 */
+  const faceBack = new THREE.Mesh(fgeo, new THREE.MeshStandardMaterial({
+    color: 0x6e6a5c, roughness: 1.0, metalness: 0, side: THREE.BackSide,
+  }));
+  faceBack.position.copy(face.position); faceBack.quaternion.copy(face.quaternion);
+  g.add(faceBack);
+  // 紙を留めているホチキス／画鋲。革ひもと合わせて「貼り付けてある」ことを示す。
+  // 紙が円筒なので、留め具も同じ角度で法線方向へ向ける。
+  const tack = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0065, 0.010, 8), bladeM);
+  for (const [tx, ty] of [[-0.095, 0.150], [0.095, 0.150], [-0.108, -0.150], [0.108, -0.150]]) {
+    const th = tx / FR, p = tack.clone();
+    p.position.set(Math.sin(th) * FR, 1.893 + ty, 0.075 + Math.cos(th) * FR);
+    p.rotation.set(Math.PI / 2, 0, 0); p.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), th);
+    p.updateMatrix(); p.applyMatrix4(headM);
+    g.add(p);
+  }
 
   // 頭部アセンブリの参照（将来のエフェクト用に保持）
   g.userData.face = face;
@@ -3562,6 +3955,7 @@ function clockUpdate(dt) {
 /* ---------- main loop ---------- */
 let last = performance.now();
 let warmup = 4;   // タイトル表示中にシェーダを焼いておくフレーム数（下の opaqueOverlay を参照）
+const warmDir = new V3();   // 焼き込み中に怪人をカメラの正面へ置くための作業用ベクトル
 let spotFx = 0;   // 「見つかっている度合い」0..1。FilmShader の spot uniform へ渡す
 function frame(now) {
   requestAnimationFrame(frame);
@@ -3671,7 +4065,19 @@ function frame(now) {
   // 数フレーム焼いておけば、その分は待ち時間の中に隠れる。
   const opaqueOverlay = (state === "TITLE" || state === "PAUSE" || state === "END") && warmup <= 0;
   if (!opaqueOverlay) {
-    if (warmup > 0) warmup--;
+    /* 【怪人もここで焼く】怪人は 11 種類の材質を持つが、visible=false のあいだは
+       一度も描かれず、シェーダは**初めて出現した瞬間**にまとめてコンパイルされる。
+       v24 でアイテムの光源を外して直したのと同じ「選択の前後で固まる」現象が、
+       いちばん緊張する場面で起きることになる。タイトルの暗幕の裏でカメラの前に
+       置いて数フレーム描き、コンパイルを待ち時間の中に隠す。 */
+    if (warmup > 0) {
+      warmup--;
+      monster.visible = true;
+      camera.getWorldDirection(warmDir);
+      monster.position.copy(camera.position).addScaledVector(warmDir, 2.2);
+      monster.position.y = -0.2;                 // 目の高さに顔が来るよう少し沈める
+      if (warmup === 0) { monster.visible = false; monster.position.set(0, 0, 0); }
+    }
     const dimmed = state === "INSPECT" || state === "ETAX";
     aoPass.enabled    = !LOW() && !dimmed;
     bloomPass.enabled = !LOW() && !dimmed;
