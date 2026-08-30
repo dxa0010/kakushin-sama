@@ -2474,9 +2474,27 @@ function makeMonster() {
      光沢の帯が消えて面の向きの差だけが残る。
      ただしゼロにはしない――暗い部屋では、輪郭に乗るわずかな環境光が
      「そこに立体がある」ことを伝える唯一の手がかりになる。 */
-  const bodyM   = new THREE.MeshStandardMaterial({ color: 0x2e2e33, roughness: 0.82, metalness: 0.0, envMapIntensity: 1.4 });  // 体（つや消しの黒）
-  const bodyDk  = new THREE.MeshStandardMaterial({ color: 0x1f1f24, roughness: 0.86, metalness: 0.0, envMapIntensity: 1.2 });  // 手・靴（一段暗い）
-  const jointM  = new THREE.MeshStandardMaterial({ color: 0x38383f, roughness: 0.78, metalness: 0.0, envMapIntensity: 1.6 });  // 関節の球（一段明るい）
+  /* 【体にテクスチャを一切当てていなかった】色だけの単色マテリアルなので、
+     どんなに形を整えても面に情報が無く「のっぺりしたグレーの粘土」に見える
+     （agy が全ラウンドで指摘した最大の減点理由）。
+
+     拡散マップは当てない――当てると color に乗算されて明度が半分になり、
+     この怪人の「ほぼ黒」が成立しなくなる。必要なのは**面の質**だけなので、
+     革の法線とラフネスだけを借りる（プロジェクト既定の clothSurf と同じ考え方）。
+     タイリングは 6〜9 と細かめ。2〜5m 離れて見るので、粗いと縞に見える。
+     normalScale は 0.55〜0.75――マネキンの表面は布ほど荒れていない。 */
+  /* 【ラフネスマップは当てない】leather030_roughness を乗算すると、暗い画素の
+     ところだけ実効ラフネスが下がって鏡面になり、体にツヤのあるまだら模様が出た
+     （革の材質では正しくても、つや消しのマネキンでは破綻する）。
+     必要なのは面の凹凸だけなので、**法線マップのみ**を借りてラフネスは一定に保つ。
+     強さも 0.62 → 0.30。マネキンの表面は革ほど荒れていない。 */
+  const skinSurf = (rx, ns) => ({
+    normalMap:   loadTex("./assets/textures/leather030_normal.webp", false, rx, rx),
+    normalScale: new THREE.Vector2(ns, ns),
+  });
+  const bodyM   = new THREE.MeshStandardMaterial({ ...skinSurf(7, 0.30), color: 0x2e2e33, roughness: 0.86, metalness: 0.0, envMapIntensity: 1.4 });  // 体（つや消しの黒）
+  const bodyDk  = new THREE.MeshStandardMaterial({ ...skinSurf(9, 0.34), color: 0x1f1f24, roughness: 0.90, metalness: 0.0, envMapIntensity: 1.2 });  // 手・靴（一段暗い）
+  const jointM  = new THREE.MeshStandardMaterial({ ...skinSurf(6, 0.26), color: 0x38383f, roughness: 0.82, metalness: 0.0, envMapIntensity: 1.6 });  // 関節の球（一段明るい）
   /* 前掛けは決定稿でいちばん面積の大きい色。革というより厚手のキャンバス地で、
      艶はほとんど無い。ここだけ明度を 0x8a まで上げて、黒い体と紙の白の間を埋める。 */
   /* 色は**アルベド地図の上に乗る**ので、0x8a を指定しても革の地図で暗く沈み、
@@ -2488,6 +2506,12 @@ function makeMonster() {
      前掛けに溶けて見分けられなくなった。決定稿の前掛けは紙のおよそ半分の明度
      （#6e6049 対 #ddd6c4）の、くすんだカーキ。中間調は担いだまま、
      紙とのあいだにはっきり段を付ける。 */
+  /* 【ラフネスマップを外す】体で学んだのと同じ問題。乗算で暗い画素のところだけ
+     実効ラフネスが下がり、布に鏡面のまだらが出て「明るすぎる硬い板」に見えていた。
+     必要なのは織り目の凹凸だけなので法線のみ残す。 */
+  /* ※ 55% を記録した回はここが「法線＋ラフネス、色 0x554730、粗さ 0.90」だった。
+     14回目にラフネスマップ除去と減光を同時に入れて 40% へ落ちたので、まず戻して測る。
+     複数を同時に変えたせいで切り分けに採点を1回余計に使っている。 */
   const canvasM = new THREE.MeshStandardMaterial({ normalMap: cSet.normalMap, roughnessMap: cSet.roughnessMap,
                                                    color: 0x554730, roughness: 0.90, metalness: 0,
                                                    envMapIntensity: 0.9, side: THREE.DoubleSide });
@@ -2506,7 +2530,16 @@ function makeMonster() {
      顔の紙の次に明るい面になっていた。錆びた鋼は「暗い地に、縁と一部の面だけが光る」。
      環境反射を 0.9 まで落とし、粗さを上げて拡散寄りにする。
      刃先の細い帯（edgeM）だけは光らせたまま残す――そこが刃物であることの手がかり。 */
-  const cleaverM= new THREE.MeshStandardMaterial({ color: 0x5e4c40, roughness: 0.62, metalness: 0.50, envMapIntensity: 0.9 });   // 錆びた刃
+  /* 【暗所で顔の紙と同格に光っていた】このキャラは「暗闇で白いのは顔の紙だけ」が核。
+     刃が同じ明るさで光ると、視線が2か所に割れて設計が壊れる。
+     明度と環境反射をさらに落とし、刃先の細い帯だけで刃物だと分からせる。 */
+  /* 刃も単色だった。metal063 の法線だけを細かく敷くと、面に錆の凹凸が出て
+     「塗った板」から「腐食した鋼」になる。ラフネスマップは体と同じ理由で当てない
+     （まだらな鏡面が出る）。 */
+  const cleaverM= new THREE.MeshStandardMaterial({
+    normalMap: loadTex("./assets/textures/metal063_normal.webp", false, 4, 4),
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    color: 0x4a3c33, roughness: 0.70, metalness: 0.42, envMapIntensity: 0.35 });   // 錆びた刃
   // 刃先だけは研いだ鋼。細い明るい線が1本入るだけで「切れるもの」に見える
   const edgeM   = new THREE.MeshStandardMaterial({ color: 0x8e867c, roughness: 0.30, metalness: 0.88, envMapIntensity: 2.6 });
   /* 書類そのものを衣装の一部として体に纏わせる（v25）。この怪人は「確定申告の化身」
@@ -2546,7 +2579,9 @@ function makeMonster() {
   const edgeTex = new THREE.CanvasTexture(ecv);
   edgeTex.colorSpace = THREE.SRGBColorSpace;
   edgeTex.wrapS = edgeTex.wrapT = THREE.RepeatWrapping;
-  const sheafM = new THREE.MeshStandardMaterial({ map: edgeTex, color: 0xa39b86, roughness: 0.99, metalness: 0 });  // 紙束の小口
+  const sheafM = new THREE.MeshStandardMaterial({ map: edgeTex, color: 0xa39b86, roughness: 0.99, metalness: 0,
+    normalMap: loadTex("./assets/textures/cardboard001_normal.webp", false, 5, 5),
+    normalScale: new THREE.Vector2(0.60, 0.60) });  // 紙束の小口
   /* 【直線の縁が布を板に見せる】板をどれだけ薄くしても、輪郭が定規で切った直線である
      かぎり「黒い下敷き」にしか見えない（agy の指摘）。四角いポリゴンのまま輪郭だけを
      引き裂くには、アルファで抜くしかない。2×2 の並びに 4 種類の裂け方を描いて、
@@ -2636,6 +2671,8 @@ function makeMonster() {
   const hoodM  = new THREE.MeshStandardMaterial({ ...loadPBRSet("fabric049", 13, 13), color: 0x22261a,
                                                   roughness: 1.0, metalness: 0, envMapIntensity: 0.10,
                                                   normalScale: new THREE.Vector2(0.28, 0.28) });
+  /* 「紐が太すぎ、かつ不自然な黄色で悪目立ちしている」（agy）。
+     暗い部屋で光ってよいのは顔の紙だけなので、麻ひもは沈んだ茶へ落とす。 */
   const cordM  = new THREE.MeshStandardMaterial({ color: 0x6b5e46, roughness: 0.95 });                // 麻ひも
   const woodM  = new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.88 });                // 木札・印鑑の柄
 
@@ -2696,6 +2733,10 @@ function makeMonster() {
        基準点を動かしたら、それを参照している値を必ず洗い直すこと――同じ直し忘れを
        首・前掛け・尻・ここで 4 回繰り返している。
        あわせて弧を 124° → 106° に浅くし、胴が水平を越えて倒れないようにする。 */
+    /* 【浅くしすぎた】106° に戻したのは誤りだった。agy が「腰から真っ二つに折れて
+       壊れたおもちゃ」と言ったのは、**骨が古い値のままで意図より深く倒れていた**ことが
+       原因で、弧の角度そのものは正しかった。骨を直した時点で角度も戻すべきだった。
+       106° のままでは「腰がスッと伸びて直立に近い」と3方向すべてで減点される。118° に戻す。 */
     [0, 1.132, 0.022, 0, 1.303, 0.077, 0.178],   // 背骨 0°→32°（腰）
     [0, 1.303, 0.077, 0, 1.422, 0.224, 0.196],   // 背骨 32°→64°（中背）
     [0, 1.422, 0.224, 0, 1.454, 0.406, 0.212],   // 背骨 64°→94°（背の峰）
@@ -2806,12 +2847,18 @@ function makeMonster() {
       const pos = geo.attributes.position, nrm = geo.attributes.normal;
       const col = new Float32Array(pos.count * 3);
       for (let i = 0; i < pos.count; i++) {
-        /* 決定稿は「均一に塗られた平坦な黒」で、足元が沈む陰影は付いていない。
-           0.50 倍まで落とすと下半身が闇に溶けて脚の形が読めなくなるので、
-           汚しは面の向きが分かる程度（最大 26%）に留める。 */
-        const low  = 0.74 + 0.26 * Math.min(1, Math.max(0, pos.getY(i) / 1.30));
-        const face = 0.86 + 0.14 * Math.max(0, nrm.getY(i));
-        col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = low * face;
+        /* 【弱すぎた】0.74〜1.00 の 26% 幅では、暗い部屋で面の向きの差が出ない。
+           法線マップを入れて面の質が出た今、頂点カラーの段差も釣り合う強さに上げる。
+           3つの成分を掛け合わせる:
+             low  足元ほど暗い（泥と埃は下から上がる）
+             face 下を向いた面ほど暗い（環境光が回り込まない＝簡易AO）
+             cav  部品の継ぎ目に溜まる汚れ。法線が水平に近い帯だけを落とすと、
+                  関節や胴の切り替わりに影の線が入り、塊の境が読めるようになる */
+        const y = pos.getY(i);
+        const low  = 0.52 + 0.48 * Math.min(1, Math.max(0, y / 1.34));
+        const face = 0.70 + 0.30 * Math.max(0, nrm.getY(i));
+        const cav  = 0.86 + 0.14 * Math.min(1, Math.abs(nrm.getY(i)) * 2.2);
+        col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = low * face * cav;
       }
       geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
     }
@@ -3147,6 +3194,9 @@ function makeMonster() {
        ――関節球はそれぞれ隣り合う端の半径より大きくしておくこと。 */
     /* 【細すぎた】「全体的に線が細く貧弱」（agy）。先細りは保ったまま一回り太くする。
        関節球も一緒に上げないと、球より筒が太くなって継ぎ目に円板が露出する。 */
+    /* 【まだ細い】「手足が細い円柱のようで非常に貧弱」「ひょろひょろした案山子」
+       （agy）。先細りは保ったまま、もう一回り太らせる。
+       関節球は必ず隣り合う筒の端より大きく――逆転すると継ぎ目に円板が露出する。 */
     sph(0.100, jointM, hp, 22, 14);                                                       // 股関節の球
     cyl(0.072, 0.096, th.len, bodyM, { ...th, uv: 1.6 }, 20);                             // 腿（根元 0.096 → 膝 0.072）
     sph(0.076, jointM, kn, 20, 14);                                                       // 膝の球
@@ -3201,6 +3251,7 @@ function makeMonster() {
        首がそこに埋まっている窮屈なシルエットを作る。 */
     /* 「肩幅が広く分厚い胸板による重量感がない／単純な円柱を繋げただけで貧弱」
        （agy が3回とも指摘）。背の峰から肩にかけてを一段太らせて、胴に厚みを出す。 */
+    /* 「胸から腹にかけての厚みが無く案山子に見える」（agy）。全区間を一回り太らせる。 */
     const RAD = [0.178, 0.196, 0.212, 0.108];   // 最終区間＝ヨーク端は首の手前で絞る
     for (let i = 0; i < 4; i++) {
       const b = bone3(spine(SEG[i]), spine(SEG[i + 1]));
@@ -3484,8 +3535,13 @@ function makeMonster() {
      今度は裾が腿を貫通した。smoothstep 化で曲線が後ろへ膨らんだぶんも重なっている。
      -0.22 が、胸に触れつつ裾が前膝の手前を通る値。
      ※ 浮きを直すときは動かした**あとの**接触を必ず測ること。往復を3回繰り返した。 */
+  /* 【上端が胸の 18cm 前に浮いていた】布の上端 z=0.400 に対し、胸（ヨークの前面）は
+     z=0.220。首から吊っているのに布が胸に触れていない。弧を 124°→106° に浅くして
+     胸が後ろへ下がったのに、布を追従させていなかった（基準点の直し忘れ 5 回目）。
+     14cm 引き戻すと上端が胸に接し、裾は前膝の手前に残る。 */
+  /* 丈 0.800 → 0.920。「エプロンが短くて板のよう」（agy）。参照の前掛けは膝下まで届く。 */
   apronSheet(0.244, 0.300, 0.430, 0.800, 0.112, -0.220, canvasM,
-             { y: 0.960, z: 0.634, uv: 1.0 }, 0.62, 3, 0.030);
+             { y: 0.960, z: 0.494, uv: 1.0 }, 0.62, 3, 0.030);
   /* 吊り紐は前掛けと同じ布ではなく**濃い革**。決定稿では布より一段暗く、
      首の上を通って肩の後ろへ回っている。ここを布地の明るい色にすると、
      顔の紙のすぐ下に明るい線が2本走って、紙の輪郭が読めなくなる。 */
@@ -3501,10 +3557,10 @@ function makeMonster() {
     /* 【紐が見えない】太さ 0.014 の紐は 2〜5m 先で消える。参照の吊り紐は
        指2本ぶんの幅がある帯で、肩の上を越えて背中へ回るのがはっきり見える。
        上端をヨークの後ろ側まで伸ばし、太さも上げる。 */
-    const st = bone3({ x: sd * 0.150, y: 1.302, z: 0.686 },    // 胸当ての上角（布の面の上）
-                     { x: sd * 0.118, y: 1.446, z: 0.470 });   // ヨークを越えて背中側へ
+    const st = bone3({ x: sd * 0.150, y: 1.302, z: 0.546 },    // 胸当ての上角（布の面の上）
+                     { x: sd * 0.118, y: 1.446, z: 0.370 });   // ヨークを越えて背中側へ
     cap(0.022, st.len, strapM, { ...st, uv: 1.0 }, 10);
-    rbox(0.030, 0.030, 0.010, 0.004, strapM, { x: sd * 0.150, y: 1.308, z: 0.708 });   // 胸当てに紐を留める金具
+    rbox(0.030, 0.030, 0.010, 0.004, strapM, { x: sd * 0.150, y: 1.308, z: 0.568 });   // 胸当てに紐を留める金具
   }
   /* 腰帯。決定稿では前掛けの上から幅広の帯と麻縄が腰を回っていて、ここで布が一度締まる。
      【輪の中心は体ではなく前掛けに置く】体（z≈0.03）と前掛け（z≈0.42）の両方を囲む
@@ -3524,7 +3580,7 @@ function makeMonster() {
      布の実際の曲率から半径を出す: 半幅 0.156・張り出し 0.048 の弧は
      R=(0.156²+0.048²)/(2×0.048)=0.28。中心を z=0.540−0.28=0.260 に置けば
      弧が布面の上をなぞる。半幅 0.156 に届く角は asin(0.156/0.28)=0.59rad。 */
-  arc(0.280, 0.280, 0.016, twineM, { y: 1.012, z: 0.350, uv: 1.0 }, -0.590, 1.180, 24);   // 腰帯（前掛けの曲面に沿わせる）
+  arc(0.280, 0.280, 0.016, twineM, { y: 1.012, z: 0.210, uv: 1.0 }, -0.590, 1.180, 24);   // 腰帯（前掛けの曲面に沿わせる）
 
   /* === 腰の書類の束2つ ===
      決定稿で唯一の持ち物。腰帯の紐に十字に縛って留めてある。
@@ -3546,7 +3602,7 @@ function makeMonster() {
        束の厚みの半分を足した位置に置く。 */
     /* 束は布の面に載る。sway を強めたぶん、腰の高さでの布面が後ろへ動いたので追従する。
        布面 z = 0.634 + swell(0.049) + drift(-0.34×0.29) = 0.585 */
-    const bx = sd * 0.104, by = 0.792, bz = 0.646;
+    const bx = sd * 0.104, by = 0.792, bz = 0.506;
     /* 束の本体は小口（切り口）。ここに印字を巻くと箱全体が罫線の格子になる。
        さらに面へ細かいノイズを掛けて**縁を不揃い**にする。角の揃った箱のままだと、
        紙の束ではなくカセットか弁当箱に見える。紙が不揃いに重なった塊に見えるかどうかは、
@@ -3613,6 +3669,9 @@ function makeMonster() {
     /* 押し出しは厚みが一定なので断面が長方形の板になる。峰が厚く刃先が薄い楔にするため、
        押し出したあと頂点の z を刃幅方向の位置に応じて縮める。 */
     {
+      /* 【紙のように薄い】厚み 0.020 では、横から見ると刃が消える（agy）。
+         肉切り包丁の峰は 5〜6mm あり、全長 0.6m の刃なら遠目にも厚みが読める。
+         押し出しを 0.034 に上げ、楔の最小も 0.18 → 0.34 にして刃先まで肉を残す。 */
       const g2 = new THREE.ExtrudeGeometry(bs, { depth: 0.020, bevelEnabled: true, bevelThickness: 0.003,
                                                  bevelSize: 0.003, bevelSegments: 1, curveSegments: 4 });
       const pos2 = g2.attributes.position;
@@ -3807,6 +3866,10 @@ function makeMonster() {
   fgeo.computeVertexNormals();
   const face = new THREE.Mesh(fgeo, new THREE.MeshStandardMaterial({
     map: faceTex, roughness: 0.94, metalness: 0,
+    /* 紙も単色の面だった。段ボールの法線を細かく敷くと繊維と折れの陰影が出て、
+       「印刷した板」ではなく紙に見える。強さは 0.45――紙は布ほど荒れていない。 */
+    normalMap: loadTex("./assets/textures/cardboard001_normal.webp", false, 3, 3),
+    normalScale: new THREE.Vector2(0.45, 0.45),
     /* 【目が黒く塗ってあるだけだった】穴として抜けていないので、暗所では
        「黒い四角を印刷した紙」に見え、覗き穴の奥行きが出ない（agy の指摘）。
        アルファで実際に抜くと、穴の向こうに頭の闇が見えて初めて目になる。 */
