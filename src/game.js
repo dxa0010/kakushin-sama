@@ -2445,7 +2445,8 @@ function makeMonster() {
   const scalp   = new THREE.MeshStandardMaterial({ color: 0x0e0d0a, roughness: 1.0, envMapIntensity: 0.1 });                                      // 頭頂（汚れた髪/頭皮）＝白いオーブ化を防ぐ
   const boot    = new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 2.4, 2.4), color: 0x4a3f31, roughness: 0.45, metalness: 0.08, envMapIntensity: 4.0 }); // 使い込んだ革のブーツ
   const bootSole= new THREE.MeshStandardMaterial({ color: 0x17140f, roughness: 0.95 });                                      // 靴底
-  const strapM  = new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 3.5, 3.5), color: 0x6a5238, roughness: 0.45, envMapIntensity: 4.0 }); // 革ベルト・紙の縛り
+  const strapM  = new THREE.MeshStandardMaterial({ ...loadPBRSet("leather030", 3.5, 3.5), color: 0x6a5238, roughness: 0.45, envMapIntensity: 4.0,
+                                                   side: THREE.DoubleSide }); // 革ベルト・紙の縛り（腰帯は開いた面なので両面）
   /* 前掛けの革。ベルトと同じ強い艶（roughness 0.45 / envMap 4.0）を使うと、
      胸に黒光りする甲羅を着けたように見える。艶を落として、外套より一段明るくし、
      「布の上に革を一枚あてている」という層の重なりが読めるようにする。 */
@@ -2481,10 +2482,12 @@ function makeMonster() {
      （#6e6049 対 #ddd6c4）の、くすんだカーキ。中間調は担いだまま、
      紙とのあいだにはっきり段を付ける。 */
   const canvasM = new THREE.MeshStandardMaterial({ normalMap: cSet.normalMap, roughnessMap: cSet.roughnessMap,
-                                                   color: 0x6b5b40, roughness: 0.90, metalness: 0,
+                                                   color: 0x554730, roughness: 0.90, metalness: 0,
                                                    envMapIntensity: 0.9, side: THREE.DoubleSide });
-  const twineM  = new THREE.MeshStandardMaterial({ color: 0xa89877, roughness: 0.96 });                                          // 書類を縛る麻ひも
-  const cleaverM= new THREE.MeshStandardMaterial({ color: 0x6a4c36, roughness: 0.64, metalness: 0.54, envMapIntensity: 2.0 });   // 錆びた刃
+  const twineM  = new THREE.MeshStandardMaterial({ color: 0xa89877, roughness: 0.96, side: THREE.DoubleSide });                                          // 書類を縛る麻ひも
+  /* 刃は体より明るくする。得物が何かを読ませるのは演出ではなく操作の前提で、
+     暗所で体と同じ明度だと「腕の延長」に溶けて、振り上げが見えない。 */
+  const cleaverM= new THREE.MeshStandardMaterial({ color: 0x8a6244, roughness: 0.58, metalness: 0.52, envMapIntensity: 2.8 });   // 錆びた刃
   /* 書類そのものを衣装の一部として体に纏わせる（v25）。この怪人は「確定申告の化身」
      なので、腰から下げた申告書の束・体に貼り付いた通知・首から提げた木札が、
      そのままシルエットを壊す装飾になる。紙は1枚の共通テクスチャで、部品ごとに
@@ -2618,19 +2621,24 @@ function makeMonster() {
   /* 【x も潰す】距離場は x-y 平面では真円なので、weld を掛けた胴はどう置いても
      「幅＝奥行き」の丸太になる。決定稿の胴は肩甲骨のヨークで幅 0.45・奥行き 0.32 と
      **明らかに横へ広い**（正面図で胴が肩幅いっぱいに張り、側面図では薄い）。
-     x を 1.28 で割った空間で測れば、同じ1本の芯のまま扁平な胴になる。 */
-  const BONE_XS = 1.28;
+     x を 1.44 で割った空間で測れば、同じ1本の芯のまま扁平な胴になる。
+     【1.28 では足りなかった】ヨークの半幅が 0.225 にしかならず、
+     肩の球（x±0.315・半径 0.082、内側の縁が 0.233）と 8mm しか重ならないので、
+     遠近のついた正面図では胴と肩のあいだに隙間が開き、球が宙に浮いて見えた。
+     参照のヨークは半幅 0.265 で、肩の球へ 2cm 食い込んでいる。 */
+  const BONE_XS = 1.44;
   /** [ax, ay, az, bx, by, bz, r] — x を BONE_XS、z を BONE_ZS で割った空間での値
    *  （＝世界座標の z をここに書くときは BONE_ZS で割ってから書く）。
    *  【肩は胴の芯に入れない】決定稿の肩関節は胴の前端ではなく**弓なりの背の後ろ側**、
    *  ほぼ骨盤の真上に付いている（側面図で三角筋の輪が背の峰より 0.2m 後ろにある）。
    *  肩を距離場に入れると胴が横へ膨らんで、そこが「胸」に見えてしまうので入れない。 */
   const BONES = [
-    [0, 1.020, 0.033, 0, 1.160, 0.044, 0.163],   // 骨盤
-    [0, 1.160, 0.044, 0, 1.330, 0.100, 0.170],   // 腰（ほぼ垂直に立ち上がる）
-    [0, 1.330, 0.100, 0, 1.462, 0.222, 0.176],   // 背の峰＝肩甲骨のヨーク（全身の最高点）
-    [0, 1.462, 0.222, 0, 1.452, 0.383, 0.140],   // ヨークの前端（首の付け根へ絞る）
-    [0, 1.452, 0.383, 0, 1.436, 0.578, 0.098],   // 首（前へ長く突き出す）
+    [0, 0.995, 0.030, 0, 1.160, 0.044, 0.156],   // 骨盤（尻の丸みを持たせる）
+    [0, 1.160, 0.044, 0, 1.330, 0.078, 0.164],   // 腰椎まで（ほぼ垂直に立ち上がる）
+    [0, 1.330, 0.078, 0, 1.462, 0.232, 0.178],   // 背の峰（前へ折れる／全身の最高点）
+    [0, 1.462, 0.232, 0, 1.436, 0.492, 0.140],   // 肩甲骨のヨーク（頭を前へ運ぶ太い塊）
+    // ※ 首は距離場に含めない。細い管を胴と溶かすと、ヨークと首の境が消えて
+    //    「胴から直接生えた首」になり、肩の塊が読めなくなる。
   ];
   /** 滑らかな最小値。k が大きいほど継ぎ目に肉が付く */
   const smin = (a, b, k) => {
@@ -2866,10 +2874,28 @@ function makeMonster() {
      高さ 1.65m での実測値（正面図・側面図を高さ 1.0 に正規化して換算）:
        股関節 y1.12/z0.03 ・ 背の峰 y1.46/z0.20 ・ 首の付け根 y1.45/z0.35
        頭 y1.43/z0.64 ・ 肩関節 x±0.315 y1.45/z0.055 */
-  const HIP  = { y: 1.120, z: 0.030 };   // 股関節
-  const CREST= { y: 1.462, z: 0.200 };   // 背の峰＝肩甲骨のヨーク（全身でいちばん高い）
-  const NECK = { y: 1.452, z: 0.345 };   // 首の付け根
-  const HEAD = { y: 1.428, z: 0.640 };   // 頭の中心。紙・革ひも・留め具はここを基準に置く
+  /* === 骨格の基準点 ===
+     この5点だけで姿勢が決まる。部品はすべてこの点のあいだに置くので、
+     姿勢を変えたいときは部品ではなくここを動かす。
+
+       HIP   股関節。胴を前へ折る支点。骨盤の球と腿の付け根がここに集まる
+       LUMB  腰椎のあたり。HIP からほぼ垂直に立ち上がった先で、ここから前へ折れる
+       CREST 背の峰＝丸めた背中のてっぺん。**全身でいちばん高い点**
+       YOKE  肩甲骨のヨークの前端。ここに肩の球が付き、ここから首が出る
+       HEAD  頭の中心。顔の紙・麻縄・留め具はすべてこの点を基準に置く
+
+     【猫背は首ではなく関節の屈曲で作る】頭が骨盤より 61cm 前に出ているのは、
+     首を伸ばしたからではなく、**股関節で胴を折り、背を弓なりにした**結果。
+     首は 12cm しかない。
+     一度この構造を「胴はほぼ直立・首を 30cm 伸ばす」に置き換えた版を作ったが、
+     輪郭の計測値はほとんど同じままで、見た目だけが鶴のような別の生き物になった。
+     **シルエットの一致は「長い首＋直立」と「短い首＋深い屈曲」を区別しない**ので、
+     ここは計測ではなく構造の決めごととして守る。 */
+  const HIP  = { y: 1.120, z: 0.030 };   // 股関節＝胴を折る支点
+  const LUMB = { y: 1.330, z: 0.078 };   // 腰椎。ここまでほぼ垂直に立ち上がる
+  const CREST= { y: 1.462, z: 0.232 };   // 背の峰（全身でいちばん高い点）
+  const YOKE = { y: 1.436, z: 0.492 };   // 肩甲骨のヨークの前端＝首の付け根
+  const HEAD = { y: 1.428, z: 0.640 };   // 頭の中心（HIP より 0.61m 前・0.31m 上）
   /** 2点を結ぶ骨。put の {x,y,z,rx,rz,len} を返す。
    *  カプセル・円柱は局所 +y へ伸びるので、Euler XYZ（＝rz を先、rx を後に効かせる）で
    *  (0,1,0) は (-sin rz, cos rz·cos rx, cos rz·sin rx) へ行く。これを目的の向きに合わせる。
@@ -2901,7 +2927,7 @@ function makeMonster() {
      「棒の先に点が2つ」になっていた。 */
   for (const s of [-1, 1]) {
     const fwd = s < 0;                                   // 大鉈を持つ側の脚を前へ踏み出す
-    const kz = fwd ? 0.170 : -0.060, az = fwd ? 0.330 : -0.190;
+    const kz = fwd ? 0.080 : -0.030, az = fwd ? 0.330 : -0.190;
     const hp = { x: s * 0.150, y: HIP.y,  z: HIP.z };
     const kn = { x: s * 0.222, y: 0.552,  z: HIP.z + kz };
     const an = { x: s * 0.240, y: 0.098,  z: HIP.z + az };
@@ -2924,38 +2950,41 @@ function makeMonster() {
      等値面に近づけて、寄せたあとの三角形が偏らないようにするためだけのもの。 */
   sph(0.166, bodyM, { y: 1.070, z: 0.028, sx: 1.26, sy: 0.96, sz: 0.92, uv: 1.8, weld: true }, 26, 16);   // 骨盤
   {
-    const a = bone3({ y: HIP.y, z: HIP.z }, { y: 1.330, z: 0.090 });
-    const b = bone3({ y: 1.330, z: 0.090 }, { y: CREST.y, z: CREST.z });
-    cap(0.176, a.len - 0.06, bodyM, { ...a, sx: 1.26, sz: 0.90, uv: 2.0, weld: true }, 28);   // 腰（ほぼ垂直に立ち上がる）
-    cap(0.180, b.len - 0.06, bodyM, { ...b, sx: 1.28, sz: 0.90, uv: 2.0, weld: true }, 28);   // 峰へ（前へ傾きながら）
+    /* 背骨は2区間の弧。HIP→LUMB はほぼ垂直（前傾 12度）、LUMB→CREST で前へ折れる（55度）。
+       この「立ち上がってから折れる」形が、頭の高さでも背中側に質量を残す。
+       一直線に倒すと上へ行くほど質量が前へ逃げ、背の峰そのものが消える。 */
+    const a = bone3(HIP, LUMB);      // 腰椎まで＝腰の立ち上がり
+    const b = bone3(LUMB, CREST);    // 腰椎から背の峰まで＝丸めた背中
+    cap(0.176, a.len - 0.06, bodyM, { ...a, sx: 1.26, sz: 0.90, uv: 2.0, weld: true }, 28);   // 腰（ほぼ垂直）
+    cap(0.180, b.len - 0.06, bodyM, { ...b, sx: 1.28, sz: 0.90, uv: 2.0, weld: true }, 28);   // 背中（前へ折れる）
   }
   /* 峰は全身の最高点。参照画では、いちばん高いのは頭でも肩でもなく丸めた背中で、
      頭頂はそこから 2〜3% 下に並ぶ。ここを潰すと「うつむいた直立」に戻る。 */
   sph(0.180, bodyM, { y: CREST.y, z: CREST.z, sx: 1.30, sy: 0.96, sz: 1.00,
                       uv: 2.0, weld: true }, 28, 16);                                                             // 背の峰
 
-  /* === 首（長い）・頭 ===
-     決定稿の首は短くない。ヨークの前端 z=0.35 から z=0.52 まで、太いまま
-     ほぼ水平に前へ突き出し、その先に頭が乗る。頭が骨盤より 0.6m 前に出ているのは
-     胴を倒したからではなく**この首**による。前の版は首 6cm で、その分を
-     胴を前へ倒して稼いでいたため、腰から上が丸ごと前へ流れて背の峰が消えていた。 */
+  /* === 肩甲骨のヨーク・首・頭 ===
+     背の峰から前下がりに伸びる**太い塊**がヨーク（肩甲骨と僧帽筋にあたる部分）。
+     頭を前へ運んでいるのはこのヨークであって、首ではない。
+     首はヨークの前端から頭までの 12cm だけで、太さも 0.104 と胴に近い。
+     ここを細く長い管にすると、猫背の怪人ではなく鶴になる。 */
   {
-    const n0 = bone3({ y: CREST.y, z: CREST.z }, { y: NECK.y, z: NECK.z });
-    const n1 = bone3({ y: NECK.y, z: NECK.z }, { y: 1.436, z: 0.520 });
-    cap(0.150, n0.len, bodyM, { ...n0, uv: 2.0, weld: true }, 24);   // ヨークの前端
-    cap(0.104, n1.len, bodyM, { ...n1, uv: 1.4, weld: true }, 22);   // 首
+    const yk = bone3(CREST, YOKE);                                   // 背の峰 → ヨークの前端
+    const nk = bone3(YOKE, { y: HEAD.y + 0.008, z: HEAD.z - 0.020 }); // ヨークの前端 → 頭
+    cap(0.152, yk.len - 0.02, bodyM, { ...yk, sx: 1.24, uv: 2.0, weld: true }, 26);   // ヨーク（肩甲骨まわりの塊）
+    cap(0.104, nk.len, bodyM, { ...nk, uv: 1.4 }, 22);                                // 首（短い）
   }
   const headM = new THREE.Matrix4().makeTranslation(0, HEAD.y, HEAD.z)
     .multiply(new THREE.Matrix4().makeRotationX(0.10))
     .multiply(new THREE.Matrix4().makeTranslation(0, -HEAD.y, -HEAD.z));
   /* 頭は幅 0.27・高さ 0.35・奥行き 0.31 の卵。参照では**縦に長い**（正面図で
      顔の紙とほぼ同じ幅しかないのに、側面図では紙より高く飛び出している）。 */
-  sph(0.150, bodyM, { y: HEAD.y, z: HEAD.z, sx: 0.90, sy: 1.16, sz: 1.02, pre: headM }, 26, 18);
+  sph(0.158, bodyM, { y: HEAD.y, z: HEAD.z, sx: 0.88, sy: 1.14, sz: 1.00, pre: headM }, 26, 18);
   /* 紙を留めている麻縄。決定稿では紙の上端の高さに1本だけ横へ回して、
      結び目の輪が頭の後ろ上に飛び出している。頭は上へ行くほど細るので、
      縄の輪も頭の断面に合わせて（x 0.126 / z 0.179）小さくする。 */
-  tor(0.126, 0.011, strapM, { y: HEAD.y + 0.100, z: HEAD.z, rx: Math.PI / 2, sy: 1.42, uv: 2.0, pre: headM });
-  tor(0.026, 0.008, strapM, { x: -0.028, y: HEAD.y + 0.150, z: HEAD.z - 0.104, rx: 0.5, rz: 0.4, pre: headM }, 12);  // 結び目の輪
+  tor(0.126, 0.011, cordM, { y: HEAD.y + 0.100, z: HEAD.z, rx: Math.PI / 2, sy: 1.42, uv: 2.0, pre: headM });
+  tor(0.024, 0.008, cordM, { x: -0.022, y: HEAD.y + 0.132, z: HEAD.z - 0.072, rx: 0.6, rz: 0.4, pre: headM }, 12);  // 結び目の輪
 
   /* === 腕（長い。肘で曲げる）===
      上腕は肩から**下がりつつ後ろへ**、前腕は肘から**下がりつつ前へ**。
@@ -3024,12 +3053,19 @@ function makeMonster() {
     cap(0.014, st.len, strapM, { ...st, uv: 1.0 }, 8);
     rbox(0.030, 0.030, 0.010, 0.004, strapM, { x: sd * 0.166, y: 1.246, z: 0.398 });   // 留めの金具
   }
-  /* 腰帯。決定稿では前掛けの上から幅広の帯と麻縄が腰をぐるりと回っていて、
-     ここで布が一度締まる。前の版は前面に紐を1本渡しただけで、
-     「板を吊っているだけ」に見えていた。体（z≈0.03）から前掛け（z≈0.42）までを
-     囲むので、z 方向に引き伸ばした輪にする。 */
-  tor(0.232, 0.020, strapM, { y: 1.048, z: 0.150, rx: Math.PI / 2, sy: 1.24, uv: 2.0 }, 26);
-  tor(0.238, 0.009, twineM, { y: 0.996, z: 0.152, rx: Math.PI / 2, sy: 1.24, uv: 2.0 }, 26);
+  /* 腰帯。決定稿では前掛けの上から幅広の帯と麻縄が腰を回っていて、ここで布が一度締まる。
+     【輪の中心は体ではなく前掛けに置く】体（z≈0.03）と前掛け（z≈0.42）の両方を囲む
+     大きな輪にすると、横から見たときに体と布の間の空間を通る**フラフープ**になった。
+     前掛け寄り（z=0.28・半径 0.21）に置くと、輪の後ろ半分が胴（前面 z≈0.18）に
+     埋まって見えなくなり、前半分だけが「布を締めている帯」として残る。
+     半径は前掛けの端（x±0.18, z 0.39）をちょうど通る値。 */
+  /* 【輪にしてはいけない】体（z≈0.03）と前掛け（z≈0.42）の両方を囲む輪にすると、
+     横からも正面からも**空中を通るフラフープ**として読めてしまう。決定稿の帯は
+     前掛けの面の上を通っているだけなので、布と同じ曲率の弧として置く。
+     apronSheet の反り（bow 0.058・半幅 0.18）を通る円は半径 0.573・中心 z=-0.154。
+     端は前掛けの縁（x±0.18）をわずかに越えたところで切る。 */
+  arc(0.573, 0.573, 0.078, strapM, { y: 1.048, z: -0.142, uv: 1.0 }, -0.335, 0.670, 24);
+  arc(0.578, 0.578, 0.016, twineM, { y: 0.994, z: -0.134, uv: 1.0 }, -0.345, 0.690, 24);
 
   /* === 腰の書類の束2つ ===
      決定稿で唯一の持ち物。腰帯の紐に十字に縛って留めてある。
@@ -3037,14 +3073,17 @@ function makeMonster() {
      参照では 1個が幅 0.20・高さ 0.25 と**縦に長い**書類の塊で、前掛けの縁から
      左右にはみ出している。前の版は 0.162×0.118 の平たい札で、腰の飾りに見えていた。 */
   for (const sd of [-1, 1]) {
-    const bx = sd * 0.148, by = 0.884, bz = 0.452;
-    rbox(0.196, 0.246, 0.078, 0.006, paperM, { x: bx, y: by, z: bz, ry: sd * 0.34, rz: sd * 0.05, uv: 1.0 });
+    /* 束は前掛けの布に**接して**いること。ry を 0.34 も振ると内側の角が布から
+       浮いて、腰から生えた引き出しの取っ手に見えた。z も前掛けの面（y=0.88 で
+       z≈0.40）に合わせて置き直す。 */
+    const bx = sd * 0.132, by = 0.884, bz = 0.438;
+    rbox(0.182, 0.232, 0.072, 0.006, paperM, { x: bx, y: by, z: bz, ry: sd * 0.20, rz: sd * 0.05, uv: 1.0 });
     for (let i = 0; i < 4; i++)                // 紙の層。縁をわずかにずらして「束」に見せる
-      plate(0.186 - i * 0.006, 0.238, paperM,
-            { x: bx + (i - 1.5) * 0.004 + sd * 0.014, y: by + (i - 1.5) * 0.005, z: bz + 0.040 + i * 0.0014,
-              ry: sd * 0.34, rz: sd * 0.05 });
-    cap(0.0060, 0.190, twineM, { x: bx, y: by, z: bz + 0.044, rz: Math.PI / 2, ry: sd * 0.34, uv: 1.0 }, 6);   // 横に回した紐
-    cap(0.0060, 0.230, twineM, { x: bx, y: by, z: bz + 0.044, ry: sd * 0.34, uv: 1.0 }, 6);                    // 縦に回した紐
+      plate(0.172 - i * 0.006, 0.224, paperM,
+            { x: bx + (i - 1.5) * 0.004 + sd * 0.010, y: by + (i - 1.5) * 0.005, z: bz + 0.040 + i * 0.0014,
+              ry: sd * 0.20, rz: sd * 0.05 });
+    cap(0.0060, 0.190, twineM, { x: bx, y: by, z: bz + 0.044, rz: Math.PI / 2, ry: sd * 0.20, uv: 1.0 }, 6);   // 横に回した紐
+    cap(0.0060, 0.230, twineM, { x: bx, y: by, z: bz + 0.044, ry: sd * 0.20, uv: 1.0 }, 6);                    // 縦に回した紐
   }
 
   /* === 大鉈（決定稿の形）===
@@ -3054,19 +3093,30 @@ function makeMonster() {
      切っ先が床すれすれを引きずる角度で、左手から前へ振り出す。 */
   /* 位置は握っている手（arm(-1, 0.55, true) の hx,hy,hz）に合わせる。
      最初の版は手より 6cm 後ろに置いたので、柄が拳を貫かず宙に浮いていた。 */
-  /* 【刃は倒すのではなく寝かせる】刃渡り 0.61m の大鉈を、y=0.40 にある拳から
-     「前へ倒す」角度で吊ると、どう angle を選んでも切っ先が床を 4〜10cm 突き抜ける。
-     参照をよく見ると、決定稿の刃は倒れていない――**刃を下にしてほぼ水平に寝て**、
-     刃線が床すれすれを滑り、柄だけが拳へ向かって斜めに立ち上がっている。
-     つまり刃の姿勢は「柄の延長」ではないので、柄と刃を別々に置く。
-     ・局所 -y（刃渡りの向き）＝ 4 度だけ下がりながら、体の内側へ 49 度振る
-       （参照の正面図で切っ先が体の中心線を越えている）
-     ・局所 +x（刃 → 峰）＝ ほぼ真上。刃の幅 0.234m がそのまま床からの高さになる */
-  const bTh = 0.070, bPh = 0.85;                                   // 刃の下がり角・体の内側へ振る角（rad）
-  const bY = new THREE.Vector3(-Math.sin(bPh) * Math.cos(bTh), Math.sin(bTh), -Math.cos(bPh) * Math.cos(bTh));
-  const bX = new THREE.Vector3(0, 1, 0).addScaledVector(bY, -bY.y).normalize();   // 真上を bY に直交させる
+  /* 【刃の“面”はプレイヤーの側を向いていなければならない】
+     刃をほぼ水平に寝かせて体の内側へ 49 度振ると、切っ先が床を突き抜ける問題は
+     消えるが、代わりに**刃の広い面が真横を向く**。ゲーム中プレイヤーは怪人を
+     正面から見るので、これでは 90cm の得物が細い線にしか見えず、
+     何を持っているのか・いま振り上げているのかが読めない。実際、正面図では
+     刃が脚のあいだの暗い平行四辺形になり、側面図では床に置いた箱に見えていた。
+     決定稿も正面図も、刃は**広い面をこちらへ向けて**いる。
+
+     床を突き抜けずに面を正面へ向けるには、寝かせる角度ではなく**刃渡り**を
+     詰めるのが正しい。参照の正面図で刃渡りを測ると全高の 0.31＝約 0.55m で、
+     こちらの 0.61m より短い。拳は y≈0.34 にあるので、0.52m の刃を
+     水平から 37 度下げれば、切っ先はちょうど床に触れる（0.52·sin37°=0.31）。
+
+     基底は「付け根→切っ先」の向きから作る:
+       bDir  付け根→切っ先。内側(+x)へ 0.72・下(-y)へ 0.60・前(+z)へ 0.35
+       bY    局所 +y。押し出し形状は -y 側へ伸びるので bDir の逆向き
+       bX    局所 +x＝刃線から峰へ。真上寄りになるよう bY と +z の外積で作る
+       bZ    面の法線。結果として ≈(-0.27, 0.22, 0.94) となり、ほぼ正面を向く */
+  const bDir = new THREE.Vector3(0.72, -0.60, 0.35).normalize();   // 付け根 → 切っ先
+  const bY = bDir.clone().negate();
+  const bX = new THREE.Vector3().crossVectors(bY, new THREE.Vector3(0, 0, 1)).normalize();
   const bZ = new THREE.Vector3().crossVectors(bX, bY);
-  const bO = new THREE.Vector3(-0.330, 0.296, 0.030);              // 刃の付け根（柄との継ぎ目の少し先）
+  // 付け根は拳のすぐ内側・少し下。腕を動かしても柄が浮かないよう GRIP から起こす。
+  const bO = new THREE.Vector3(GRIP.x + 0.048, GRIP.y - 0.052, GRIP.z + 0.022);
   const mac = new THREE.Matrix4().makeBasis(bX, bY, bZ).setPosition(bO);
   rbox(0.074, 0.022, 0.030, 0.005, bladeM, { y: -0.074, pre: mac });   // 口金
   /* 柄は刃の軸から折れて拳へ向かう。拳（GRIP）と刃の付け根を直接つなぐので、
@@ -3081,16 +3131,19 @@ function makeMonster() {
     sph(0.031, handleM, pom, 14, 10);                                    // 柄頭
   }
   const bs = new THREE.Shape();
-  bs.moveTo(0.024, -0.100);                                   // 峰（柄側）
-  bs.lineTo(0.024, -0.630);                                   // 峰（先端側）
-  bs.quadraticCurveTo(0.024, -0.706, -0.050, -0.710);         // 先端の上の角（軽く丸める）
-  bs.lineTo(-0.150, -0.710);
-  bs.quadraticCurveTo(-0.214, -0.710, -0.216, -0.648);        // 先端の下の角（大きく丸める）
-  bs.lineTo(-0.210, -0.100);                                  // 刃（柄側）
+  /* 刃渡りを 0.61 → 0.52 に詰める（参照の実測 0.31×全高 ≒ 0.55）。
+     幅 0.234 はそのまま――決定稿の大鉈は「短く、しかし幅広」で、
+     幅を削ると肉切り包丁ではなく鉈になる。 */
+  bs.moveTo(0.024, -0.085);                                   // 峰（柄側）
+  bs.lineTo(0.024, -0.536);                                   // 峰（先端側）
+  bs.quadraticCurveTo(0.024, -0.601, -0.050, -0.604);         // 先端の上の角（軽く丸める）
+  bs.lineTo(-0.150, -0.604);
+  bs.quadraticCurveTo(-0.214, -0.604, -0.216, -0.551);        // 先端の下の角（大きく丸める）
+  bs.lineTo(-0.210, -0.085);                                  // 刃（柄側）
   bs.closePath();
   put(new THREE.ExtrudeGeometry(bs, { depth: 0.010, bevelEnabled: true, bevelThickness: 0.0022, bevelSize: 0.0022, bevelSegments: 1, curveSegments: 4 }),
       cleaverM, { z: -0.005, pre: mac });
-  tor(0.019, 0.005, cleaverM, { x: -0.058, y: -0.624, z: 0.0, pre: mac }, 12);   // 先端の穴のふち
+  tor(0.019, 0.005, cleaverM, { x: -0.058, y: -0.531, z: 0.0, pre: mac }, 12);   // 先端の穴のふち
 
   /* --- ここまでの部品を材質ごとに1メッシュへ統合する --- */
   // 頂点カラーの汚しは、統合したメッシュの材質すべてで有効にする
@@ -3157,16 +3210,19 @@ function makeMonster() {
   }
   fc.restore();
   // 目の穴。切り抜いた紙の縁がほつれて見えるよう、黒の周りに不定形の影を置く
-  for (const ex of [138, 330]) {
+  /* 【目が小さすぎた】参照の目の穴は紙の幅の 1/6（横 0.17・縦 0.11）もあり、
+     2〜5m 離れた暗い部屋で「顔」として読めるのはこの2つの黒だけ。
+     44×48px では紙の模様に紛れて、白い板にしか見えなかった。 */
+  for (const ex of [116, 316]) {
     fc.fillStyle = "rgba(20,18,14,0.30)";
     fc.beginPath();
     for (let i = 0; i <= 12; i++) {
       const a = i / 12 * Math.PI * 2, rr = 1 + Math.random() * 0.28;
-      const px = ex + 22 + Math.cos(a) * 40 * rr, py = 292 + Math.sin(a) * 30 * rr;
+      const px = ex + 40 + Math.cos(a) * 58 * rr, py = 267 + Math.sin(a) * 40 * rr;
       i ? fc.lineTo(px, py) : fc.moveTo(px, py);
     }
     fc.closePath(); fc.fill();
-    fc.fillStyle = "#0a0908"; fc.fillRect(ex, 268, 44, 48);
+    fc.fillStyle = "#0a0908"; fc.fillRect(ex, 235, 80, 64);
   }
   // 折り目。縦の谷と山を1本ずつ入れる（法線を作らずに影だけで折れを示す）
   fc.fillStyle = "rgba(90,84,68,0.16)"; fc.fillRect(FW / 2 - 3, 30, 3, FH - 60);
@@ -3217,7 +3273,7 @@ function makeMonster() {
      ほとんど同じ。上端は頭頂のすぐ下、下端は顎より下に垂れる。前の版は
      中心を頭より 9.3cm 下げていたので、上端が目の高さまで落ちて
      「額の見えた覆面」になり、決定稿の「頭に貼った1枚の紙」から離れていた。 */
-  const FR = 0.170, FPW = 0.276, FPH = 0.348;    // 巻き付ける半径・紙の幅・高さ（頭の表面 0.153 より外側）
+  const FR = 0.170, FPW = 0.276, FPH = 0.335;    // 巻き付ける半径・紙の幅・高さ（頭の表面 0.153 より外側）
   const fgeo = new THREE.PlaneGeometry(FPW, FPH, 20, 16);
   const fp = fgeo.attributes.position;
   for (let i = 0; i < fp.count; i++) {
@@ -3225,16 +3281,21 @@ function makeMonster() {
     const v = y / (FPH / 2);
     const th = (x / (FR)) * (1 - 0.10 * Math.max(0, v));   // 上端ほど幅を絞る
     const lift = 0.012 * v * v;                            // 上下の端が浮いて反る
-    fp.setXYZ(i, Math.sin(th) * (FR + lift), y, Math.cos(th) * (FR + lift));
+    /* 【上端は頭の丸みに沿わせる】巻き付け半径を一定にすると、頭が細くなる頭頂側で
+       紙だけが半径 0.17 のまま張り出し、横から見て頭の前に**白い庇**が突き出した。
+       上へ行くほど半径を絞れば、紙は頭の卵形に沿って留まる。下側は顎から離れて
+       垂れ下がっている布なので、絞らずそのまま落とす。 */
+    const rr = FR * (1 - 0.26 * Math.max(0, v) ** 2) + lift;
+    fp.setXYZ(i, Math.sin(th) * rr, y, Math.cos(th) * rr);
   }
   fgeo.computeVertexNormals();
   const face = new THREE.Mesh(fgeo, new THREE.MeshStandardMaterial({
     map: faceTex, roughness: 0.94, metalness: 0,
     // 「暗い部屋でも紙面が白く平坦に浮く」という v22 の狙いは emissive で残す。
     // ただし 0.42 では明るい場所で白飛びして、印字も折り目も全部消えていた。
-    emissive: 0xffffff, emissiveMap: faceTex, emissiveIntensity: 0.15,
+    emissive: 0xffffff, emissiveMap: faceTex, emissiveIntensity: 0.11,
   }));
-  face.position.set(0, HEAD.y - 0.020, HEAD.z);   // 上端が頭頂のすぐ下・下端が顎の下に来る高さ
+  face.position.set(0, HEAD.y - 0.045, HEAD.z);   // 上端が頭頂のすぐ下・下端が顎の下に来る高さ
   face.rotation.x = 0.05;                  // わずかに見下ろす角度
   face.updateMatrix(); face.applyMatrix4(headM);   // 頭と同じだけ傾ける
   // ※ 紙の丈を頭の高さより短くしておくこと。はみ出すと背面から白い板として見える
@@ -3250,9 +3311,11 @@ function makeMonster() {
   // 紙を留めているホチキス／画鋲。革ひもと合わせて「貼り付けてある」ことを示す。
   // 紙が円筒なので、留め具も同じ角度で法線方向へ向ける。
   const tack = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0065, 0.010, 8), bladeM);
-  for (const [tx, ty] of [[-0.076, 0.140], [0.076, 0.140]]) {
+  for (const [tx, ty] of [[-0.076, 0.132], [0.076, 0.132]]) {
+    // 紙と同じ「上ほど絞る」半径に乗せる。定数 FR のままだと紙から浮いて宙に残る
+    const rr = FR * (1 - 0.26 * (ty / (FPH / 2)) ** 2);
     const th = tx / FR, p = tack.clone();
-    p.position.set(Math.sin(th) * FR, HEAD.y - 0.020 + ty, HEAD.z + Math.cos(th) * FR);
+    p.position.set(Math.sin(th) * rr, HEAD.y - 0.045 + ty, HEAD.z + Math.cos(th) * rr);
     p.rotation.set(Math.PI / 2, 0, 0); p.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), th);
     p.updateMatrix(); p.applyMatrix4(headM);
     g.add(p);

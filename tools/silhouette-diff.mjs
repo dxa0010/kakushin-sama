@@ -9,7 +9,12 @@
    デコードはブラウザ（playwright）に任せる。PIL も numpy も要らない。
 
    実行: cp tools/silhouette-diff.mjs "$APPDATA/npm/node_modules/" && cd "$APPDATA/npm/node_modules"
-         node silhouette-diff.mjs <参照画> <自分のレンダ> [--mirror] [--rows=16] [--plate=<背景画>]
+         node silhouette-diff.mjs <参照画> <自分のレンダ> [--mirror] [--rows=16] [--plate=<背景画>] [--key]
+
+   --key は shot-mob.mjs --studio --key で撮った画（背景がマゼンタ）用。
+   色相で図と地を分けるので下地も threshold も要らず、値がしきい値に依存しない。
+   --plate 方式はしきい値の取り方で腕が消えたり全面が figure になったりするため、
+   計測に使うなら --key を推奨。
 
    --plate を渡すと、自分のレンダから**背景だけの同画角**を引いて図を取る。
    背景は無地に設定してあるが、後処理のビネットで周辺が落ちるため、
@@ -26,6 +31,7 @@ const plate = args.find((a) => a.startsWith("--plate="))?.slice(8) || null;
 /* 下地と本番を別プロセスで撮ると露出がわずかにずれることがある。
    その差が既定のしきい値を超えると全面が図として拾われるので、外から上げられるようにする。 */
 const thresh = Number(args.find((a) => a.startsWith("--thresh="))?.slice(9) || 26);
+const keyed = args.includes("--key");
 if (files.length < 2) {
   console.error("usage: node silhouette-diff.mjs <参照画> <自分のレンダ> [--mirror] [--rows=16]");
   process.exit(1);
@@ -38,8 +44,8 @@ await page.goto("about:blank");
 /** 画像を読み、各行の輪郭（左端・右端）を返す。
  *  背景は行ごとに左端の画素を基準にする――自分のレンダは背景がグラデーションなので、
  *  一定色との比較では図が取れない。参照画は無地だが同じ方法で問題なく取れる。 */
-const grab = async (file, thresh, plateFile) =>
-  page.evaluate(async ([url, th, purl]) => {
+const grab = async (file, thresh, plateFile, useKey) =>
+  page.evaluate(async ([url, th, purl, useKey]) => {
     const load = async (u) => {
       const im = new Image(); im.src = u; await im.decode();
       const cv = document.createElement("canvas");
@@ -58,8 +64,17 @@ const grab = async (file, thresh, plateFile) =>
       let lo = null, hi = null;
       for (let x = 0; x < a.w; x++) {
         const i = b + x * 4;
-        const cr = p ? p.d[i] : br, cg = p ? p.d[i + 1] : bg, cb = p ? p.d[i + 2] : bb;
-        if (Math.abs(a.d[i] - cr) + Math.abs(a.d[i + 1] - cg) + Math.abs(a.d[i + 2] - cb) > th) {
+        let isFig;
+        if (useKey) {
+          /* マゼンタ地: R と B が G より十分高い画素を背景とみなす。
+             ビネットで暗くなっても色相は保たれるので、判定が明るさに依らない。 */
+          const R = a.d[i], G = a.d[i + 1], B = a.d[i + 2];
+          isFig = !(R > G + 12 && B > G + 12);
+        } else {
+          const cr = p ? p.d[i] : br, cg = p ? p.d[i + 1] : bg, cb = p ? p.d[i + 2] : bb;
+          isFig = Math.abs(a.d[i] - cr) + Math.abs(a.d[i + 1] - cg) + Math.abs(a.d[i + 2] - cb) > th;
+        }
+        if (isFig) {
           if (lo === null) lo = x;
           hi = x;
         }
@@ -67,7 +82,7 @@ const grab = async (file, thresh, plateFile) =>
       out.push([lo, hi]);
     }
     return out;
-  }, [dataUrl(file), thresh, plateFile ? dataUrl(plateFile) : null]);
+  }, [dataUrl(file), thresh, plateFile ? dataUrl(plateFile) : null, !!useKey]);
 
 /* about:blank から file:// の画像は読めない（オリジンが違うのでデコードが拒否される）。
    バイト列を data: URL にして渡す。JPEG でも PNG でもブラウザが判別してくれる。 */
@@ -98,8 +113,8 @@ function profile(rowsArr, doMirror, n) {
   return { span, res, H };
 }
 
-const ref = profile(await grab(files[0], 26, null), false, rows);
-const own = profile(await grab(files[1], thresh, plate), mirror, rows);
+const ref = profile(await grab(files[0], 26, null, false), false, rows);
+const own = profile(await grab(files[1], thresh, plate, keyed), mirror, rows);
 await browser.close();
 
 const f = (v) => (v === null ? "  --  " : v.toFixed(3).padStart(6));

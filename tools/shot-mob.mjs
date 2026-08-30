@@ -21,6 +21,23 @@
      --dark        ゲーム本来の暗さのまま撮る（既定は inspectLight で明るくする）
      --views a,b   撮るビューを絞る（既定は全部）
      --empty       怪人を隠して**背景だけ**を同じ画角で撮る（シルエット抽出の下地）
+     --key         背景を彩度いっぱいのマゼンタにする（シルエット抽出用）
+     --flat        望遠（画角 7度・距離 12倍）で撮る。ほぼ正射影になる
+
+   【なぜ望遠が要るか】既定の画角では、怪人までの距離が 2.3m しかない。
+   この怪人は深く前傾していて頭が体より 60cm 以上こちらへ出ているので、
+   頭と肩は近くて大きく写り、脚は遠くて小さく写る。その結果、輪郭が
+   上から下へすぼまり、**参照画（ほぼ正射影で描かれた三面図）と直接比べられない**。
+   実際、正面の輪郭は下半分が参照より 0.11〜0.24 細く出ていたが、
+   その相当部分は造形ではなく遠近によるものだった。
+   画角を 7度まで絞って距離を 12 倍に伸ばすと、遠近による大小差がほぼ消える。
+
+   【なぜキー色が要るか】--studio の背景は無地の灰(0x4a4a4e)だが、後処理の
+   ビネットで周辺が落ちるため、明るさの差でしか図と地を分けられない。
+   怪人はほぼ黒なので、しきい値を少し変えるだけで腕が背景に溶けたり、
+   逆に画面全体が図として拾われたりして、計測値が信用できなかった。
+   マゼンタなら**色相**で分けられる。ビネットは明るさを落とすだけで
+   色相を変えないので、しきい値にほとんど依存しなくなる。
 
    シルエットを数値で比べるときは、--studio と --studio --empty の2回撮って
    tools/silhouette-diff.mjs に --plate で渡す。背景は無地に見えても後処理の
@@ -46,11 +63,13 @@ const VIEWS = {
 };
 
 const argv = process.argv.slice(2);
-let OUT = "C:/tmp/mob", studio = false, dark = false, only = null, empty = false;
+let OUT = "C:/tmp/mob", studio = false, dark = false, only = null, empty = false, key = false, flat = false;
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--out") OUT = argv[++i];
   else if (argv[i] === "--studio") studio = true;
   else if (argv[i] === "--empty") empty = true;
+  else if (argv[i] === "--key") key = true;
+  else if (argv[i] === "--flat") flat = true;
   else if (argv[i] === "--dark") dark = true;
   else if (argv[i] === "--views") only = argv[++i].split(",");
 }
@@ -106,7 +125,7 @@ if (!dark) await page.evaluate(({ MOB, CAM }) => {
 
 /* 部屋を隠す。怪人・ライト・カメラだけ残して背景を無地にすると、
    シルエットと面の分かれ方だけが見える（造形の粗さはここに出る）。 */
-if (studio) await page.evaluate(() => {
+if (studio) await page.evaluate((key) => {
   const { scene, THREE } = window.__dbg.gfx;
   const mob = window.__dbg.monster;
   for (const o of scene.children) {
@@ -114,9 +133,9 @@ if (studio) await page.evaluate(() => {
     if (o.userData && o.userData.__keep) continue;
     o.visible = false;
   }
-  scene.background = new THREE.Color(0x4a4a4e);
+  scene.background = new THREE.Color(key ? 0xff00ff : 0x4a4a4e);
   scene.fog = null;
-});
+}, key);
 
 /* 怪人を毎tick固定する。mob.active=false なので monsterUpdate は座標に触らないが、
    保険として setInterval で押さえる（描画フックを挟むと画が黒くなる事例があったため、
@@ -136,17 +155,25 @@ await page.evaluate(({ MOB, empty }) => {
 }, { MOB, empty });
 
 for (const [name, [ry, ty, distScale]] of views) {
-  await page.evaluate(({ ry, ty, distScale, MOB, CAM }) => {
+  await page.evaluate(({ ry, ty, distScale, MOB, CAM, flat }) => {
     const d = window.__dbg;
     window.__mobRy = ry;
+    /* 望遠にするときは、画角を絞ったぶん距離を伸ばして写る大きさを保つ。
+       カメラの near/far も伸ばさないと、遠ざけた怪人が far で切られる。 */
+    const scale = flat ? distScale * 12 : distScale;
+    if (flat) {
+      const cam = d.gfx.camera;
+      cam.fov = 7; cam.near = 0.5; cam.far = 400; cam.updateProjectionMatrix();
+    }
     // カメラは怪人から見て -z 側。寄りのときは同じ向きのまま距離だけ詰める。
     const dx = CAM.x - MOB.x, dz = CAM.z - MOB.z;
-    const px = MOB.x + dx * distScale, pz = MOB.z + dz * distScale;
+    const px = MOB.x + dx * scale, pz = MOB.z + dz * scale;
     d.ply.x = px; d.ply.z = pz; d.ply.hidden = false;
     const ax = MOB.x - px, az = MOB.z - pz, dist = Math.hypot(ax, az);
     d.ply.yaw = Math.atan2(-ax, -az);
-    d.ply.pitch = Math.asin(Math.max(-1, Math.min(1, (ty - 1.6) / Math.hypot(dist, ty - 1.6))));
-  }, { ry, ty, distScale, MOB, CAM });
+    const eye = flat ? ty : 1.6;   // 望遠では目線を被写体の高さに合わせて煽りを消す
+    d.ply.pitch = Math.asin(Math.max(-1, Math.min(1, (ty - eye) / Math.hypot(dist, ty - eye))));
+  }, { ry, ty, distScale, MOB, CAM, flat });
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/${name}.png` });
   console.log("saved", `${OUT}/${name}.png`);
