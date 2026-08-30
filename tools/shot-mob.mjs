@@ -23,6 +23,14 @@
      --empty       怪人を隠して**背景だけ**を同じ画角で撮る（シルエット抽出の下地）
      --key         背景を彩度いっぱいのマゼンタにする（シルエット抽出用）
      --flat        望遠（画角 7度・距離 12倍）で撮る。ほぼ正射影になる
+     --yaw=<度>    任意の角度から1枚だけ撮る（0=正面、+で怪人の右手側へ回る）
+
+   【なぜ任意角が要るか】参照のコンセプトアートは真正面でも真横でもなく、
+   斜めから描かれていることがある。実際 ref2_side.png は怪人から見て
+   2時の方向（正面から 60 度）から描かれていた。それを真横のレンダと
+   重ねて比べると、参照の「腕」をこちらの「脚」と突き合わせることになり、
+   数値が合っていくほど造形が参照から離れていく。
+   参照と**同じ角度**から撮れないかぎり、比較そのものが成立しない。
 
    【なぜ望遠が要るか】既定の画角では、怪人までの距離が 2.3m しかない。
    この怪人は深く前傾していて頭が体より 60cm 以上こちらへ出ているので、
@@ -63,18 +71,23 @@ const VIEWS = {
 };
 
 const argv = process.argv.slice(2);
-let OUT = "C:/tmp/mob", studio = false, dark = false, only = null, empty = false, key = false, flat = false;
+let OUT = "C:/tmp/mob", studio = false, dark = false, only = null, empty = false, key = false, flat = false, yaw = null;
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--out") OUT = argv[++i];
   else if (argv[i] === "--studio") studio = true;
   else if (argv[i] === "--empty") empty = true;
   else if (argv[i] === "--key") key = true;
   else if (argv[i] === "--flat") flat = true;
+  else if (argv[i].startsWith("--yaw=")) yaw = Number(argv[i].slice(6));
   else if (argv[i] === "--dark") dark = true;
   else if (argv[i] === "--views") only = argv[++i].split(",");
 }
 mkdirSync(OUT, { recursive: true });
-const views = Object.entries(VIEWS).filter(([n]) => !only || only.includes(n));
+/* --yaw が来たら、その角度1枚だけを撮る。0 が正面で、+ で怪人の右手側へ回る。
+   VIEWS の front が Math.PI なので、そこから角度を足し引きすればよい。 */
+const views = yaw !== null
+  ? [[`yaw${yaw}`, [Math.PI + yaw * Math.PI / 180, 1.05, 1.0]]]
+  : Object.entries(VIEWS).filter(([n]) => !only || only.includes(n));
 
 const browser = await chromium.launch({
   headless: true,
