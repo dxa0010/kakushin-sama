@@ -53,7 +53,7 @@ const png = await page.evaluate(async ([refUrl, ownUrl, useKey, doMirror]) => {
       const br = d[b0], bg = d[b0 + 1], bb = d[b0 + 2];
       for (let x = 0; x < c.width; x++) {
         const i = b0 + x * 4, R = d[i], G = d[i + 1], B = d[i + 2];
-        row[x] = keyed ? (!(R > G + 12 && B > G + 12) ? 1 : 0)
+        row[x] = keyed ? (!(G < 0.88 * Math.min(R, B)) ? 1 : 0)
                        : (Math.abs(R - br) + Math.abs(G - bg) + Math.abs(B - bb) > 26 ? 1 : 0);
       }
       m.push(row);

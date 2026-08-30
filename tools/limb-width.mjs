@@ -44,7 +44,7 @@ const mask = await page.evaluate(async ([u, useKey]) => {
     for (let x = 0; x < c.width; x++) {
       const i = b0 + x * 4;
       const R = d[i], G = d[i + 1], B = d[i + 2];
-      row.push(useKey ? !(R > G + 12 && B > G + 12)
+      row.push(useKey ? !(G < 0.88 * Math.min(R, B))
                       : Math.abs(R - br) + Math.abs(G - bg) + Math.abs(B - bb) > 26);
     }
     out.push(row);

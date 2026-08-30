@@ -68,8 +68,14 @@ const grab = async (file, thresh, plateFile, useKey) =>
         if (useKey) {
           /* マゼンタ地: R と B が G より十分高い画素を背景とみなす。
              ビネットで暗くなっても色相は保たれるので、判定が明るさに依らない。 */
+          /* 【判定は明るさに依らない比にする】R,B が G より「12 以上」という
+             絶対差だと、ビネットで暗く落ちた四隅（R30 G20 B28 など）で差が
+             12 に届かず、背景が図として拾われて計測が丸ごと壊れる。
+             G < 0.88·min(R,B) という比で見れば、同じ色相のまま暗くなっても
+             判定が変わらない。マゼンタは G≈0 なので確実に背景、
+             怪人は R≈G≈B なので確実に図になる。 */
           const R = a.d[i], G = a.d[i + 1], B = a.d[i + 2];
-          isFig = !(R > G + 12 && B > G + 12);
+          isFig = !(G < 0.88 * Math.min(R, B));
         } else {
           const cr = p ? p.d[i] : br, cg = p ? p.d[i + 1] : bg, cb = p ? p.d[i + 2] : bb;
           isFig = Math.abs(a.d[i] - cr) + Math.abs(a.d[i + 1] - cg) + Math.abs(a.d[i + 2] - cb) > th;
