@@ -24,6 +24,7 @@
      --key         背景を彩度いっぱいのマゼンタにする（シルエット抽出用）
      --flat        望遠（画角 7度・距離 12倍）で撮る。ほぼ正射影になる
      --yaw=<度>    任意の角度から1枚だけ撮る（0=正面、+で怪人の右手側へ回る）
+     --yaws=a,b,c  複数の角度をまとめて撮る。ブラウザ起動が1回で済むので速い
 
    【なぜ任意角が要るか】参照のコンセプトアートは真正面でも真横でもなく、
    斜めから描かれていることがある。実際 ref2_side.png は怪人から見て
@@ -71,13 +72,14 @@ const VIEWS = {
 };
 
 const argv = process.argv.slice(2);
-let OUT = "C:/tmp/mob", studio = false, dark = false, only = null, empty = false, key = false, flat = false, yaw = null;
+let OUT = "C:/tmp/mob", studio = false, dark = false, only = null, empty = false, key = false, flat = false, yaw = null, yaws = null;
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--out") OUT = argv[++i];
   else if (argv[i] === "--studio") studio = true;
   else if (argv[i] === "--empty") empty = true;
   else if (argv[i] === "--key") key = true;
   else if (argv[i] === "--flat") flat = true;
+  else if (argv[i].startsWith("--yaws=")) yaws = argv[i].slice(7).split(",").map(Number);
   else if (argv[i].startsWith("--yaw=")) yaw = Number(argv[i].slice(6));
   else if (argv[i] === "--dark") dark = true;
   else if (argv[i] === "--views") only = argv[++i].split(",");
@@ -85,7 +87,9 @@ for (let i = 0; i < argv.length; i++) {
 mkdirSync(OUT, { recursive: true });
 /* --yaw が来たら、その角度1枚だけを撮る。0 が正面で、+ で怪人の右手側へ回る。
    VIEWS の front が Math.PI なので、そこから角度を足し引きすればよい。 */
-const views = yaw !== null
+const views = yaws
+  ? yaws.map((a) => [`yaw${a}`, [Math.PI + a * Math.PI / 180, 1.05, 1.0]])
+  : yaw !== null
   ? [[`yaw${yaw}`, [Math.PI + yaw * Math.PI / 180, 1.05, 1.0]]]
   : Object.entries(VIEWS).filter(([n]) => !only || only.includes(n));
 
