@@ -72,6 +72,7 @@ const VIEWS = {
 };
 
 const argv = process.argv.slice(2);
+let zoom = 1, tyOv = null, noshadow = false, rainbow = false;
 let OUT = "C:/tmp/mob", studio = false, dark = false, only = null, empty = false, key = false, flat = false, yaw = null, yaws = null;
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--out") OUT = argv[++i];
@@ -82,6 +83,18 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i].startsWith("--yaws=")) yaws = argv[i].slice(7).split(",").map(Number);
   else if (argv[i].startsWith("--yaw=")) yaw = Number(argv[i].slice(6));
   else if (argv[i] === "--dark") dark = true;
+  /* 影を切って撮る。面に出る黒い破片が、形の問題（面の重なり）なのか
+     影の自己遮蔽（シャドウアクネ）なのかを切り分けるための診断用。 */
+  else if (argv[i] === "--noshadow") noshadow = true;
+  /* 部品ごとに原色を塗り、光も無効にして撮る。「画のこの汚れはどの部品か」を
+     一発で特定するための診断用。番号は怪人の traverse 順（材質バケツの順）。 */
+  else if (argv[i] === "--rainbow") rainbow = true;
+  /* 寄り。手や足など小さい部品は、全身のコマ数では数十ピクセルしかなく
+     形が読めない。fov を絞ったまま距離だけ詰めて拡大する。
+       --zoom=<倍率>  写る大きさの倍率（距離を 1/倍率 にする）
+       --ty=<高さ>    見る高さ（この高さが画面の中央に来る） */
+  else if (argv[i].startsWith("--zoom=")) zoom = Number(argv[i].slice(7));
+  else if (argv[i].startsWith("--ty=")) tyOv = Number(argv[i].slice(5));
   else if (argv[i] === "--views") only = argv[++i].split(",");
 }
 mkdirSync(OUT, { recursive: true });
@@ -154,6 +167,27 @@ if (studio) await page.evaluate((key) => {
   scene.fog = null;
 }, key);
 
+if (rainbow) console.log(JSON.stringify(await page.evaluate(() => {
+  const { THREE } = window.__dbg.gfx;
+  const list = [];
+  let i = 0;
+  window.__dbg.monster.traverse((o) => {
+    if (!o.isMesh) return;
+    const h = (i * 0.61803398875) % 1;
+    const c = new THREE.Color().setHSL(h, 0.95, 0.55);
+    o.material = new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide });
+    list.push({ i, hex: "#" + c.getHexString() });
+    i++;
+  });
+  return list;
+})));
+
+if (noshadow) await page.evaluate(() => {
+  const { scene, renderer } = window.__dbg.gfx;
+  scene.traverse((o) => { if (o.isLight) o.castShadow = false; });
+  renderer.shadowMap.enabled = false;
+});
+
 /* 怪人を毎tick固定する。mob.active=false なので monsterUpdate は座標に触らないが、
    保険として setInterval で押さえる（描画フックを挟むと画が黒くなる事例があったため、
    composer には一切触らない）。 */
@@ -171,7 +205,8 @@ await page.evaluate(({ MOB, empty }) => {
   }, 16);
 }, { MOB, empty });
 
-for (const [name, [ry, ty, distScale]] of views) {
+for (const [name, [ry, ty0, distScale0]] of views) {
+  const ty = tyOv ?? ty0, distScale = distScale0 / zoom;
   await page.evaluate(({ ry, ty, distScale, MOB, CAM, flat }) => {
     const d = window.__dbg;
     window.__mobRy = ry;
@@ -188,7 +223,11 @@ for (const [name, [ry, ty, distScale]] of views) {
     d.ply.x = px; d.ply.z = pz; d.ply.hidden = false;
     const ax = MOB.x - px, az = MOB.z - pz, dist = Math.hypot(ax, az);
     d.ply.yaw = Math.atan2(-ax, -az);
-    const eye = flat ? ty : 1.6;   // 望遠では目線を被写体の高さに合わせて煽りを消す
+    /* 【視線が下を向いていなかった】カメラの高さは 1.6 に固定されている
+       （game.js の camera.position.set(ply.x, 1.6, ply.z)）。ここで eye に ty を
+       入れると俯角がいつも 0 になり、被写体は画面の下半分へ寄ったままだった。
+       手や足に寄るときは特に、狙った高さが画面の外へ出る。実際の高さを使う。 */
+    const eye = 1.6;
     d.ply.pitch = Math.asin(Math.max(-1, Math.min(1, (ty - eye) / Math.hypot(dist, ty - eye))));
   }, { ry, ty, distScale, MOB, CAM, flat });
   await page.waitForTimeout(400);
