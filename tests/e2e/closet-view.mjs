@@ -75,7 +75,7 @@ await check("H-02", "隠れるとカメラが押し入れ内へ移り、正面�
     issues.push(`yaw が ${s.yaw}（π＝+z正面のはず）`);
   const d = Math.hypot(s.cam[0] - s.x, s.cam[2] - s.z);
   if (d > 0.01) issues.push(`カメラがプレイヤーと一致しない: 距離 ${d.toFixed(3)}`);
-  if (!/radial-gradient/.test(s.bg)) issues.push(`hideOv がビネットになっていない: ${s.bg.slice(0, 80)}`);
+  if (!/linear-gradient\(90deg/.test(s.bg)) issues.push(`hideOv が窓付きのオーバーレイになっていない: ${s.bg.slice(0, 80)}`);
   if (s.ov !== "block") issues.push(`hideOv が表示されていない: ${s.ov}`);
   await page.screenshot({ path: "screenshots/closet-hidden.png" });
   return issues.join(" / ") || null;

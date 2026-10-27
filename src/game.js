@@ -1458,6 +1458,13 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   board.rotation.z = Math.PI / 2 - 0.12; board.rotation.y = 0.1;
 }
 // クローゼット（開き戸が、少しだけ開いている）
+// 扉と内部灯は tryInteract（隠れる/出る）と frame() から触るので、ブロックスコープの
+// 外へ出して共有する。角度は doorSwing.rotation.y に集約。
+let doorSwing = null, closetGlow = null;
+const DOOR_OPEN_R = 0.42, DOOR_HIDDEN_R = 0.30, GLOW_LIT = 0.003 * 34;
+let doorSwingTarget = DOOR_OPEN_R;
+/* 隠れたときに正面とする視線（HIDE_BASE_YAW）。隙間が画面の窓に収まるよう撮影で調整。 */
+const HIDE_BASE_YAW = Math.PI;
 {
   solids.push({ x1: -2.6, z1: -5.9, x2: -0.6, z2: -5.0 });
   aoPatch(-1.6, -5.15, 2.4, 1.3);
@@ -1474,25 +1481,30 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(2.0, 0.04, 0.86, clBody, -1.6, 2.18, -5.46);              // 天板 y 2.16〜2.20
   vbox(0.94, 1.98, 0.04, M.white, -2.1, 1.06, -4.99);            // 左扉（閉。室内側の面は z -4.97）
   /* 右扉は少しだけ開く（闇のスリット＝不穏）。旧版は2つ壊れていた。
-     v26: 角度を 0.3 → **0.5** に。隠れる実装が「クローゼット内のカメラ」に変わったので、
-     スリットの見かけ幅がそのまま視界になる。0.5 のとき扉は z -5.07〜-4.58 に
-     躺り、背面ヒンジ側の角（x ≈ -0.587, z ≈ -5.07）は右側板（x -0.64〜-0.60）の
+     v27: 外から見る角度（＝普段の開け具合）は **0.42** に落とした。
+     隠れると扉がもう一段だけ閉じる（ドアの見た目は「開いたまま」を保つが隙間は
+     狭くなる）、出ると 0.42 へ戻る。角度は doorSwing.rotation.y 1つで動くので
+     アニメは等速で十分（doorDoor 更新は frame() の closetUpdate 参照）。
+     0.42 のときヒンジ側の角（x ≈ -0.580, z ≈ -5.06）は右側板（x -0.64〜-0.60）の
      x範囲から外れるため躯体に食い込まない（0.55 以上だと角が側板の x帯に戻る）。
-     開口 z=-4.97 面での隙間は x -1.63〜-0.61 ＝約1.0m。
      ① 丁番は外側の端（x -0.55）にある。自由端（x 小さい側）が手前（部屋側）へ振れる。
      ② 回転が扉の中心まわりなので、丁番側の角が躯体に食い込まないよう
-        丁番の世界座標を固定したまま中心を置く。
-        中心 = 丁番 - R·(0.47,0,0) = (-0.999, 1.06, -4.851)。 */
-  const clDoorR = 0.5, cdc = Math.cos(clDoorR), cds = Math.sin(clDoorR);
-  const onDoorR = (lx, lz) => [-0.999 + lx * cdc + lz * cds, -4.851 - lx * cds + lz * cdc];   // 右扉の局所→世界
+        丁番の世界座標を固定したまま Group の原点を置く。
+        原点 = 丁番 - R·(0.47,0,0) = (-0.999, 1.06, -4.851)。子メッシュは
+        原点基準の局所座標で素の vbox/BoxGeometry を置き、回転は Group が担う。 */
+  const clDoorR = 0.42;
+  doorSwing = new THREE.Group();
+  doorSwing.position.set(-0.999, 0, -4.851); doorSwing.rotation.y = clDoorR; scene.add(doorSwing);
+  /* 扉の角度はここ1か所へ集約。DOOR_OPEN_R が普段（外から）の見た目、DOOR_HIDDEN_R が
+     隠れている間の見た目。hinge 側の角が右側板 x帯（-0.64〜-0.60）に入るのは 0.55 以上。 */
   {
-    const [wx, wz] = onDoorR(0, 0);
-    vbox(0.94, 1.98, 0.04, M.white, wx, 1.06, wz, clDoorR);
+    const d = vbox(0.94, 1.98, 0.04, M.white, 0, 1.06, 0);
+    doorSwing.add(d);      // vbox は一度 scene へ add するので Group へ付け替える（Object3D.add は親を付け替える）
   }
   vbox(0.03, 0.16, 0.03, M.metal, -1.68, 1.06, -4.955);          // 左扉の取っ手（室内面 -4.97 から 3cm 出す。旧版は 83% 埋まっていた）
   {
-    const [wx, wz] = onDoorR(-0.38, 0.035);                      // 自由端寄り・室内側の面の上
-    vbox(0.03, 0.16, 0.03, M.metal, wx, 1.06, wz, clDoorR);
+    const h = vbox(0.03, 0.16, 0.03, M.metal, -0.38, 1.06, 0.035);  // 自由端寄り・室内側の面の上（Group 局所座標）
+    doorSwing.add(h);
   }
   vbox(2.06, 0.1, 0.12, M.woodDark, -1.6, 2.2, -4.98);           // 上枠（天板の前端に噛ませる）
   vbox(2.06, 0.05, 0.12, M.woodDark, -1.6, 0.025, -4.98);        // 下枠＝敷居 y 0〜0.05（旧版は 3mm 浮いていた）
@@ -1502,8 +1514,8 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(0.72, 1.62, 0.012, new THREE.MeshStandardMaterial({ color: 0xbdb7ab, roughness: 0.85 }), -2.1, 1.06, -4.962);
   {
     const rp = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.62, 0.012), new THREE.MeshStandardMaterial({ color: 0xbdb7ab, roughness: 0.85 }));
-    const [wx, wz] = onDoorR(0, 0.026);
-    rp.position.set(wx, 1.06, wz); rp.rotation.y = clDoorR; scene.add(rp);
+    rp.position.set(0, 1.06, 0.026);               // 右扉の落とし込みパネル（Group 局所座標・扉面より手前 2.6cm）
+    doorSwing.add(rp);
   }
   /* 内部をごく薄く照らす弱い暖色光（スリットの奥に服/棚の存在が滲む程度）。
      この光は躯体が中実だった間、**何も照らしていなかった**ので強度が未検証だった。
@@ -1518,7 +1530,7 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
      上着の輝度は 2.0×0.29/π=0.19 なので飛ばない。
      漏れは無い: 躯体の外面（側板・背板・天板）はすべて法線がこの光と逆を向くので、
      castShadow=false でも室内へ抜けるのは扉のスリットだけ（それは狙いどおり）。 */
-  const closetGlow = new THREE.PointLight(0xffe0b0, 0.003 * 34, 2.2, 1.3);
+  closetGlow = new THREE.PointLight(0xffe0b0, GLOW_LIT, 2.2, 1.3);
   closetGlow.position.set(-1.55, 1.30, -5.13); closetGlow.castShadow = false; scene.add(closetGlow);
   // 内部は decorative のみ（solids には積まない＝隠れる動作を邪魔しない）
   // ハンガーレール（左右に渡した金属パイプ）。長さは内寸 1.92 + 両側 1cm の差し込み
@@ -5375,6 +5387,8 @@ function tryInteract() {
     if (ply.hidden) {
       ply.hidden = false;
       ply.x = ply.hidFrom.x; ply.z = ply.hidFrom.z; ply.yaw = ply.hidFrom.yaw;
+      doorSwingTarget = DOOR_OPEN_R;
+      closetGlow.intensity = GLOW_LIT;
       $("hideOv").style.display = "none";
     } else {
       const md = Math.hypot(mob.x - ply.x, mob.z - ply.z);
@@ -5386,8 +5400,16 @@ function tryInteract() {
       ply.hidFrom = { x: ply.x, z: ply.z, yaw: ply.yaw };
       /* カメラを実クローゼット内へ移す（第三視点の見せかけのスリットではなく、
          開いている右扉の隙間越しに部屋を直接覗く）。y=1.6 は棚板 1.98 より下、
-         上着の前面（z -5.23）と near 0.1 が当たらない 8cm 手前。 */
-      ply.x = -1.52; ply.z = -5.15; ply.yaw = Math.PI; ply.pitch = 0;
+         上着の前面（z -5.23）と near 0.1 が当たらない 8cm 手前。
+         入った瞬間に扉が stubっともう一段閉じる（ユーザー要望：見た目は開いて
+         いるが、中に入ると隙間が狭まる）。合わせて内部灯を消し、近くの面を
+         死んで暗くする＝「暗い箱の中から開口部だけを見ている」感を出す。
+         視点は正面 ±0.25rad・ピッチ ±0.35 までしか回せない（frame 内で毎フレーム
+         締める）。隙間の画面上の位置が固定になり、hideOv の「窓」で正確に
+         縁取りできるようにするため。 */
+      ply.x = -1.52; ply.z = -5.15; ply.yaw = HIDE_BASE_YAW; ply.pitch = 0;
+      doorSwingTarget = DOOR_HIDDEN_R;
+      closetGlow.intensity = GLOW_LIT * 0.15;   // 完全消灯より「消えかけの常夜灯」。内部が真っ黒だとARIA的に読めない
       trailLastX = ply.x; trailLastZ = ply.z;   // ワープした飛びを足跡として残さない
       $("hideOv").style.display = "block";
       beep(140, 0.18, "sine", 0.1);
@@ -5993,6 +6015,14 @@ function frame(now) {
     }
     if (state === "INSPECT") clockUpdate(dt);   // 検分中も時計は止まらない
     monsterUpdate(dt);
+    /* 扉の閉まり／開き（隠れる・出るで target へ滑らかに移す）＋隠れている間の視点締め */
+    doorSwing.rotation.y += (doorSwingTarget - doorSwing.rotation.y) * Math.min(1, dt * 5);
+    if (ply.hidden) {
+      let dy = ply.yaw - HIDE_BASE_YAW;
+      dy = ((dy + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      ply.yaw = HIDE_BASE_YAW + Math.max(-0.25, Math.min(0.25, dy));
+      ply.pitch = Math.max(-0.35, Math.min(0.35, ply.pitch));
+    }
     if (state === "ETAX") {
       etaxTimer += dt;
       // 【なぜ認証前だけ上限を延ばすか】暗証番号を思い出す時間が実質40秒しかないと、
