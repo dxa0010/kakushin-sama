@@ -1474,15 +1474,16 @@ vbox(1.56, 0.12, 0.34, M.woodDark, -1.75, 2.06, 0);   // 寝室・台所の間
   vbox(2.0, 0.04, 0.86, clBody, -1.6, 2.18, -5.46);              // 天板 y 2.16〜2.20
   vbox(0.94, 1.98, 0.04, M.white, -2.1, 1.06, -4.99);            // 左扉（閉。室内側の面は z -4.97）
   /* 右扉は少しだけ開く（闇のスリット＝不穏）。旧版は2つ壊れていた。
-     ① `rotation.y = -0.3` は自由端を **-z＝クローゼットの中へ** 振る向きで、
-        閉じた箱の中へ扉が開いていた。丁番は外側の端（x -0.55）にある。
-     ② 回転が扉の中心まわりなので、丁番側の角が躯体に 9cm 食い込んでいた。
-     丁番の世界座標を固定したまま +0.3 回す。局所点 (lx,ly,lz) は
-     (lx·cosθ + lz·sinθ, ly, -lx·sinθ + lz·cosθ) へ移るので、
-     中心 = 丁番 - R·(0.47,0,0) = (-0.999, 1.06, -4.851)。
-     これで扉は z -5.009〜-4.693＝**躯体の前面 -5.03 より室内側**に収まり、
-     側板と z だけで分離する（x・y は重なってよい＝ベッドと同じ手）。 */
-  const clDoorR = 0.3, cdc = Math.cos(clDoorR), cds = Math.sin(clDoorR);
+     v26: 角度を 0.3 → **0.5** に。隠れる実装が「クローゼット内のカメラ」に変わったので、
+     スリットの見かけ幅がそのまま視界になる。0.5 のとき扉は z -5.07〜-4.58 に
+     躺り、背面ヒンジ側の角（x ≈ -0.587, z ≈ -5.07）は右側板（x -0.64〜-0.60）の
+     x範囲から外れるため躯体に食い込まない（0.55 以上だと角が側板の x帯に戻る）。
+     開口 z=-4.97 面での隙間は x -1.63〜-0.61 ＝約1.0m。
+     ① 丁番は外側の端（x -0.55）にある。自由端（x 小さい側）が手前（部屋側）へ振れる。
+     ② 回転が扉の中心まわりなので、丁番側の角が躯体に食い込まないよう
+        丁番の世界座標を固定したまま中心を置く。
+        中心 = 丁番 - R·(0.47,0,0) = (-0.999, 1.06, -4.851)。 */
+  const clDoorR = 0.5, cdc = Math.cos(clDoorR), cds = Math.sin(clDoorR);
   const onDoorR = (lx, lz) => [-0.999 + lx * cdc + lz * cds, -4.851 - lx * cds + lz * cdc];   // 右扉の局所→世界
   {
     const [wx, wz] = onDoorR(0, 0);
@@ -4948,9 +4949,9 @@ const visit = {
 };
 let aggro = 0, etaxRejects = 0, tearGenuine = 0, clockGlitch = false;
 // キー光源を弱め、その分アンビエント/ヘミのフィルで底上げする（壁焼け対策）。
-// ユーザー要望で段階的に暗くしている（夜の暗さを強める）。
-// 初期 {1:[0.36,0.72],...} → 1/2 → さらに 1/2（＝元の 1/4）。キー/フィル比は維持。
-const LIGHT_BASE = { 1: [0.09, 0.18], 2: [0.05, 0.12], 3: [0.018, 0.075] };
+// ユーザー要望で一旦暗くしたが、v26 で逆に**明るく戻す**（暗すぎて部屋が沈む）。
+// 旧値 {1:[0.09,0.18], 2:[0.05,0.12], 3:[0.018,0.075]} → キー約1.5倍 / フィル約1.7倍。
+const LIGHT_BASE = { 1: [0.135, 0.30], 2: [0.075, 0.205], 3: [0.028, 0.128] };
 function applyLights(mul = 1) {
   const [li, am] = LIGHT_BASE[phase];
   roomLights.forEach(l => l.intensity = li * mul * PT_SCALE);
@@ -5373,6 +5374,7 @@ function tryInteract() {
   if (nearTarget.kind === "closet") {
     if (ply.hidden) {
       ply.hidden = false;
+      ply.x = ply.hidFrom.x; ply.z = ply.hidFrom.z; ply.yaw = ply.hidFrom.yaw;
       $("hideOv").style.display = "none";
     } else {
       const md = Math.hypot(mob.x - ply.x, mob.z - ply.z);
@@ -5381,6 +5383,12 @@ function tryInteract() {
         return;
       }
       ply.hidden = true;
+      ply.hidFrom = { x: ply.x, z: ply.z, yaw: ply.yaw };
+      /* カメラを実クローゼット内へ移す（第三視点の見せかけのスリットではなく、
+         開いている右扉の隙間越しに部屋を直接覗く）。y=1.6 は棚板 1.98 より下、
+         上着の前面（z -5.23）と near 0.1 が当たらない 8cm 手前。 */
+      ply.x = -1.52; ply.z = -5.15; ply.yaw = Math.PI; ply.pitch = 0;
+      trailLastX = ply.x; trailLastZ = ply.z;   // ワープした飛びを足跡として残さない
       $("hideOv").style.display = "block";
       beep(140, 0.18, "sine", 0.1);
     }
