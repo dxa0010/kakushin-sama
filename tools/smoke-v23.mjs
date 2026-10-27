@@ -298,11 +298,11 @@ const accel = await page.evaluate(async () => {
   const blue = await chase();
   // 白は chaseAccel が null なので、同じ状況でも boost は一切積まれない
   const whiteAccel = (() => { d.setMode("white"); return d.mob.boost; })();
-  // 訪問間隔の式（青 6+乱数0..8、白 18+乱数0..14）を、実際の設定値から確かめる
-  const gaps = { blueGap: 6, whiteGap: 18 };
+  // 訪問間隔の式（青 2+乱数0..3、白 18+乱数0..14）を、実際の設定値から確かめる
+  const gaps = { blueGap: 2, whiteGap: 18 };
   return { blue, whiteAccel, gaps };
 });
-// 12ゲーム秒 ÷ 1.5秒 = 8回ぶん、つまり +1.6 m/s まで積める計算。半分積めていれば効いている。
+// 12ゲーム秒 ÷ 1.2秒 = 10回ぶん、つまり +2.5 m/s まで積める計算（v25）。半分積めていれば効いている。
 check("B-05 青は追い続けると加速が積まれる", accel.blue.maxBoost >= 0.8, JSON.stringify(accel.blue));
 
 const gapStat = await page.evaluate(() => {
@@ -319,8 +319,8 @@ const gapStat = await page.evaluate(() => {
   return { blueMin: Math.min(...blue), blueMax: Math.max(...blue),
            whiteMin: Math.min(...white), whiteMax: Math.max(...white) };
 });
-check("B-06 青の訪問間隔は6〜14ゲーム内分",
-      gapStat.blueMin >= 5.9 && gapStat.blueMax <= 14.1, JSON.stringify(gapStat));
+check("B-06 青の訪問間隔は2〜5ゲーム内分（v25）",
+      gapStat.blueMin >= 1.9 && gapStat.blueMax <= 5.1, JSON.stringify(gapStat));
 check("B-07 白の訪問間隔は従来どおり18〜32（白は変えない）",
       gapStat.whiteMin >= 17.9 && gapStat.whiteMax <= 32.1, JSON.stringify(gapStat));
 
