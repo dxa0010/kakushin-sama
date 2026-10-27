@@ -4939,6 +4939,8 @@ const mob = { x: 0, z: 0, wp: 0, mode: "patrol", lostAt: 0, spokeAt: -99, stuck:
                crumb: -1, freeze: 0,
                boost: 0, boostT: 0 };   // crumb = 追っているパンくずの通し番号（-1 は未追跡）
 // boost = 追い続けて積み上がった加速ぶん（m/s）、boostT = その積算タイマー
+/* 前フレームの怪人位置（進行方向を向かせるための工作変数）と、目標とすべきyaw */
+const mobFace = { x: 0, z: 0, yaw: 0 };
 function spawnMonster() {
   // プレイヤーから遠い候補の中からランダムに出現（毎回同じ場所からは出ない）
   const withD = WP.map((wp, i) => ({ i, wp, d: Math.hypot(wp[0]-ply.x, wp[1]-ply.z) }))
@@ -4946,6 +4948,10 @@ function spawnMonster() {
   const pick = withD[Math.floor(Math.random() * Math.min(3, withD.length))];
   mob.x = pick.wp[0]; mob.z = pick.wp[1]; mob.wp = pick.i;
   mob.mode = "patrol"; mob.lostAt = 0; mob.stuck = 0; mob.active = true; mob.crumb = -1; mob.freeze = 0; mob.boost = 0; mob.boostT = 0;
+  // 出現位置から的工作変数をリセットしないと、出現直後に前回の移動差分で
+  // 変なyawへ回ろうとする
+  mobFace.x = pick.wp[0]; mobFace.z = pick.wp[1];
+  mobFace.yaw = monster.rotation.y;
   monster.visible = true;
   monster.position.set(mob.x, 0, mob.z);
   beep(85, 0.7, "sine", 0.16, 55);
@@ -5832,7 +5838,21 @@ function monsterUpdate(dt) {
   }
 
   monster.position.set(mob.x, 0, mob.z);
-  monster.lookAt(ply.x, 0, ply.z); // 顔は常にこちらを向く
+  /* 向き（v27）：基本は**進行方向**。旧版は常に lookAt(ply) だったので移動中も顔だけが
+     こちらへ吸い付く「蟹歩き」に見えた。前フレームからの移動ベクトルへ正面（ローカル
+     +z）を指数平滑で寄せる。例外は発見直後の硬直（freeze）——この間だけ見つめた先の
+     プレイヤーへ向き直る（この stare だけは意図どおりの演出として残す）。 */
+  const mvx = mob.x - mobFace.x, mvz = mob.z - mobFace.z;
+  if (mob.mode === "chase" && mob.freeze > 0)
+    mobFace.yaw = Math.atan2(ply.x - mob.x, ply.z - mob.z);
+  else if (Math.hypot(mvx, mvz) > 1e-4)
+    mobFace.yaw = Math.atan2(mvx, mvz);
+  {
+    let dd = mobFace.yaw - monster.rotation.y;
+    dd = ((dd + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    monster.rotation.y += dd * Math.min(1, dt * 5);
+  }
+  mobFace.x = mob.x; mobFace.z = mob.z;
   // footsteps（v14で左右の定位を追加）
   // 【なぜ重要か】隠れて怪人の位置を推測するのがこのゲームの核なのに、v13までは
   // 距離減衰だけで方向が分からず、音が情報として機能していなかった。
