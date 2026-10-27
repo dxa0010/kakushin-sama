@@ -74,33 +74,216 @@
   }
   .hidden { display: none !important; }
 
-  #title h1 {
-    font-family: var(--f-serif);
-    font-size: clamp(1.6rem, 6vw, 3.2rem);
-    letter-spacing: 0.12em; font-weight: 600;
-    color: #cfc9b8; margin-bottom: 10px;
-  }
-  /* タイトルの2段目。h1（怪異の名前）を最大に見せ、作品名の後半をその下に置く。
-     名前を最初に読ませるのは演出ではなく仕様：異変 issuer（発行元＝株式会社カクシン）と
-     kami（氏名欄＝カクシン様）は「カクシン」という名前を知っていることが判定の根拠になる。
-     v21 の暗証番号と同じ「ゲーム内の情報だけで解ける」原則（docs/test-specs/anoms-i18n.md L-2）。 */
-  #title .sub2 {
-    font-family: var(--f-serif);
-    font-size: clamp(1rem, 2.6vw, 1.35rem);
-    letter-spacing: 0.16em; color: #a49d8a; margin-bottom: 12px;
-  }
-  #title .sub { color: #6f6a5e; font-size: 0.9rem; letter-spacing: 0.3em; margin-bottom: 34px; }
-  #title .prem {
-    font-family: var(--f-serif);
-    color: #979182; line-height: 2.1; font-size: 0.95rem; margin-bottom: 34px;
-  }
   .btn {
     font-family: inherit; font-size: 1rem; letter-spacing: 0.2em;
     color: #d8d4c8; background: none; border: 1px solid #55503f;
     padding: 13px 46px; cursor: pointer; border-radius: 2px;
   }
   .btn:hover, .btn:focus-visible { border-color: #b0a77c; color: #fff; outline: none; }
-  #title .ctrl { margin-top: 30px; color: #55524a; font-size: 0.78rem; line-height: 1.9; }
+
+  /* ---------- タイトル（ウェルカム画面） ----------
+     演出の本体は src/title.js。ここは見た目だけ。
+     重ね順（奥→手前）: キーアート → 冷え（青色申告）→ 陰（文字を読ませる暗がり）→
+     粒子 → 本文 → 暗転 → 冒頭の文章。暗転より奥に本文を置くのは、明かりが消えたら
+     メニューも一緒に闇に沈むため（画面の中で明かりは机のスタンド1つだけ、という設定）。
+     **暗転・冒頭の文章・粒子は pointer-events:none。** #startBtn はいつでも押せること
+     （自動テストとツール7本が読み込み直後に押す）。 */
+  #title { padding: 0; align-items: stretch; justify-content: stretch; text-align: left;
+           background: #000; overflow: hidden; }
+  #title .tLayer { position: absolute; inset: 0; pointer-events: none; }
+  #tArt { opacity: 0; transition: opacity 2.6s ease-out, transform 0.9s ease-out; }
+  #title.lit #tArt { opacity: 1; }
+  #tDrift { position: absolute; inset: 0; transform-origin: 62% 20%;
+            animation: tDrift 28s ease-in-out infinite alternate; }
+  @keyframes tDrift { from { transform: scale(1.02); } to { transform: scale(1.06) translateX(-0.8%); } }
+  /* 画像の箱を画面いっぱいに覆う大きさにして、戸口のあれの顔（画像の 64% 16%）を原点に拡大する。
+     原点が顔なので、拡大しても**顔の位置は動かず、体と部屋だけが広がる**＝近づいて見える。
+     （胴を原点にすると、近づくたびに顔が画面の上へ逃げて、上限の手前で切れる） */
+  #tArtImg {
+    position: absolute; left: 50%; top: 50%;
+    width: max(100vw, 179.17vh); height: max(100vh, 55.81vw);
+    background: url(assets/title/key_16x9.webp) center / cover no-repeat;
+    transform-origin: 64% 16%;
+    transform: translate(-50%, -50%) scale(var(--near, 1));
+    filter: brightness(0.66) saturate(0.78) contrast(1.06);
+  }
+  /* スタンドの明かり。画像の中の位置に合わせて置き、不規則に揺らす */
+  #tLamp { position: absolute; left: 29%; top: 40%; width: 40%; aspect-ratio: 1;
+           transform: translate(-50%, -50%); border-radius: 50%;
+           background: radial-gradient(circle, rgba(255, 210, 150, 0.2) 0%, rgba(255, 190, 120, 0.06) 38%, transparent 64%);
+           mix-blend-mode: screen; animation: tLamp 6.3s steps(1) infinite; }
+  @keyframes tLamp { 0%{opacity:1} 41%{opacity:.82} 43%{opacity:1} 67%{opacity:.6} 68%{opacity:.95} 70%{opacity:.7} 71%{opacity:1} }
+  #tTint { background: radial-gradient(ellipse at 60% 40%, rgba(30, 60, 120, 0.25), rgba(8, 18, 45, 0.6));
+           opacity: 0; transition: opacity 1.4s; }
+  #title.blue #tTint { opacity: 1; }
+  #title.blue #tLamp { filter: hue-rotate(170deg) saturate(0.5); opacity: 0.6; }
+  #tShade {
+    background:
+      linear-gradient(90deg, rgba(3,3,5,0.95) 0%, rgba(3,3,5,0.86) 22%, rgba(3,3,5,0.42) 44%, rgba(3,3,5,0) 60%),
+      linear-gradient(0deg, rgba(3,3,5,0.9) 0%, rgba(3,3,5,0) 26%),
+      radial-gradient(ellipse at 62% 42%, transparent 38%, rgba(0,0,0,0.7) 100%);
+  }
+  #tGrain { inset: -160px !important; opacity: 0.07; animation: tGrain 0.6s steps(6) infinite; }
+  @keyframes tGrain { 0%{transform:translate(0,0)} 20%{transform:translate(-53px,31px)} 40%{transform:translate(41px,-67px)}
+                      60%{transform:translate(-29px,-13px)} 80%{transform:translate(71px,47px)} 100%{transform:translate(-11px,79px)} }
+  #tDark { background: #000; opacity: 0; transition: opacity 40ms; z-index: 3; }
+
+  #tMain {
+    position: relative; z-index: 2; height: 100%; max-width: 640px;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 40px 24px 70px clamp(28px, 8vw, 132px);
+  }
+  #title .sub { color: #6a655a; font-size: 0.68rem; letter-spacing: 0.42em; margin-bottom: 18px; }
+  /* h1 は怪異の名前。名前を最初に読ませるのは演出ではなく仕様：異変 issuer（発行元＝株式会社カクシン）と
+     kami（氏名欄＝カクシン様）は「カクシン」という名前を知っていることが判定の根拠になる。
+     v21 の暗証番号と同じ「ゲーム内の情報だけで解ける」原則（docs/test-specs/anoms-i18n.md L-2）。 */
+  #title h1 {
+    font-family: var(--f-serif);
+    font-size: clamp(2.6rem, 7.2vw, 5.4rem); line-height: 1.15;
+    letter-spacing: 0.14em; font-weight: 600; color: #ddd5c0;
+    text-shadow: 0 0 34px rgba(150, 22, 12, 0.38), 0 2px 0 #000;
+    margin-bottom: 14px;
+  }
+  /* 点灯し終えたら .on（title.js）。アニメーション名を切り替えると点灯がやり直されるので、
+     ノイズは点灯後にだけ掛ける */
+  #title.reveal #titleName.on { animation: none; }
+  #title.reveal #titleName.on.glitch { animation: tGlitch 0.17s steps(2) 1; }
+  @keyframes tGlitch {
+    0%   { transform: translate(-3px, 0) skewX(-7deg); text-shadow: 4px 0 rgba(190,30,20,.75), -4px 0 rgba(70,140,170,.5); }
+    50%  { transform: translate(4px, 1px); clip-path: inset(28% 0 38% 0); text-shadow: -3px 0 rgba(190,30,20,.75); }
+    100% { transform: none; }
+  }
+  #title .sub2 {
+    font-family: var(--f-serif);
+    font-size: clamp(0.95rem, 2vw, 1.22rem);
+    letter-spacing: 0.3em; color: #9d9583; margin-bottom: clamp(34px, 7vh, 72px);
+  }
+
+  /* モード：申告書の種類。選ぶと赤い印が押される */
+  #modeSel { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .mbtn {
+    position: relative; font-family: var(--f-serif); font-size: 0.88rem; letter-spacing: 0.16em;
+    color: #8a8475; background: rgba(5,5,7,0.35); border: 1px solid rgba(85,80,63,0.55);
+    padding: 9px 30px 9px 16px; cursor: pointer; border-radius: 1px;
+    transition: color .3s, border-color .3s, background .3s;
+  }
+  .mbtn:hover, .mbtn:focus-visible { color: #d8d0bb; border-color: #8a7f5c; outline: none; }
+  .mbtn.sel { color: #efe6d0; border-color: rgba(150, 40, 26, 0.75); background: rgba(70, 10, 6, 0.28); }
+  .mbtn .seal {
+    position: absolute; right: -11px; top: -11px; width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid rgba(178, 36, 22, 0.88);
+    background: radial-gradient(circle, rgba(178,36,22,0.85) 0 22%, transparent 24% 46%, rgba(178,36,22,0.7) 48% 56%, transparent 58%);
+    opacity: 0; transform: rotate(-12deg); pointer-events: none;
+  }
+  .mbtn.sel .seal { opacity: 0.92; }
+  .mbtn .seal.stamp { animation: tStamp 0.34s cubic-bezier(.3,1.6,.5,1) both; }
+  @keyframes tStamp { 0% { opacity: 0; transform: scale(2.4) rotate(-30deg); } 55% { opacity: 1; transform: scale(0.88) rotate(-10deg); }
+                      100% { opacity: 0.92; transform: scale(1) rotate(-12deg); } }
+  .mbtn.locked { color: #4d493f; border-style: dashed; cursor: not-allowed;
+                 text-decoration: line-through; text-decoration-color: rgba(140, 30, 20, 0.55); }
+  .mbtn.locked:hover { color: #6a5f55; border-color: rgba(110, 40, 30, 0.6); }
+  .mbtn.deny > span:first-child { display: inline-block; animation: tDeny 0.4s linear both; }
+  @keyframes tDeny { 0%,100%{transform:none} 15%{transform:translateX(-5px)} 35%{transform:translateX(4px) skewX(6deg)}
+                     55%{transform:translateX(-3px)} 75%{transform:translateX(2px)} }
+  #modeDesc { font-family: var(--f-serif); font-size: 0.8rem; letter-spacing: 0.12em; color: #7d776a;
+              min-height: 1.7em; margin-bottom: clamp(18px, 4vh, 34px); opacity: 0; }
+  #modeDesc.show { animation: tDesc 0.9s ease-out both; }
+  #modeDesc.whisper { color: #b04a3c; }
+  @keyframes tDesc { 0%{opacity:0; filter:blur(3px)} 30%{opacity:.5} 38%{opacity:.15} 100%{opacity:1; filter:none} }
+
+  /* メニュー。枠のあるボタンではなく、闇に浮かぶ文字。触れると赤い筋が滲む */
+  /* 左に -30px：文字の頭を題字にそろえ、赤い点は余白にぶら下げる */
+  #tMenu { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-left: -30px; }
+  .tItem {
+    position: relative; font-family: var(--f-serif); font-size: 1.05rem; letter-spacing: 0.3em;
+    color: #958e7d; background: none; border: none; cursor: pointer;
+    padding: 8px 14px 8px 30px; text-align: left; transition: color .25s, text-shadow .4s;
+  }
+  .tItem > span { display: inline-block; }
+  .tItem::before {
+    content: ""; position: absolute; left: 6px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px;
+    border-radius: 50%; background: #9e2416; box-shadow: 0 0 10px rgba(200, 40, 20, 0.7);
+    opacity: 0; transform: scale(0.2); transition: opacity .2s, transform .3s;
+  }
+  .tItem::after {
+    content: ""; position: absolute; left: 30px; right: 0; bottom: 3px; height: 1px;
+    background: linear-gradient(90deg, rgba(170, 36, 20, 0.9), rgba(170, 36, 20, 0));
+    transform: scaleX(0); transform-origin: left; transition: transform .55s cubic-bezier(.2,.8,.2,1);
+  }
+  .tItem:hover, .tItem:focus-visible { color: #f0e7d2; text-shadow: 0 0 14px rgba(170, 30, 16, 0.5); outline: none; }
+  .tItem:hover::before, .tItem:focus-visible::before { opacity: 1; transform: scale(1); }
+  .tItem:hover::after, .tItem:focus-visible::after { transform: scaleX(1); }
+  .tItem:hover > span, .tItem:focus-visible > span { animation: tJit 0.26s steps(3) 1; }
+  @keyframes tJit { 0%{transform:translate(1px,-1px)} 33%{transform:translate(-2px,1px) skewX(-4deg)} 66%{transform:translate(1px,0)} 100%{transform:none} }
+  #startBtn { font-size: 1.45rem; letter-spacing: 0.42em; color: #d9d1bc; margin-bottom: 8px; }
+  #title.starting #tMenu .tItem:not(#startBtn), #title.starting #modeSel, #title.starting #modeDesc,
+  #title.starting #tFoot { opacity: 0 !important; transition: opacity .35s; }
+  #title.starting #startBtn { color: #fff; text-shadow: 0 0 18px rgba(200, 40, 20, 0.8); }
+
+  #tFoot { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: flex-end;
+           justify-content: space-between; gap: 16px; padding: 0 22px 18px clamp(28px, 8vw, 132px); }
+  #meta { color: #5f5a4f; font-size: 0.7rem; letter-spacing: 0.12em; }
+  .tLink { white-space: nowrap; font: inherit; font-size: 0.7rem; letter-spacing: 0.14em; color: #5f5a4f; background: none;
+           border: none; cursor: pointer; padding: 6px 2px; transition: color .25s; }
+  .tLink:hover, .tLink:focus-visible { color: #bdb5a2; outline: none; text-decoration: underline; text-underline-offset: 4px; }
+
+  /* 立ち上がり。題字は蛍光灯のように瞬いて点く */
+  #title:not(.reveal) .rv, #title:not(.reveal) #titleName { opacity: 0; }
+  #title.reveal .rv { animation: tIn 1.1s ease-out both; }
+  #title.reveal #titleName { animation: tFlickOn 1.5s linear 0.5s both; }
+  #title.reveal .sub.rv   { animation-delay: 0.2s; }
+  #title.reveal .sub2.rv  { animation-delay: 1.3s; }
+  #title.reveal .rv.m1 { animation-delay: 1.7s; }
+  #title.reveal .rv.m2 { animation-delay: 1.9s; }
+  #title.reveal .rv.m3 { animation-delay: 2.05s; }
+  #title.reveal .rv.m4 { animation-delay: 2.2s; }
+  #title.reveal #tFoot.rv { animation-delay: 2.6s; }
+  @keyframes tIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes tFlickOn { 0%{opacity:0} 8%{opacity:.7} 11%{opacity:0} 22%{opacity:0} 25%{opacity:.9} 28%{opacity:.2}
+                        34%{opacity:1} 36%{opacity:.4} 44%{opacity:1} 100%{opacity:1} }
+
+  /* 冒頭の文章（セッションに1回）。前提の5行を闇の中に1行ずつ出す */
+  #tOpen { z-index: 5; background: #000; display: flex; flex-direction: column; align-items: center;
+           justify-content: center; text-align: center; transition: opacity 1.1s; }
+  #tOpen.gone { opacity: 0; }
+  #tOpenLines p { font-family: var(--f-serif); font-size: clamp(0.95rem, 2.2vw, 1.2rem); color: #cbc4b1;
+                  letter-spacing: 0.14em; line-height: 2.5; opacity: 0; animation: tLine 1.4s ease-out both; }
+  #tOpenLines p:nth-child(4) { color: #d6a497; }
+  @keyframes tLine { from { opacity: 0; filter: blur(4px); transform: translateY(4px); } to { opacity: 1; filter: none; transform: none; } }
+  #tOpenSkip { position: absolute; right: 22px; bottom: 18px; font-size: 0.68rem; letter-spacing: 0.16em;
+               color: #4a463e; animation: tIn 1s 1.5s both; }
+
+  /* 遊び方（前提・操作・ヒント）。タイトル本体から外して、読みたい人だけが開く */
+  .modal { background: rgba(3, 3, 5, 0.88); z-index: 65; }
+  .mPanel { background: #0c0c10; border: 1px solid #33302a; border-radius: 3px;
+            padding: 30px 38px 28px; max-width: 640px; width: 100%; max-height: 92vh; overflow-y: auto;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 18px 48px rgba(0, 0, 0, 0.7); }
+  .mPanel h2 { font-family: var(--f-serif); font-size: 1.4rem; letter-spacing: 0.18em; color: #cfc9b8; margin-bottom: 18px; }
+  #howto .prem { font-family: var(--f-serif); color: #a39c8b; line-height: 2.1; font-size: 0.92rem;
+                 padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid #23211c; }
+  #howto .ctrl { color: #7d786b; font-size: 0.8rem; line-height: 1.95; margin-bottom: 24px; }
+  /* パネルは開くたびに、切れかけの蛍光灯のように点く（ポーズ中の設定も同じ） */
+  .overlay:not(.hidden) > .mPanel, #pause:not(.hidden) #pausePanel { animation: tPanel 0.42s linear both; }
+  @keyframes tPanel { 0%{opacity:0; transform:translateY(6px)} 30%{opacity:.75} 42%{opacity:.2} 60%{opacity:1; transform:none} 100%{opacity:1; transform:none} }
+  /* タイトルから開いた設定：一時停止の文言と「タイトルへ戻る」は要らない */
+  #pause.fromTitle .note, #pause.fromTitle #pTitle { display: none; }
+  #pause.fromTitle h2 { margin-bottom: 26px; }
+
+  @media (orientation: portrait) {
+    /* 縦長では画像の左側（スタンド）を切り、戸口のあれを画面の右寄りに残す */
+    #tArtImg { left: calc(58vw - 0.14 * max(100vw, 179.17vh)); }
+    #tShade { background:
+      linear-gradient(0deg, rgba(3,3,5,0.95) 0%, rgba(3,3,5,0.75) 45%, rgba(3,3,5,0.1) 75%),
+      radial-gradient(ellipse at 60% 30%, transparent 30%, rgba(0,0,0,0.7) 100%); }
+    #tMain { justify-content: flex-end; padding-bottom: 96px; }
+    #tFoot { flex-direction: column; align-items: flex-start; gap: 2px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #tDrift, #tLamp, #tGrain { animation: none; }
+    #title.reveal .rv, #title.reveal #titleName { animation: tIn 0.5s ease-out both; animation-delay: 0s; }
+    .tItem:hover > span, .tItem:focus-visible > span, .mbtn.deny > span:first-child { animation: none; }
+    .overlay:not(.hidden) > .mPanel, #pause:not(.hidden) #pausePanel { animation: none; }
+  }
 
   /* ---------- ポーズ／設定（P2-4）とクレジット（P7-1） ---------- */
   /* ポーズ中は背景を完全に塗り潰さない。ゲームが「止まっている」ことは伝えたいが、
@@ -255,17 +438,6 @@
   #recap .zukan { text-align: center; margin-top: 14px; color: #8b8055; letter-spacing: 0.15em; font-size: 0.78rem; line-height: 1.9; }
   #recap .new { color: #d9cf9e; }
 
-  /* ---------- title mode select ---------- */
-  #modeSel { display: flex; gap: 12px; margin-bottom: 24px; }
-  #volRow { display: flex; align-items: center; gap: 10px; margin-bottom: 22px;
-            font-size: 0.72rem; letter-spacing: 0.1em; color: #9a927c; }
-  #volRow input[type=range] { width: 150px; accent-color: #b0a77c; cursor: pointer; }
-  #volVal { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
-  .mbtn { padding: 10px 22px; font-size: 0.85rem; letter-spacing: 0.12em; }
-  .mbtn.sel { border-color: #b0a77c; color: #fff; }
-  .mbtn:disabled { opacity: 0.4; cursor: not-allowed; }
-  #meta { margin-top: 18px; color: #6f6a5e; font-size: 0.75rem; letter-spacing: 0.12em; }
-
   /* ---------- touch controls (dual stick) ---------- */
   .stick {
     position: fixed; bottom: 44px; width: 124px; height: 124px;
@@ -373,7 +545,7 @@
 <!-- ポーズ／設定（P2-4）。Esc で開く。state を "PAUSE" にするので時計も怪人も止まる。 -->
 <div id="pause" class="overlay hidden">
  <div id="pausePanel">
-  <h2 data-t="pauseTitle"></h2>
+  <h2 id="pauseH" data-t="pauseTitle"></h2>
   <div class="note" data-t="pauseNote"></div>
   <div id="pauseRows">
     <label for="pVol" data-t="optVolume"></label>
@@ -485,23 +657,44 @@
   </div>
 </div>
 
+<!-- タイトル（ウェルカム画面）。演出は src/title.js、見た目は上の「タイトル」節。
+     見せるのは 題字・モード・メニュー（開始／遊び方／設定）だけ。前提と操作説明は「遊び方」、
+     音量などは「設定」（#pause を流用）、ライセンスは右下の小さなリンクからクレジットへ。 -->
 <div id="title" class="overlay">
-  <h1 id="titleName"></h1>
-  <div class="sub2" data-t="titleSub"></div>
-  <div class="sub" data-t="titleBrand"></div>
-  <div class="prem" id="prem"></div>
-  <div id="modeSel">
-    <button id="modeWhite" class="btn mbtn sel" data-t="modeWhite"></button>
-    <button id="modeBlue" class="btn mbtn" data-t="modeBlue"></button>
+  <div id="tArt" class="tLayer"><div id="tDrift"><div id="tArtImg"><div id="tLamp"></div></div></div></div>
+  <div id="tTint" class="tLayer"></div>
+  <div id="tShade" class="tLayer"></div>
+  <div id="tGrain" class="tLayer"></div>
+  <div id="tMain">
+    <div class="sub rv" data-t="titleBrand"></div>
+    <h1 id="titleName"></h1>
+    <div class="sub2 rv" data-t="titleSub"></div>
+    <div id="modeSel" class="rv m1" role="radiogroup">
+      <button id="modeWhite" class="mbtn sel" role="radio" aria-checked="true"><span data-t="modeWhite"></span><span class="seal"></span></button>
+      <button id="modeBlue" class="mbtn" role="radio" aria-checked="false"><span data-t="modeBlue"></span><span class="seal"></span></button>
+    </div>
+    <div id="modeDesc" class="show" aria-live="polite"></div>
+    <nav id="tMenu">
+      <button id="startBtn" class="tItem rv m2"><span data-t="start"></span></button>
+      <button id="howtoBtn" class="tItem rv m3"><span data-t="menuHowto"></span></button>
+      <button id="settingsBtn" class="tItem rv m4"><span data-t="menuSettings"></span></button>
+    </nav>
   </div>
-  <div id="volRow">
-    <span data-t="optVolume"></span>
-    <input id="volSlider" type="range" min="0" max="100" step="5" value="80">
-    <span id="volVal">80%</span>
+  <div id="tFoot" class="rv">
+    <div id="meta"></div>
+    <button id="creditsLink" class="tLink" data-t="creditsLink"></button>
   </div>
-  <button id="startBtn" class="btn" data-t="start"></button>
-  <div class="ctrl" id="ctrl"></div>
-  <div id="meta"></div>
+  <div id="tDark" class="tLayer"></div>
+  <div id="tOpen" class="tLayer"><div id="tOpenLines"></div><div id="tOpenSkip"></div></div>
+
+  <div id="howto" class="overlay modal hidden" role="dialog" aria-modal="true">
+    <div class="mPanel">
+      <h2 data-t="menuHowto"></h2>
+      <div class="prem" id="prem"></div>
+      <div class="ctrl" id="ctrl"></div>
+      <button id="howtoBack" class="btn" data-t="back"></button>
+    </div>
+  </div>
 </div>
 
 <div id="ending" class="overlay hidden">
