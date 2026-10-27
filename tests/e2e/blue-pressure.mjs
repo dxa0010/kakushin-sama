@@ -90,10 +90,12 @@ const presence = (span) => page.evaluate((span) => new Promise((resolve) => {
     }
     if (act !== wasOn) timeline.push({ gm: +gm.toFixed(2), active: act, visit: d.visit.state });
     wasOn = act;
-    if (d.st() !== "PLAY") return resolve({ aborted: d.st(), on, total, timeline });
-    if ((!started || gm - t0 < span) && performance.now() < deadline) requestAnimationFrame(tick);
+    // 23:59 の時間切れ（END）でも打ち切る。23時台は1回の滞在が終わる前に夜が明けるので、
+    // 窓の終わりは END になるのが普通（v25 の実測: 23:13 に来て 23:59 まで居座った）。
+    const live = d.st() === "PLAY";
+    if (live && (!started || gm - t0 < span) && performance.now() < deadline) requestAnimationFrame(tick);
     else resolve({ ratio: +(on / total).toFixed(3), totalMin: +total.toFixed(1), visits,
-                   gapMaxMin: +gapMax.toFixed(2), timeline });
+                   gapMaxMin: +gapMax.toFixed(2), endedBy: live ? "span" : d.st(), timeline });
   };
   requestAnimationFrame(tick);
 }), span);
@@ -140,7 +142,7 @@ await page.waitForTimeout(500);
 const p3Blue = await patrolSpeed("blue");
 const p3White = await patrolSpeed("white");
 await page.evaluate(() => { const d = window.__dbg; d.mob.active = false; d.endVisit(); d.visit.nextAt = d.gm(); d.setMode("blue"); });
-const pres3 = await presence(56);
+const pres3 = await presence(60);   // 実質 END まで
 
 check("V-01 21時台 青の巡回は白の約1.2倍", Math.abs(p1Blue / p1White - 1.2) < 0.08, `blue=${p1Blue} white=${p1White}`);
 check("V-02 21時台 白の巡回は従来の1.05", Math.abs(p1White - 1.05) < 0.08, `white=${p1White}`);
@@ -150,7 +152,7 @@ check("V-04 21時台でも追い続ければ3.6m/sを超える（16秒以内）"
 check("P-01 21時台 在室率 65%以上", pres1.ratio >= 0.65, JSON.stringify({ ...pres1, timeline: undefined }));
 check("P-02 21時台 不在の最長は前触れが成立する長さ（≥5ゲーム内分）", pres1.gapMaxMin >= 5, `gapMax=${pres1.gapMaxMin}`);
 check("P-03 23時台 在室率 65%以上", pres3.ratio >= 0.65, JSON.stringify({ ...pres3, timeline: undefined }));
-check("P-04 23時台 不在の最長 ≥5ゲーム内分", pres3.gapMaxMin >= 5, `gapMax=${pres3.gapMaxMin}`);
+check("P-04 23時台 でも来る前に前触れの窓がある（≥5ゲーム内分）", pres3.gapMaxMin >= 5, `gapMax=${pres3.gapMaxMin}`);
 check("S-01 例外なし", errs.length === 0, errs.slice(0, 3).join(" / "));
 
 writeFileSync(OUT, JSON.stringify({
