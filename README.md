@@ -22,7 +22,7 @@ src/pin.js                 暗証番号判定（純粋モジュール。ゲー�
 src/title.js               タイトル画面の演出（暗転・冒頭の文章・メニューの反応。DOM だけを触る）
 vendor/three/              Three.js r185 本体＋addons（postprocessing、RoundedBoxGeometry等）
 assets/textures/           実写テクスチャ（three.js examples由来のMIT素材＋ambientCG由来のCC0素材）
-assets/title/              タイトル背景（ストアのキーアートを tools/make-title-art.mjs で webp 化）
+assets/title/              タイトル背景（docs/storeart/title_mannequin.png を tools/make-title-art.mjs で webp 化）
 tools/shot.mjs             スクショハーネス（名前付きアングル。改修前後を撮り比べる）
 tools/shot-ao.mjs          AOパラメータの振り比べ用（同一セッション内で切り替えるので乱数が揃う）
 tools/genimage.mjs         agy（Antigravity CLI）経由でテクスチャを生成（文字の無い素材専用）

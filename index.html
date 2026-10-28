@@ -83,9 +83,9 @@
 
   /* ---------- タイトル（ウェルカム画面） ----------
      演出の本体は src/title.js。ここは見た目だけ。
-     重ね順（奥→手前）: キーアート → 冷え（青色申告）→ 陰（文字を読ませる暗がり）→
+     重ね順（奥→手前）: 怪人の絵 → 冷え（青色申告）→ 陰（文字を読ませる暗がり）→
      粒子 → 本文 → 暗転 → 冒頭の文章。暗転より奥に本文を置くのは、明かりが消えたら
-     メニューも一緒に闇に沈むため（画面の中で明かりは机のスタンド1つだけ、という設定）。
+     メニューも一緒に闇に沈むため（画面の中で明かりは奥のモニター1つだけ、という設定）。
      **暗転・冒頭の文章・粒子は pointer-events:none。** #startBtn はいつでも押せること
      （自動テストとツール7本が読み込み直後に押す）。 */
   #title { padding: 0; align-items: stretch; justify-content: stretch; text-align: left;
@@ -93,30 +93,33 @@
   #title .tLayer { position: absolute; inset: 0; pointer-events: none; }
   #tArt { opacity: 0; transition: opacity 2.6s ease-out, transform 0.9s ease-out; }
   #title.lit #tArt { opacity: 1; }
-  #tDrift { position: absolute; inset: 0; transform-origin: 62% 20%;
+  #tDrift { position: absolute; inset: 0; transform-origin: 76% 16%;
             animation: tDrift 28s ease-in-out infinite alternate; }
   @keyframes tDrift { from { transform: scale(1.02); } to { transform: scale(1.06) translateX(-0.8%); } }
-  /* 画像の箱を画面いっぱいに覆う大きさにして、戸口のあれの顔（画像の 64% 16%）を原点に拡大する。
-     原点が顔なので、拡大しても**顔の位置は動かず、体と部屋だけが広がる**＝近づいて見える。
-     （胴を原点にすると、近づくたびに顔が画面の上へ逃げて、上限の手前で切れる） */
+  /* 絵は正方形（決定稿 concept4 の怪人）。横長の画面では高さに合わせて右に寄せ、左の文字の側は
+     マスクで闇に溶かす。画面いっぱいに覆うと（cover）16:9 では上下が 44% 切れて、顔が画面の外に出る。
+     怪人の顔（画像の 67% 15%）を原点に拡大する。原点が顔なので、拡大しても**顔の位置は動かず、
+     体と部屋だけが広がる**＝近づいて見える。（胴を原点にすると、近づくたびに顔が上へ逃げて切れる） */
   #tArtImg {
-    position: absolute; left: 50%; top: 50%;
-    width: max(100vw, 179.17vh); height: max(100vh, 55.81vw);
-    background: url(assets/title/key_16x9.webp) center / cover no-repeat;
-    transform-origin: 64% 16%;
-    transform: translate(-50%, -50%) scale(var(--near, 1));
-    filter: brightness(0.66) saturate(0.78) contrast(1.06);
+    position: absolute; top: 0; width: 104vh; height: 104vh;   /* 頭頂が原画の上端に近いので、下を切る */
+    left: max(calc(100vw - 104vh), calc(55vw - 0.67 * 104vh));
+    background: url(assets/title/title_mannequin.webp) center / cover no-repeat;
+    transform-origin: 67% 15%;
+    transform: scale(var(--near, 1));
+    filter: brightness(0.86) saturate(0.85) contrast(1.05);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 26%);
+            mask-image: linear-gradient(90deg, transparent 0%, #000 26%);
   }
-  /* スタンドの明かり。画像の中の位置に合わせて置き、不規則に揺らす */
-  #tLamp { position: absolute; left: 29%; top: 40%; width: 40%; aspect-ratio: 1;
+  /* 奥のモニターの光。画像の中の位置に合わせて置き、不規則に揺らす */
+  #tLamp { position: absolute; left: 31%; top: 53%; width: 36%; aspect-ratio: 1;
            transform: translate(-50%, -50%); border-radius: 50%;
-           background: radial-gradient(circle, rgba(255, 210, 150, 0.2) 0%, rgba(255, 190, 120, 0.06) 38%, transparent 64%);
+           background: radial-gradient(circle, rgba(190, 215, 255, 0.22) 0%, rgba(160, 190, 240, 0.06) 38%, transparent 64%);
            mix-blend-mode: screen; animation: tLamp 6.3s steps(1) infinite; }
   @keyframes tLamp { 0%{opacity:1} 41%{opacity:.82} 43%{opacity:1} 67%{opacity:.6} 68%{opacity:.95} 70%{opacity:.7} 71%{opacity:1} }
   #tTint { background: radial-gradient(ellipse at 60% 40%, rgba(30, 60, 120, 0.25), rgba(8, 18, 45, 0.6));
            opacity: 0; transition: opacity 1.4s; }
   #title.blue #tTint { opacity: 1; }
-  #title.blue #tLamp { filter: hue-rotate(170deg) saturate(0.5); opacity: 0.6; }
+  #title.blue #tLamp { opacity: 0.6; }
   #tShade {
     background:
       linear-gradient(90deg, rgba(3,3,5,0.95) 0%, rgba(3,3,5,0.86) 22%, rgba(3,3,5,0.42) 44%, rgba(3,3,5,0) 60%),
@@ -129,7 +132,7 @@
   #tDark { background: #000; opacity: 0; transition: opacity 40ms; z-index: 3; }
 
   #tMain {
-    position: relative; z-index: 2; height: 100%; max-width: 640px;
+    position: relative; z-index: 2; height: 100%; max-width: 780px;
     display: flex; flex-direction: column; justify-content: center;
     padding: 40px 24px 70px clamp(28px, 8vw, 132px);
   }
@@ -140,7 +143,7 @@
   #title h1 {
     font-family: var(--f-serif);
     font-size: clamp(2.6rem, 7.2vw, 5.4rem); line-height: 1.15;
-    letter-spacing: 0.14em; font-weight: 600; color: #ddd5c0;
+    letter-spacing: 0.14em; font-weight: 600; color: #ddd5c0; white-space: nowrap;
     text-shadow: 0 0 34px rgba(150, 22, 12, 0.38), 0 2px 0 #000;
     margin-bottom: 14px;
   }
@@ -270,8 +273,8 @@
   #pause.fromTitle h2 { margin-bottom: 26px; }
 
   @media (orientation: portrait) {
-    /* 縦長では画像の左側（スタンド）を切り、戸口のあれを画面の右寄りに残す */
-    #tArtImg { left: calc(58vw - 0.14 * max(100vw, 179.17vh)); }
+    /* 縦長では顔を画面の中央やや右に置き、左右ははみ出させる（マスクも不要） */
+    #tArtImg { left: calc(58vw - 0.67 * 104vh); -webkit-mask-image: none; mask-image: none; }
     #tShade { background:
       linear-gradient(0deg, rgba(3,3,5,0.95) 0%, rgba(3,3,5,0.75) 45%, rgba(3,3,5,0.1) 75%),
       radial-gradient(ellipse at 60% 30%, transparent 30%, rgba(0,0,0,0.7) 100%); }
