@@ -19,6 +19,8 @@ import { createPinGate, normalizePin } from "./pin.js";
 import { LOCALES, ANOM_IDS, docSpecs, applyAnom, canApply, anomMeta,
          localeText, codexOrigin, pinHint, deadline, formatMoney, authority } from "./anoms.js";
 import { uiText, fill, formatDate, shiftDay, monthLabel } from "./ui.js";
+// タイトル画面の演出（DOM だけを触る。ゲームの状態は引数で渡す）
+import { initTitle } from "./title.js";
 /* ============================================================
    カクシン様 ─ 確定申告からは逃げられない — prototype
    ============================================================ */
@@ -5047,6 +5049,7 @@ addEventListener("keydown", e => {
     else if (state === "ETAX") closeEtax();
     else if (state === "PAUSE") closePause();
     else if (state === "PLAY") openPause();
+    else if (state === "TITLE") titleUI.escape();
   }
 });
 addEventListener("keyup",   e => { keys[e.code] = false; });
@@ -5273,6 +5276,9 @@ let ambience = null;   // 環境音のハンドル（部屋鳴り・冷蔵庫）
 // 設定の永続化はゲーム側の責務（audio.js が localStorage を触ると試聴ツールが
 // ゲームのセーブを書き換えてしまうため）
 Audio.setOnPrefsChange(p => { save.audio = p; persistSave(); });
+// 保存済みの音量を、音を鳴らす前（タイトルの設定画面）から見せる。audioInit で
+// 入れるだけだと、開始を押すまで設定画面が既定の 80% を表示し、触ると保存値を潰す。
+if (save.audio) Object.assign(audioPrefs, save.audio);
 
 // 【環境音は生活音だけ】v14ではドローン（52/54.7Hzのうなり）も敷いていたが、実聴の結果
 // 「合成音が鳴っている」と分かってしまうので外した。部屋鳴り＋冷蔵庫の2つだけの方が
@@ -6147,11 +6153,14 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 /* ---------- title: mode select & 記録表示 ---------- */
+/* 未解禁の青色申告は disabled にしない。disabled のボタンはクリックを受け取らず、
+   押しても何も起きない（＝壊れて見える）。押せるが拒まれる、を title.js で演出する。 */
 function refreshTitleMeta() {
   const blueOpen = !!save.endings.refund;
   const mb = $("modeBlue");
-  mb.disabled = !blueOpen;
-  mb.textContent = blueOpen ? tr("modeBlue") : tr("modeBlueLocked");
+  mb.classList.toggle("locked", !blueOpen);
+  mb.setAttribute("aria-disabled", String(!blueOpen));
+  mb.firstElementChild.textContent = blueOpen ? tr("modeBlue") : tr("modeBlueLocked");
   // エンディング数は EDS のキー数から数える（shiyakusho 追加で4つ目。ハードコードしない）
   const eN = Object.keys(EDS).filter(k => save.endings[k]).length;
   $("meta").textContent =
@@ -6159,15 +6168,6 @@ function refreshTitleMeta() {
     + (save.bestRank ? tr("saveBest", { rank: save.bestRank }) : "");
 }
 refreshTitleMeta();
-$("modeWhite").addEventListener("click", () => {
-  mode = "white";
-  $("modeWhite").classList.add("sel"); $("modeBlue").classList.remove("sel");
-});
-$("modeBlue").addEventListener("click", () => {
-  if ($("modeBlue").disabled) return;
-  mode = "blue";
-  $("modeBlue").classList.add("sel"); $("modeWhite").classList.remove("sel");
-});
 
 /* ---------- 画面の文言を流し込む（P2-9） ----------
    index.html の静的な文言は data-t / data-th を持つ。ここで一括で埋める。
@@ -6199,6 +6199,20 @@ function applyI18n() {
    進まないので、これだけで時計も怪人も止まる（別途フラグを持たない）。 */
 let pauseReturnState = "PLAY";
 
+/* タイトルの「設定」も同じ板を使う（項目を二重に持たない）。state は TITLE のまま
+   にする＝PAUSE にしない。ゲームはまだ始まっていないので、止めるものも戻るものも無い。
+   見出しと「再開する」だけ言い換え、「タイトルへ戻る」と一時停止の注記は隠す（CSS）。 */
+function openTitleSettings() {
+  if (state !== "TITLE") return;
+  $("pause").classList.add("fromTitle");
+  $("pauseH").textContent = tr("settingsTitle");
+  $("pResume").textContent = tr("back");
+  paintPause();
+  $("pause").classList.remove("hidden");
+  $("pResume").focus({ preventScroll: true });
+}
+const titleSettingsOpen = () => !$("pause").classList.contains("hidden");
+
 function openPause() {
   if (state !== "PLAY") return;
   pauseReturnState = state;
@@ -6211,6 +6225,11 @@ function openPause() {
 function closePause() {
   $("pause").classList.add("hidden");
   $("credits").classList.add("hidden");
+  if ($("pause").classList.contains("fromTitle")) {
+    $("pause").classList.remove("fromTitle");
+    $("pauseH").textContent = tr("pauseTitle");
+    $("pResume").textContent = tr("resume");
+  }
   if (state === "PAUSE") state = pauseReturnState;
   if (state === "PLAY" && !isTouch) renderer.domElement.requestPointerLock();
 }
@@ -6265,23 +6284,39 @@ $("pCredits").addEventListener("click", () => {
 });
 $("cBack").addEventListener("click", () => { $("credits").classList.add("hidden"); });
 
-/* ---------- 音量スライダー（タイトル画面） ---------- */
-{
-  const sl = $("volSlider"), lab = $("volVal");
-  const paint = () => {
-    sl.value = String(Math.round(audioPrefs.vol * 100));
-    lab.textContent = audioPrefs.muted ? tr("muted") : `${Math.round(audioPrefs.vol * 100)}%`;
-  };
-  paint();   // 保存された設定を復元して表示
-  sl.addEventListener("input", () => { setVolume(Number(sl.value) / 100); paint(); });
-}
+/* ---------- タイトル画面の演出（src/title.js） ----------
+   音量はタイトルから外して「設定」にまとめた（#pause の pVol）。
+   音は最初の操作で AudioContext だけ作る。環境音（部屋鳴り・冷蔵庫）は開始まで鳴らさない
+   ── タイトルで鳴るのは秒針とメニューの反応だけ。 */
+const titleUI = initTitle({
+  tr,
+  sfx: {
+    ready: () => !!Audio.AC,
+    unlock: () => { Audio.audioInit(save.audio || undefined); if (Audio.AC.state === "suspended") Audio.AC.resume().catch(() => {}); },
+    tick: (tock, vol) => clockTick(tock, vol),
+    thump: (vol) => thump(vol),
+    heartbeat: (vol) => heartbeat(vol),
+    deny: () => beep(92, 0.32, "sawtooth", 0.045, 58),
+  },
+  openSettings: openTitleSettings,
+  closeSettings: closePause,
+  settingsOpen: titleSettingsOpen,
+  onMode: (m) => { mode = m; },
+  blueUnlocked: () => !!save.endings.refund,
+});
 
 /* ---------- start ---------- */
 $("startBtn").addEventListener("click", async () => {
+  if (state !== "TITLE") return;
+  // 明かりが死ぬ演出（約0.9秒）。連打は null が返るので二重に始めない。
+  // 音はクリックの中で作っておく（暗転の音を鳴らすため。環境音は下の audioInit で始まる）。
+  if (!Audio.AC) Audio.audioInit(save.audio || undefined);
+  const dark = titleUI.beginStart();
+  if (!dark) return;
   // 同梱フォントを待ってから始める（P2-7）。読み込み前に書類を描くと
   // 1枚目だけ OS フォントになり、Proton では豆腐で読めない。
   // 待ち時間はほぼゼロ（読み込みはページ表示と同時に始めている）。
-  await fontsReady;
+  await Promise.all([fontsReady, dark]);
   MIN_PER_SEC = MODES[mode].mps;
   assignCopies();   // モード確定後に偽物を配り直す
   $("title").classList.add("hidden");
@@ -6310,6 +6345,8 @@ window.__dbg = { ply, mob, visit, ITEMS, FAKES, openInspect, enterVisit, startOm
   pin, openEtax,           // 検証用: 暗証番号ゲート本体とe-Taxの開閉（E2Eから残り回数を観測するため）
   st: () => state, gm: () => gameMin, setMin: v => { gameMin = v; },
   setMode: m => { mode = m; },
+  // 検証用: タイトルの見た目を撮るため（tests/e2e/title.mjs）
+  titleSelect: m => titleUI.select(m),
   // 検証用（v23）: 画質プリセットとポーズの開閉。tools/smoke-v23.mjs が
   // 「オーバーレイ中に描画を止めているか」「low で影が1灯になるか」を見るのに使う。
   quality: () => QUALITY, applyQuality, openPause, closePause,

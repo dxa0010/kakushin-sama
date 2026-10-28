@@ -62,6 +62,16 @@ T.ja = {
   saveLine: "異変図鑑 {found}/{total} ／ エンディング {endings}/{endTotal}",
   saveBest: " ／ 最高ランク {rank}",
 
+  // ---- タイトルのメニュー・モード説明・冒頭の演出 ----
+  menuHowto: "遊び方",
+  menuSettings: "設定",
+  settingsTitle: "設定",
+  creditsLink: "クレジット・ライセンス",
+  modeDescWhite: "偽物は少ない。あれは、ときどき来る。",
+  modeDescBlue: "偽物は多く、巧妙だ。あれは、すぐに来る。",
+  modeLockedWhisper: "──まだ、早い。",
+  skipHint: "クリックでスキップ",
+
   // ---- 検分 ----
   inspectHint1: "よく見ろ。偽物には、どこか一箇所だけ「ありえない」がある。",
   inspectHint2: "検分している間も、時計は進む。",
@@ -213,6 +223,16 @@ T.en = {
   saveLine: "Anomaly codex {found}/{total} / Endings {endings}/{endTotal}",
   saveBest: " / Best rank {rank}",
 
+  // ---- タイトルのメニュー・モード説明・冒頭の演出 ----
+  menuHowto: "How to Play",
+  menuSettings: "Settings",
+  settingsTitle: "Settings",
+  creditsLink: "Credits & Licenses",
+  modeDescWhite: "Few forgeries. It comes now and then.",
+  modeDescBlue: "More forgeries, better made. It comes soon, and often.",
+  modeLockedWhisper: "── Not yet.",
+  skipHint: "Click to skip",
+
   // ---- 検分 ----
   inspectHint1: "Look closely. A forgery has exactly one thing that cannot possibly be there.",
   inspectHint2: "The clock keeps running while you inspect.",
@@ -359,6 +379,16 @@ T["zh-Hans"] = {
   saveLine: "异变图鉴 {found}/{total} ／ 结局 {endings}/{endTotal}",
   saveBest: " ／ 最高评级 {rank}",
 
+  // ---- タイトルのメニュー・モード説明・冒頭の演出 ----
+  menuHowto: "玩法说明",
+  menuSettings: "设置",
+  settingsTitle: "设置",
+  creditsLink: "制作名单与许可",
+  modeDescWhite: "伪造的文件不多。它偶尔会来。",
+  modeDescBlue: "伪造更多，也更巧妙。它很快就会来。",
+  modeLockedWhisper: "──还不是时候。",
+  skipHint: "点击跳过",
+
   // ---- 検分 ----
   inspectHint1: "仔细看。伪造品一定有一处不可能存在的地方。",
   inspectHint2: "查验的时候，时钟照样在走。",
@@ -504,6 +534,16 @@ T.ru = {
   ctrlHint3: "{monster} здесь не всегда. Но странности в комнате ── это предвестие. В шкафу можно спрятаться.",
   saveLine: "Каталог аномалий {found}/{total} / Концовки {endings}/{endTotal}",
   saveBest: " / Лучший ранг {rank}",
+
+  // ---- タイトルのメニュー・モード説明・冒頭の演出 ----
+  menuHowto: "Как играть",
+  menuSettings: "Настройки",
+  settingsTitle: "Настройки",
+  creditsLink: "Титры и лицензии",
+  modeDescWhite: "Подделок мало. Оно приходит иногда.",
+  modeDescBlue: "Подделок больше, и они хитрее. Оно приходит часто.",
+  modeLockedWhisper: "── Ещё рано.",
+  skipHint: "Нажмите, чтобы пропустить",
 
   // ---- 検分 ----
   inspectHint1: "Смотрите внимательно. У подделки ровно одно место, которого быть не может.",
@@ -652,6 +692,16 @@ T.es = {
   ctrlHint3: "{monster} no está siempre. Pero las anomalías de la habitación son un aviso. Puedes esconderte en el armario.",
   saveLine: "Catálogo de anomalías {found}/{total} / Finales {endings}/{endTotal}",
   saveBest: " / Mejor rango {rank}",
+
+  // ---- タイトルのメニュー・モード説明・冒頭の演出 ----
+  menuHowto: "Cómo jugar",
+  menuSettings: "Ajustes",
+  settingsTitle: "Ajustes",
+  creditsLink: "Créditos y licencias",
+  modeDescWhite: "Pocas falsificaciones. Viene de vez en cuando.",
+  modeDescBlue: "Más falsificaciones, y mejores. Viene pronto, y a menudo.",
+  modeLockedWhisper: "── Todavía no.",
+  skipHint: "Haz clic para saltar",
 
   // ---- 検分 ----
   inspectHint1: "Fíjate bien. Una falsificación tiene exactamente un punto imposible.",
