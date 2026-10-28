@@ -154,24 +154,31 @@ const MODES = {
      白は従来の 18 + 乱数(0〜14)＝14〜32分（visitEarly 0）のまま。
      青は「ほぼ常時いるが息継ぎはある」に寄せる。
      chaseAccel: 足跡を辿り続けている間の加速。null なら加速しない（白）。
+     spd: 怪人の巡回・退出・追跡初速すべてに掛ける倍率。白は 1（従来のまま）。
      minimapNoise: ミニマップに偽の反応を混ぜる（青のみ）。 */
   white: { labelKey: "modeWhite", forced: 2, p: 0.25, rp: 0.35, mps: 0.45, subtleW: 0.45, base: 34120, huntBonus: 0, visitEarly: 0,
-           chaseSpeed: null, freeze: 0,   spotFx: false,
+           chaseSpeed: null, freeze: 0,   spotFx: false, spd: 1,
            visitGap: 18, visitSpread: 14, aggroMul: 1.5, aggroMax: 10, chaseAccel: null },
-  blue:  { labelKey: "modeBlue", forced: 3, p: 0.5,  rp: 0.5,  mps: 0.55, subtleW: 0.75, base: 65480, huntBonus: 6, visitEarly: 0,
+  blue:  { labelKey: "modeBlue", forced: 3, p: 0.5,  rp: 0.5,  mps: 0.55, subtleW: 0.75, base: 65480, huntBonus: 40, visitEarly: 0,
            chaseSpeed: 4.0,  freeze: 0.7, spotFx: true,
-           /* 訪問間隔 6 + 乱数(0〜8) ゲーム内分。青は 0.55 分/秒なので**実時間で約11〜25秒**。
-              【完全な常時徘徊にはしない】息継ぎが無いと緩急が消えて、恐怖ではなく作業疲労になる。
-              11〜25秒は「急げば書類1枚を見極められるが、少しでも迷うと次の前触れ（9〜12秒）が
-              始まってしまう」長さ。プレイヤーは検分をチキンレースとして強いられる。
-              破棄ペナルティも青では緩める（min(3,…)）。元の min(10,…) は間隔18分が前提の値で、
-              6分に対して10分引くと前触れが成立する前に次が始まってしまう。 */
-           visitGap: 6,  visitSpread: 8, aggroMul: 1.0, aggroMax: 3,
-           /* 【速度で殴らず、追われ続けた時間で殴る】初速は白と同じ「巡回×1.2」のまま。
-              足跡を連続で辿っている間だけ every 秒ごとに per だけ速くなり、cap で頭打ち。
-              単純な壁周回で逃げ続けると必ず追いつかれるので、**視線を切る／クローゼットに
-              入る**ことに初めて意味が出る（必須ギミックにはせず、使えば効く形にする）。 */
-           chaseAccel: { per: 0.2, every: 1.5, cap: 4.0 }, minimapNoise: true },
+           /* 【v25: ほぼ常時参戦】旧値（滞在 +6秒・間隔 6+乱数8分）は「半分くらいしか居ない」で、
+              テストプレイで難易度が微妙と言われた。滞在を +40秒（21時台60秒〜23時台78秒＋破棄ぶん）、
+              訪問間隔を 2 + 乱数(0〜3) ゲーム内分（0.55分/秒なので実時間で約4〜9秒）に詰める。
+              不在は「退出（〜7秒）＋間隔＋前触れ（9〜12秒）」で約15〜25秒、在室は約7〜8割。
+              【前触れは削らない】息継ぎと予告を兼ねる唯一の窓。ここまで消すと恐怖ではなく
+              作業疲労になる。下限 2 分（endVisit の max(2,…)）も同じ理由で残す。
+              【23時台は帰らない＝意図どおり】滞在78秒＞夜の残りなので、23:13ごろ来ると 23:59 まで
+              居座る（tests/e2e/blue-pressure.mjs の実測）。「最後は逃げ場なし」として採用した。
+              短くして途中で帰らせる案は検討のうえ却下（2026-10-28）。直さないこと。 */
+           visitGap: 2,  visitSpread: 3, aggroMul: 1.0, aggroMax: 3,
+           /* 【速度で殴らず、追われ続けた時間で殴る】初速は「巡回×1.2」。足跡を連続で辿っている
+              間だけ every 秒ごとに per だけ速くなり、cap で頭打ち。単純な壁周回で逃げ続けると
+              必ず追いつかれるので、**視線を切る／クローゼットに入る**ことに初めて意味が出る。
+              【v25: やや速く】旧値（spd 1・+0.2/1.5秒）では21時台の初速 1.26 m/s からプレイヤー
+              (3.6) を超えるまで約18秒かかり、ロスト猶予 2.8秒のほうが先に切れて加速が実質
+              効いていなかった。spd 1.2 で巡回 1.26/1.92/2.76、追跡初速 1.51/2.30/3.31 m/s、
+              +0.25/1.2秒で 3.6 超えまで約11/7/2秒。cap 4.0 は据え置き（発見即死にはしない）。 */
+           spd: 1.2, chaseAccel: { per: 0.25, every: 1.2, cap: 4.0 }, minimapNoise: true },
 };
 let mode = "white";
 
@@ -5004,8 +5011,8 @@ function endVisit() {
   mob.active = false; monster.visible = false; mob.mode = "patrol";
   visit.state = "none";
   /* 次の訪問まで。白は従来どおり 18 + 乱数(0〜14) − 破棄ペナルティ。
-     青は visitGap 3 + 乱数(0〜4) で、ゲーム内3〜7分（実時間で約5〜13秒）＝
-     ほぼ常時いるが息継ぎはある、に寄せる。
+     青は visitGap 2 + 乱数(0〜3) で、ゲーム内2〜5分（実時間で約4〜9秒）＝
+     ほぼ常時いるが息継ぎはある、に寄せる（値と理由は MODES.blue）。
      【下限を置く理由】破棄を重ねると aggro のぶん最大10分引かれるので、
      青の短い間隔では簡単に負になって「前触れが終わる前に次が始まる」状態になる。
      前触れ（9〜12秒）は青でも唯一の予告なので、必ず1回分は成立させる。 */
@@ -5727,7 +5734,7 @@ function monsterUpdate(dt) {
     return;
   }
   const speeds = [0, 1.05, 1.6, 2.3];
-  let sp = speeds[phase];
+  let sp = speeds[phase] * MODES[mode].spd;
   const sight = [0, 4, 5.5, 7][phase];
   const pd = Math.hypot(ply.x - mob.x, ply.z - mob.z);
   const canSee = !ply.hidden && pd < sight && los(mob.x, mob.z, ply.x, ply.z);
@@ -5778,7 +5785,7 @@ function monsterUpdate(dt) {
       }
     }
   } else { // chase
-    /* 追跡速度。初速は白青とも従来の「巡回×1.2」（21時台1.26〜23時台2.76）。
+    /* 追跡速度。初速は白青とも「巡回×1.2」（白は21時台1.26〜23時台2.76、青は spd 1.2 倍）。
        青だけ、追い続けている間に少しずつ速くなって cap(4.0) で頭打ちになる。
        【なぜ最初から4.0にしないか】いきなりプレイヤー(3.6)より速いと、見つかった時点で
        ほぼ確定死になり「油断した自分が悪い」の納得感が出ない。追われた時間そのものを
