@@ -93,22 +93,30 @@
   #title .tLayer { position: absolute; inset: 0; pointer-events: none; }
   #tArt { opacity: 0; transition: opacity 2.6s ease-out, transform 0.9s ease-out; }
   #title.lit #tArt { opacity: 1; }
-  #tDrift { position: absolute; inset: 0; transform-origin: 76% 16%;
+  #tDrift { position: absolute; inset: 0; transform-origin: 78% 30%;
             animation: tDrift 28s ease-in-out infinite alternate; }
   @keyframes tDrift { from { transform: scale(1.02); } to { transform: scale(1.06) translateX(-0.8%); } }
-  /* 絵は正方形（決定稿 concept4 の怪人）。横長の画面では高さに合わせて右に寄せ、左の文字の側は
-     マスクで闇に溶かす。画面いっぱいに覆うと（cover）16:9 では上下が 44% 切れて、顔が画面の外に出る。
+  /* 絵は正方形（決定稿 concept4 の怪人）。画面いっぱいに覆うと（cover）16:9 では上下が 44% 切れて、
+     顔が画面の外に出るので、画面の高さより小さく置いて右に寄せる。
+     2026-10-28 依頼主「存在がはっきり見えすぎ」→ 引いて（104vh → 84vh）ぼかし、暗くした。
+     **ぼかしと暗さは画像に焼き込んである（tools/make-title-art.mjs）。ここで filter を掛けないこと。**
+     親（#tDrift）が拡大し続けるので毎フレーム掛け直しになり、ソフトウェア描画ではタイトルが固まる。
+     はっきり見せないのはホラーの文法：何がいるのかを目で確かめさせない。ゲームの中で初めて正体を見る。
+     絵が画面より小さいので、四辺とも闇に溶かす（2つのマスクの積＝intersect）。
      怪人の顔（画像の 67% 15%）を原点に拡大する。原点が顔なので、拡大しても**顔の位置は動かず、
      体と部屋だけが広がる**＝近づいて見える。（胴を原点にすると、近づくたびに顔が上へ逃げて切れる） */
   #tArtImg {
-    position: absolute; top: 0; width: 104vh; height: 104vh;   /* 頭頂が原画の上端に近いので、下を切る */
-    left: max(calc(100vw - 104vh), calc(55vw - 0.67 * 104vh));
+    position: absolute; top: 14vh; width: 84vh; height: 84vh;
+    left: max(calc(96vw - 84vh), calc(55vw - 0.67 * 84vh));
     background: url(assets/title/title_mannequin.webp) center / cover no-repeat;
     transform-origin: 67% 15%;
     transform: scale(var(--near, 1));
-    filter: brightness(0.86) saturate(0.85) contrast(1.05);
-    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 26%);
-            mask-image: linear-gradient(90deg, transparent 0%, #000 26%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 30%, #000 82%, transparent 100%),
+                        linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%);
+    -webkit-mask-composite: source-in;
+            mask-image: linear-gradient(90deg, transparent 0%, #000 30%, #000 82%, transparent 100%),
+                        linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%);
+            mask-composite: intersect;
   }
   /* 奥のモニターの光。画像の中の位置に合わせて置き、不規則に揺らす */
   #tLamp { position: absolute; left: 31%; top: 53%; width: 36%; aspect-ratio: 1;
@@ -273,8 +281,12 @@
   #pause.fromTitle h2 { margin-bottom: 26px; }
 
   @media (orientation: portrait) {
-    /* 縦長では顔を画面の中央やや右に置き、左右ははみ出させる（マスクも不要） */
-    #tArtImg { left: calc(58vw - 0.67 * 104vh); -webkit-mask-image: none; mask-image: none; }
+    /* 縦長では画面の上の方、顔を中央やや右に置く。左右ははみ出させ、上下だけ闇に溶かす */
+    #tArtImg { top: 4vh; width: 66vh; height: 66vh; left: calc(58vw - 0.67 * 66vh);
+               -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 70%, transparent 100%);
+               -webkit-mask-composite: source-over;
+                       mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 70%, transparent 100%);
+                       mask-composite: add; }
     #tShade { background:
       linear-gradient(0deg, rgba(3,3,5,0.95) 0%, rgba(3,3,5,0.75) 45%, rgba(3,3,5,0.1) 75%),
       radial-gradient(ellipse at 60% 30%, transparent 30%, rgba(0,0,0,0.7) 100%); }
