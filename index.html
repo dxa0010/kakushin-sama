@@ -329,6 +329,19 @@
   }
   #pauseBtns { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
   #pauseBtns .btn { padding: 11px 26px; font-size: 0.9rem; letter-spacing: 0.14em; }
+  /* スマホ幅（2026-10-28 実機で崩れた）。横3列（見出し・220px 固定のスライダー・値）は
+     約 420px 要るので、390px の画面では値が画面の外に消えていた。狭い画面では見出しを
+     1行に出し、その下でスライダーと値が幅を分け合う。板も画面の高さに収めてスクロールさせる。 */
+  @media (max-width: 560px) {
+    #pause, #credits, .modal { padding: 12px; }
+    #pausePanel, .mPanel { padding: 22px 18px 20px; max-height: calc(100vh - 24px); overflow-y: auto; }
+    #pause h2 { font-size: 1.3rem; }
+    #pauseRows { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; margin-bottom: 22px; }
+    #pauseRows label { grid-column: 1 / -1; text-align: left; margin-top: 10px; }
+    #pauseRows label:first-child { margin-top: 0; }
+    #pauseRows output { min-width: 3.5em; text-align: right; }
+    #pauseBtns .btn { padding: 11px 20px; }
+  }
 
   #credits { background: #050507; z-index: 70; justify-content: flex-start; padding: 40px 24px; }
   /* 中身は 1280x800（Deck の実解像度）でも 200px 以上あふれる＝実測。

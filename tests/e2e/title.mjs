@@ -17,6 +17,7 @@
      T-10 縦長（スマホ）でも、題字・メニューが画面内に収まる
      T-11 動きを減らす設定：冒頭の文章も暗転も出ない
      T-12 ページエラーが1件も無い
+     T-13 スマホ幅（390 / 360px）で設定の中身が板と画面からはみ出さない
    成果物: OUT_DIR（既定は OS の一時ディレクトリ/kakushin-e2e-title）に
            スクリーンショットと result.json（各ケースの合否と測定値）を書く。
 
@@ -280,6 +281,32 @@ const UNLOCKED = { found: {}, endings: { refund: true }, bestRank: null };
     const out = r.filter(x => x.l < 0 || x.r > 390 || x.t < 0 || x.b > 844);
     return { data: r, fail: out.length ? `はみ出し: ${JSON.stringify(out)}` : null };
   });
+
+  /* 2026-10-28 不具合（実機スクショ）: スマホで設定を開くと、スライダーと選択欄が板の右へはみ出し、
+     値（80% など）が画面の外に消えていた。列幅を 220px 固定にしていたため。
+     板の中身が**板の内側と画面の内側の両方**に収まっていることを、要素ごとに見る。 */
+  for (const [id, w, h] of [["T-13", 390, 844], ["T-13b", 360, 640]]) {
+    await check(id, `設定がスマホ幅 ${w}px で板と画面からはみ出さない`, async () => {
+      await page.setViewportSize({ width: w, height: h });
+      await page.click("#settingsBtn");
+      await page.waitForTimeout(700);
+      const r = await page.evaluate(() => {
+        const panel = document.getElementById("pausePanel").getBoundingClientRect();
+        const items = [...document.querySelectorAll("#pausePanel label, #pausePanel input, #pausePanel select, #pausePanel output, #pausePanel .btn, #pausePanel h2")]
+          .filter(e => getComputedStyle(e).display !== "none")
+          .map(e => { const b = e.getBoundingClientRect();
+            return { el: e.id || e.tagName + ":" + (e.textContent || "").trim().slice(0, 10), l: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), b: Math.round(b.bottom), w: Math.round(b.width) }; });
+        return { vw: innerWidth, vh: innerHeight, panel: { l: Math.round(panel.left), r: Math.round(panel.right), t: Math.round(panel.top), b: Math.round(panel.bottom) }, items };
+      });
+      await shot(page, `${id === "T-13" ? "13" : "13b"}-settings-${w}x${h}.png`);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(200);
+      const bad = r.items.filter(x => x.l < r.panel.l - 1 || x.r > r.panel.r + 1 || x.l < 0 || x.r > r.vw || x.w < 2);
+      if (r.panel.l < 0 || r.panel.r > r.vw) return { fail: `板が画面外: ${JSON.stringify(r.panel)}`, data: r };
+      if (bad.length) return { fail: `はみ出し: ${JSON.stringify(bad)}`, data: r };
+      return { data: r };
+    });
+  }
   await ctx.close();
 }
 
