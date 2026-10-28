@@ -173,6 +173,9 @@ export function initTitle(d) {
     root.classList.toggle("blue", m === "blue");
     showDesc(m === "blue" ? "modeDescBlue" : "modeDescWhite");
     if (!changed) return;
+    // 外した側の印も必ず消す。.stamp は fill-mode both なので、残すと最終フレームの
+    // opacity が効き続けて、赤い印が両方に付いて見える（2026-10-28 の不具合）
+    off.querySelector(".seal").classList.remove("stamp");
     // 印を押し直す（アニメーションをやり直すため一度外す）
     const seal = on.querySelector(".seal");
     seal.classList.remove("stamp"); void seal.offsetWidth; seal.classList.add("stamp");

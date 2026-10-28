@@ -10,6 +10,7 @@
           「タイトルへ戻る」は出ない。音量の変更が保存される。閉じると一時停止の文言に戻る
      T-05 未解禁の青色申告：押せるが拒まれる（白のまま・囁きが出る）
      T-06 解禁済みの青色申告：印が押され、部屋が冷え、あれが近づく（--near が増える）
+     T-06b 白⇄青を何度切り替えても、赤い印と赤枠は選んだ側にだけ付く
      T-07 暗転のたびにあれが近づく（--near が単調に増え、上限で止まる）
      T-08 冒頭の文章（強制）：前提の5行が出る。クリックで飛ばせる
      T-09 開始：暗転してから PLAY になる。PLAY になるまで 3 秒以内
@@ -189,6 +190,32 @@ const UNLOCKED = { found: {}, endings: { refund: true }, bestRank: null };
     if (!d.sel || !d.cold || !d.stamp) return { fail: JSON.stringify(d), data: d };
     if (!(n1 > n0)) return { fail: `近づいていない ${n0}→${n1}`, data: d };
     return { data: { ...d, n0, n1 } };
+  });
+
+  /* 2026-10-28 不具合: 青→白と切り替えると赤い印が両方に残った。印の押し直しアニメーション
+     （.stamp・fill-mode both）が外した側に残り、最終フレームの opacity が効き続けていた。
+     クラスではなく**実際に見えている不透明度**で見る（クラスが正しくても見た目は壊れていた）。 */
+  await check("T-06b", "白⇄青を切り替えても、赤い印と赤枠は選んだ側だけ", async () => {
+    const look = () => page.evaluate(() => Object.fromEntries(["modeWhite", "modeBlue"].map(id => {
+      const b = document.getElementById(id), cs = getComputedStyle(b);
+      return [id, { seal: +getComputedStyle(b.querySelector(".seal")).opacity, border: cs.borderTopColor, sel: b.classList.contains("sel") }];
+    })));
+    const steps = [];
+    // 青で終える（次の T-09 は青で始まることを確かめる）
+    for (const id of ["#modeWhite", "#modeBlue", "#modeWhite", "#modeBlue"]) {
+      await page.click(id);
+      await page.waitForTimeout(600);   // 印のアニメーション（0.34s）が終わってから見る
+      steps.push({ clicked: id, ...(await look()) });
+    }
+    await shot(page, "06b-switched.png");
+    for (const st of steps) {
+      const want = st.clicked.slice(1), other = want === "modeWhite" ? "modeBlue" : "modeWhite";
+      if (!(st[want].seal > 0.5) || st[other].seal > 0.05)
+        return { fail: `${st.clicked} の後: 選択側の印=${st[want].seal} 反対側の印=${st[other].seal}`, data: steps };
+      if (st[want].border === st[other].border)
+        return { fail: `${st.clicked} の後: 枠の色が両方同じ ${st[want].border}`, data: steps };
+    }
+    return { data: steps };
   });
 
   await check("T-09", "開始：暗転してから PLAY（3秒以内）", async () => {

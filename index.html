@@ -187,7 +187,9 @@
     opacity: 0; transform: rotate(-12deg); pointer-events: none;
   }
   .mbtn.sel .seal { opacity: 0.92; }
-  .mbtn .seal.stamp { animation: tStamp 0.34s cubic-bezier(.3,1.6,.5,1) both; }
+  /* 押し直しの動きは選ばれている側にだけ掛ける。fill-mode both の最終フレームは opacity を
+     持つので、外れた側に残ると印が消えない（JS でも外すが、二重に守る） */
+  .mbtn.sel .seal.stamp { animation: tStamp 0.34s cubic-bezier(.3,1.6,.5,1) both; }
   @keyframes tStamp { 0% { opacity: 0; transform: scale(2.4) rotate(-30deg); } 55% { opacity: 1; transform: scale(0.88) rotate(-10deg); }
                       100% { opacity: 0.92; transform: scale(1) rotate(-12deg); } }
   .mbtn.locked { color: #4d493f; border-style: dashed; cursor: not-allowed;
