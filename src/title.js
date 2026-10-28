@@ -8,10 +8,10 @@
  * game.js 側が決める（ここは「暗転し終わった」ことを知らせるだけ）。
  *
  * 【演出の文法】ゲーム本編と同じく「真顔でやりきる」。ふざけるのは題材だけ。
- *   - 背景はストアのキーアート。机のスタンドがときどき消え、**点き直すたびに戸口の
+ *   - 背景は決定稿の怪人の絵。奥のモニターの光がときどき消え、**点き直すたびに
  *     あれが少しだけ近い**。動いている瞬間は見せない（暗転の間にだけ動く）。
  *   - メニューは押すと反応が返る。モードを選ぶと赤い印が押され、青色申告を選ぶと
- *     部屋が冷えて、あれが一歩近づく。開始を押すと、スタンドが死んで真っ暗になる。
+ *     部屋が冷えて、あれが一歩近づく。開始を押すと、明かりが死んで真っ暗になる。
  *   - 音は最初の操作のあとにしか鳴らせない（自動再生の制限）。鳴るようになったら
  *     秒針だけを小さく刻む。期限が迫っている、というこの作品の一番の恐怖。
  *
@@ -31,7 +31,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
    すぐ押す前提で書かれていて、冒頭の数秒を待たせる理由が無い。 */
 const COLD_KEY = "kakushin_cold_open";
 
-// 戸口のあれが近づく上限。キーアートの画角を崩さない範囲（1.18 で顔が画面上端に届く）。
+// あれが近づく上限。顔を原点に拡大するので顔は動かないが、上げすぎると胴が画面からあふれて何の絵か分からなくなる。
 const NEAR_STEP = 0.028, NEAR_MAX = 1.16;
 
 /**
@@ -50,7 +50,7 @@ export function initTitle(d) {
   const timers = new Set();
   const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); return t; };
   let alive = true;        // 開始後は演出を全部止める
-  let near = 1;            // 戸口のあれの近さ（#tArtImg の scale）
+  let near = 1;            // あれの近さ（#tArtImg の scale）
   let lastFocus = null;
 
   /* ---------- フィルムの粒子 ----------
@@ -69,7 +69,7 @@ export function initTitle(d) {
     $("tGrain").style.backgroundImage = `url(${c.toDataURL()})`;
   }
 
-  /* ---------- 暗転（スタンドが消える）と、あれが近づく ---------- */
+  /* ---------- 暗転（明かりが消える）と、あれが近づく ---------- */
   const dark = $("tDark"), art = $("tArtImg");
   const setNear = (v) => { near = v; art.style.setProperty("--near", v.toFixed(3)); };
   // 点滅のパターン [不透明度, 保持ms] の列。最後は必ず 0 に戻す。
@@ -173,6 +173,9 @@ export function initTitle(d) {
     root.classList.toggle("blue", m === "blue");
     showDesc(m === "blue" ? "modeDescBlue" : "modeDescWhite");
     if (!changed) return;
+    // 外した側の印も必ず消す。.stamp は fill-mode both なので、残すと最終フレームの
+    // opacity が効き続けて、赤い印が両方に付いて見える（2026-10-28 の不具合）
+    off.querySelector(".seal").classList.remove("stamp");
     // 印を押し直す（アニメーションをやり直すため一度外す）
     const seal = on.querySelector(".seal");
     seal.classList.remove("stamp"); void seal.offsetWidth; seal.classList.add("stamp");

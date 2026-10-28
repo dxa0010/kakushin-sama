@@ -19,9 +19,9 @@ concurrency:
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    # environment: github-pages には「デプロイ許可ブランチ」の制限があり
+    # claude/artifact-review-anha8j のみが登録されている。main を運用ブランチにするため
+    # environment を外す（environmentポリシーを通らないだけで、配信方法は同じ）。
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

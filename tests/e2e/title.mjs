@@ -9,13 +9,15 @@
      T-04 設定：タイトルから開ける（state は TITLE のまま）。見出しは「設定」、
           「タイトルへ戻る」は出ない。音量の変更が保存される。閉じると一時停止の文言に戻る
      T-05 未解禁の青色申告：押せるが拒まれる（白のまま・囁きが出る）
-     T-06 解禁済みの青色申告：印が押され、部屋が冷え、戸口のあれが近づく（--near が増える）
+     T-06 解禁済みの青色申告：印が押され、部屋が冷え、あれが近づく（--near が増える）
+     T-06b 白⇄青を何度切り替えても、赤い印と赤枠は選んだ側にだけ付く
      T-07 暗転のたびにあれが近づく（--near が単調に増え、上限で止まる）
      T-08 冒頭の文章（強制）：前提の5行が出る。クリックで飛ばせる
      T-09 開始：暗転してから PLAY になる。PLAY になるまで 3 秒以内
      T-10 縦長（スマホ）でも、題字・メニューが画面内に収まる
      T-11 動きを減らす設定：冒頭の文章も暗転も出ない
      T-12 ページエラーが1件も無い
+     T-13 スマホ幅（390 / 360px）で設定の中身が板と画面からはみ出さない
    成果物: OUT_DIR（既定は OS の一時ディレクトリ/kakushin-e2e-title）に
            スクリーンショットと result.json（各ケースの合否と測定値）を書く。
 
@@ -191,6 +193,32 @@ const UNLOCKED = { found: {}, endings: { refund: true }, bestRank: null };
     return { data: { ...d, n0, n1 } };
   });
 
+  /* 2026-10-28 不具合: 青→白と切り替えると赤い印が両方に残った。印の押し直しアニメーション
+     （.stamp・fill-mode both）が外した側に残り、最終フレームの opacity が効き続けていた。
+     クラスではなく**実際に見えている不透明度**で見る（クラスが正しくても見た目は壊れていた）。 */
+  await check("T-06b", "白⇄青を切り替えても、赤い印と赤枠は選んだ側だけ", async () => {
+    const look = () => page.evaluate(() => Object.fromEntries(["modeWhite", "modeBlue"].map(id => {
+      const b = document.getElementById(id), cs = getComputedStyle(b);
+      return [id, { seal: +getComputedStyle(b.querySelector(".seal")).opacity, border: cs.borderTopColor, sel: b.classList.contains("sel") }];
+    })));
+    const steps = [];
+    // 青で終える（次の T-09 は青で始まることを確かめる）
+    for (const id of ["#modeWhite", "#modeBlue", "#modeWhite", "#modeBlue"]) {
+      await page.click(id);
+      await page.waitForTimeout(600);   // 印のアニメーション（0.34s）が終わってから見る
+      steps.push({ clicked: id, ...(await look()) });
+    }
+    await shot(page, "06b-switched.png");
+    for (const st of steps) {
+      const want = st.clicked.slice(1), other = want === "modeWhite" ? "modeBlue" : "modeWhite";
+      if (!(st[want].seal > 0.5) || st[other].seal > 0.05)
+        return { fail: `${st.clicked} の後: 選択側の印=${st[want].seal} 反対側の印=${st[other].seal}`, data: steps };
+      if (st[want].border === st[other].border)
+        return { fail: `${st.clicked} の後: 枠の色が両方同じ ${st[want].border}`, data: steps };
+    }
+    return { data: steps };
+  });
+
   await check("T-09", "開始：暗転してから PLAY（3秒以内）", async () => {
     // 暗転の不透明度を 10ms ごとに記録して、PLAY より前に真っ暗になったかを見る。
     // 所要時間もページ内の時計で測る（スクリーンショットの撮影時間を混ぜない）
@@ -253,6 +281,32 @@ const UNLOCKED = { found: {}, endings: { refund: true }, bestRank: null };
     const out = r.filter(x => x.l < 0 || x.r > 390 || x.t < 0 || x.b > 844);
     return { data: r, fail: out.length ? `はみ出し: ${JSON.stringify(out)}` : null };
   });
+
+  /* 2026-10-28 不具合（実機スクショ）: スマホで設定を開くと、スライダーと選択欄が板の右へはみ出し、
+     値（80% など）が画面の外に消えていた。列幅を 220px 固定にしていたため。
+     板の中身が**板の内側と画面の内側の両方**に収まっていることを、要素ごとに見る。 */
+  for (const [id, w, h] of [["T-13", 390, 844], ["T-13b", 360, 640]]) {
+    await check(id, `設定がスマホ幅 ${w}px で板と画面からはみ出さない`, async () => {
+      await page.setViewportSize({ width: w, height: h });
+      await page.click("#settingsBtn");
+      await page.waitForTimeout(700);
+      const r = await page.evaluate(() => {
+        const panel = document.getElementById("pausePanel").getBoundingClientRect();
+        const items = [...document.querySelectorAll("#pausePanel label, #pausePanel input, #pausePanel select, #pausePanel output, #pausePanel .btn, #pausePanel h2")]
+          .filter(e => getComputedStyle(e).display !== "none")
+          .map(e => { const b = e.getBoundingClientRect();
+            return { el: e.id || e.tagName + ":" + (e.textContent || "").trim().slice(0, 10), l: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), b: Math.round(b.bottom), w: Math.round(b.width) }; });
+        return { vw: innerWidth, vh: innerHeight, panel: { l: Math.round(panel.left), r: Math.round(panel.right), t: Math.round(panel.top), b: Math.round(panel.bottom) }, items };
+      });
+      await shot(page, `${id === "T-13" ? "13" : "13b"}-settings-${w}x${h}.png`);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(200);
+      const bad = r.items.filter(x => x.l < r.panel.l - 1 || x.r > r.panel.r + 1 || x.l < 0 || x.r > r.vw || x.w < 2);
+      if (r.panel.l < 0 || r.panel.r > r.vw) return { fail: `板が画面外: ${JSON.stringify(r.panel)}`, data: r };
+      if (bad.length) return { fail: `はみ出し: ${JSON.stringify(bad)}`, data: r };
+      return { data: r };
+    });
+  }
   await ctx.close();
 }
 

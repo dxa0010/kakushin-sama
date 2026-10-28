@@ -22,7 +22,7 @@ src/pin.js                 暗証番号判定（純粋モジュール。ゲー�
 src/title.js               タイトル画面の演出（暗転・冒頭の文章・メニューの反応。DOM だけを触る）
 vendor/three/              Three.js r185 本体＋addons（postprocessing、RoundedBoxGeometry等）
 assets/textures/           実写テクスチャ（three.js examples由来のMIT素材＋ambientCG由来のCC0素材）
-assets/title/              タイトル背景（ストアのキーアートを tools/make-title-art.mjs で webp 化）
+assets/title/              タイトル背景（docs/storeart/title_mannequin.png を tools/make-title-art.mjs で webp 化）
 tools/shot.mjs             スクショハーネス（名前付きアングル。改修前後を撮り比べる）
 tools/shot-ao.mjs          AOパラメータの振り比べ用（同一セッション内で切り替えるので乱数が揃う）
 tools/genimage.mjs         agy（Antigravity CLI）経由でテクスチャを生成（文字の無い素材専用）
@@ -269,6 +269,10 @@ v20〜v21 のベッドの改修は**全部「部品を足す」方向だった**
 | 巧妙系異変の出現比率 | 45% | 75% |
 | 時計の進行速度（game-min/real-sec） | 0.45 | 0.55 |
 | 還付金の基準額 | ¥34,120 | ¥65,480 |
+| 怪人の速度（巡回・追跡初速） | ×1 | ×1.2 |
+| 追跡中の加速 | なし | 1.2秒ごとに +0.25（上限 4.0） |
+| 訪問間隔（game-min） | 18 + 乱数(0〜14) | 2 + 乱数(0〜3)（ほぼ常時参戦） |
+| 1回の滞在の延長 | なし | +40秒 |
 | 解禁条件 | 最初から | 白色で還付END達成 |
 
 ## 変更履歴

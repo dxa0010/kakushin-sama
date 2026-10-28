@@ -83,9 +83,9 @@
 
   /* ---------- タイトル（ウェルカム画面） ----------
      演出の本体は src/title.js。ここは見た目だけ。
-     重ね順（奥→手前）: キーアート → 冷え（青色申告）→ 陰（文字を読ませる暗がり）→
+     重ね順（奥→手前）: 怪人の絵 → 冷え（青色申告）→ 陰（文字を読ませる暗がり）→
      粒子 → 本文 → 暗転 → 冒頭の文章。暗転より奥に本文を置くのは、明かりが消えたら
-     メニューも一緒に闇に沈むため（画面の中で明かりは机のスタンド1つだけ、という設定）。
+     メニューも一緒に闇に沈むため（画面の中で明かりは奥のモニター1つだけ、という設定）。
      **暗転・冒頭の文章・粒子は pointer-events:none。** #startBtn はいつでも押せること
      （自動テストとツール7本が読み込み直後に押す）。 */
   #title { padding: 0; align-items: stretch; justify-content: stretch; text-align: left;
@@ -93,30 +93,41 @@
   #title .tLayer { position: absolute; inset: 0; pointer-events: none; }
   #tArt { opacity: 0; transition: opacity 2.6s ease-out, transform 0.9s ease-out; }
   #title.lit #tArt { opacity: 1; }
-  #tDrift { position: absolute; inset: 0; transform-origin: 62% 20%;
+  #tDrift { position: absolute; inset: 0; transform-origin: 78% 30%;
             animation: tDrift 28s ease-in-out infinite alternate; }
   @keyframes tDrift { from { transform: scale(1.02); } to { transform: scale(1.06) translateX(-0.8%); } }
-  /* 画像の箱を画面いっぱいに覆う大きさにして、戸口のあれの顔（画像の 64% 16%）を原点に拡大する。
-     原点が顔なので、拡大しても**顔の位置は動かず、体と部屋だけが広がる**＝近づいて見える。
-     （胴を原点にすると、近づくたびに顔が画面の上へ逃げて、上限の手前で切れる） */
+  /* 絵は正方形（決定稿 concept4 の怪人）。画面いっぱいに覆うと（cover）16:9 では上下が 44% 切れて、
+     顔が画面の外に出るので、画面の高さより小さく置いて右に寄せる。
+     2026-10-28 依頼主「存在がはっきり見えすぎ」→ 引いて（104vh → 84vh）ぼかし、暗くした。
+     **ぼかしと暗さは画像に焼き込んである（tools/make-title-art.mjs）。ここで filter を掛けないこと。**
+     親（#tDrift）が拡大し続けるので毎フレーム掛け直しになり、ソフトウェア描画ではタイトルが固まる。
+     はっきり見せないのはホラーの文法：何がいるのかを目で確かめさせない。ゲームの中で初めて正体を見る。
+     絵が画面より小さいので、四辺とも闇に溶かす（2つのマスクの積＝intersect）。
+     怪人の顔（画像の 67% 15%）を原点に拡大する。原点が顔なので、拡大しても**顔の位置は動かず、
+     体と部屋だけが広がる**＝近づいて見える。（胴を原点にすると、近づくたびに顔が上へ逃げて切れる） */
   #tArtImg {
-    position: absolute; left: 50%; top: 50%;
-    width: max(100vw, 179.17vh); height: max(100vh, 55.81vw);
-    background: url(assets/title/key_16x9.webp) center / cover no-repeat;
-    transform-origin: 64% 16%;
-    transform: translate(-50%, -50%) scale(var(--near, 1));
-    filter: brightness(0.66) saturate(0.78) contrast(1.06);
+    position: absolute; top: 14vh; width: 84vh; height: 84vh;
+    left: max(calc(96vw - 84vh), calc(55vw - 0.67 * 84vh));
+    background: url(assets/title/title_mannequin.webp) center / cover no-repeat;
+    transform-origin: 67% 15%;
+    transform: scale(var(--near, 1));
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 30%, #000 82%, transparent 100%),
+                        linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%);
+    -webkit-mask-composite: source-in;
+            mask-image: linear-gradient(90deg, transparent 0%, #000 30%, #000 82%, transparent 100%),
+                        linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%);
+            mask-composite: intersect;
   }
-  /* スタンドの明かり。画像の中の位置に合わせて置き、不規則に揺らす */
-  #tLamp { position: absolute; left: 29%; top: 40%; width: 40%; aspect-ratio: 1;
+  /* 奥のモニターの光。画像の中の位置に合わせて置き、不規則に揺らす */
+  #tLamp { position: absolute; left: 31%; top: 53%; width: 36%; aspect-ratio: 1;
            transform: translate(-50%, -50%); border-radius: 50%;
-           background: radial-gradient(circle, rgba(255, 210, 150, 0.2) 0%, rgba(255, 190, 120, 0.06) 38%, transparent 64%);
+           background: radial-gradient(circle, rgba(190, 215, 255, 0.22) 0%, rgba(160, 190, 240, 0.06) 38%, transparent 64%);
            mix-blend-mode: screen; animation: tLamp 6.3s steps(1) infinite; }
   @keyframes tLamp { 0%{opacity:1} 41%{opacity:.82} 43%{opacity:1} 67%{opacity:.6} 68%{opacity:.95} 70%{opacity:.7} 71%{opacity:1} }
   #tTint { background: radial-gradient(ellipse at 60% 40%, rgba(30, 60, 120, 0.25), rgba(8, 18, 45, 0.6));
            opacity: 0; transition: opacity 1.4s; }
   #title.blue #tTint { opacity: 1; }
-  #title.blue #tLamp { filter: hue-rotate(170deg) saturate(0.5); opacity: 0.6; }
+  #title.blue #tLamp { opacity: 0.6; }
   #tShade {
     background:
       linear-gradient(90deg, rgba(3,3,5,0.95) 0%, rgba(3,3,5,0.86) 22%, rgba(3,3,5,0.42) 44%, rgba(3,3,5,0) 60%),
@@ -129,7 +140,7 @@
   #tDark { background: #000; opacity: 0; transition: opacity 40ms; z-index: 3; }
 
   #tMain {
-    position: relative; z-index: 2; height: 100%; max-width: 640px;
+    position: relative; z-index: 2; height: 100%; max-width: 780px;
     display: flex; flex-direction: column; justify-content: center;
     padding: 40px 24px 70px clamp(28px, 8vw, 132px);
   }
@@ -140,7 +151,7 @@
   #title h1 {
     font-family: var(--f-serif);
     font-size: clamp(2.6rem, 7.2vw, 5.4rem); line-height: 1.15;
-    letter-spacing: 0.14em; font-weight: 600; color: #ddd5c0;
+    letter-spacing: 0.14em; font-weight: 600; color: #ddd5c0; white-space: nowrap;
     text-shadow: 0 0 34px rgba(150, 22, 12, 0.38), 0 2px 0 #000;
     margin-bottom: 14px;
   }
@@ -176,7 +187,9 @@
     opacity: 0; transform: rotate(-12deg); pointer-events: none;
   }
   .mbtn.sel .seal { opacity: 0.92; }
-  .mbtn .seal.stamp { animation: tStamp 0.34s cubic-bezier(.3,1.6,.5,1) both; }
+  /* 押し直しの動きは選ばれている側にだけ掛ける。fill-mode both の最終フレームは opacity を
+     持つので、外れた側に残ると印が消えない（JS でも外すが、二重に守る） */
+  .mbtn.sel .seal.stamp { animation: tStamp 0.34s cubic-bezier(.3,1.6,.5,1) both; }
   @keyframes tStamp { 0% { opacity: 0; transform: scale(2.4) rotate(-30deg); } 55% { opacity: 1; transform: scale(0.88) rotate(-10deg); }
                       100% { opacity: 0.92; transform: scale(1) rotate(-12deg); } }
   .mbtn.locked { color: #4d493f; border-style: dashed; cursor: not-allowed;
@@ -270,8 +283,12 @@
   #pause.fromTitle h2 { margin-bottom: 26px; }
 
   @media (orientation: portrait) {
-    /* 縦長では画像の左側（スタンド）を切り、戸口のあれを画面の右寄りに残す */
-    #tArtImg { left: calc(58vw - 0.14 * max(100vw, 179.17vh)); }
+    /* 縦長では画面の上の方、顔を中央やや右に置く。左右ははみ出させ、上下だけ闇に溶かす */
+    #tArtImg { top: 4vh; width: 66vh; height: 66vh; left: calc(58vw - 0.67 * 66vh);
+               -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 70%, transparent 100%);
+               -webkit-mask-composite: source-over;
+                       mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 70%, transparent 100%);
+                       mask-composite: add; }
     #tShade { background:
       linear-gradient(0deg, rgba(3,3,5,0.95) 0%, rgba(3,3,5,0.75) 45%, rgba(3,3,5,0.1) 75%),
       radial-gradient(ellipse at 60% 30%, transparent 30%, rgba(0,0,0,0.7) 100%); }
@@ -312,6 +329,19 @@
   }
   #pauseBtns { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
   #pauseBtns .btn { padding: 11px 26px; font-size: 0.9rem; letter-spacing: 0.14em; }
+  /* スマホ幅（2026-10-28 実機で崩れた）。横3列（見出し・220px 固定のスライダー・値）は
+     約 420px 要るので、390px の画面では値が画面の外に消えていた。狭い画面では見出しを
+     1行に出し、その下でスライダーと値が幅を分け合う。板も画面の高さに収めてスクロールさせる。 */
+  @media (max-width: 560px) {
+    #pause, #credits, .modal { padding: 12px; }
+    #pausePanel, .mPanel { padding: 22px 18px 20px; max-height: calc(100vh - 24px); overflow-y: auto; }
+    #pause h2 { font-size: 1.3rem; }
+    #pauseRows { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; margin-bottom: 22px; }
+    #pauseRows label { grid-column: 1 / -1; text-align: left; margin-top: 10px; }
+    #pauseRows label:first-child { margin-top: 0; }
+    #pauseRows output { min-width: 3.5em; text-align: right; }
+    #pauseBtns .btn { padding: 11px 20px; }
+  }
 
   #credits { background: #050507; z-index: 70; justify-content: flex-start; padding: 40px 24px; }
   /* 中身は 1280x800（Deck の実解像度）でも 200px 以上あふれる＝実測。
@@ -463,24 +493,23 @@
   canvas { touch-action: none; }
 
   /* ---------- hiding overlay ---------- */
-  /* クローゼットの戸の隙間。画面固定のマスクで、隠れている間は移動できないが視点は
-     回せる（src/game.js の `if (!ply.hidden)` は移動だけを止めている）ので、
-     世界がこのスリットの裏を流れていく。
-     v25: 隙間を中心 50% のまま**5倍**に拡げた。透けている帯は 2%（49〜51%）→
-     10%（45〜55%）、両側のぼかしも 2.5% → 12.5% で同じ比率のまま拡大している
-     （各ストップを `50 + (旧値 - 50) * 5` で写した）。見た目の質は変えずに広さだけ
-     変えたいので、ぼかしも一緒に倍率を掛けること。片側だけ動かすと隙間が中心から
-     ずれて、正面を見ているのに視界が偏る。
-     隠れている間は怪人から見えない（game.js の `canSee = !ply.hidden && ...`）ので、
-     ここを拡げても捕まりやすさは変わらない。変わるのは「隠れながらどれだけ様子を
-     窺えるか」だけ。 */
+  /* v27: 隠れると実カメラがクローゼット内へ移る（game.js tryInteract 参照）。
+     v26 の説明用ビネットは「暗くなる演出が無い」との指摘で廃止。隠れている間は
+     視点を正面 ±0.25rad に締めて隙間が画面のほぼ中央ではなく中央寄りに来るように
+     しているので、ここで「窓＋周囲はほぼ真っ暗」の帯を固定で描く（旧スリットの
+     演出を実3Dの視点で再現）。窓位置は screenshot で基準 yaw を撮って合わせる。 */
   #hideOv {
     position: fixed; inset: 0; z-index: 18; pointer-events: none;
+    display: none;
     background:
       linear-gradient(90deg,
-        #020203 0%, #020203 32.5%, rgba(2,2,3,0.25) 45%,
-        rgba(2,2,3,0.25) 55%, #020203 67.5%, #020203 100%);
-    display: none;
+        rgba(2,2,3,0.97) 0%, rgba(2,2,3,0.97) 24%,
+        rgba(2,2,3,0.55) 34%, rgba(2,2,3,0.0) 41%,
+        rgba(2,2,3,0.0) 59%, rgba(2,2,3,0.55) 66%,
+        rgba(2,2,3,0.97) 76%, rgba(2,2,3,0.97) 100%),
+      linear-gradient(180deg,
+        rgba(2,2,3,0.85) 0%, rgba(2,2,3,0.0) 26%,
+        rgba(2,2,3,0.0) 74%, rgba(2,2,3,0.85) 100%);
   }
   #hideOv .lbl {
     position: absolute; top: 20%; width: 100%; text-align: center;
