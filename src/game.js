@@ -256,7 +256,7 @@ function buildSpec(it) {
   // docSpecs() は呼ぶたびに新しいオブジェクトを返し、年号年・発行日・氏名も真正値で
   // 埋まっている（L-8 / L-9d）。異変は applyAnom() が複製に当てて返す（L-16）。
   const d = SPECS[it.id];
-  const s = { ...d, rows: d.rows.map(r => [...r]), stampFlip: false, mirror: false };
+  const s = { ...d, rows: d.rows.map(r => [...r]), flags: {} };
   return it.copy.fake ? applyAnom(it.copy.anomId, s, LOCALE, mulberry32(it.copy.seed)) : s;
 }
 /* canvas のフォントスタック（P2-7）。
@@ -313,13 +313,17 @@ function fitFont(c, text, maxW, basePx, tail, head = "") {
   return wdt;
 }
 
-function drawDoc(spec) {
+function drawDoc(spec, eyeClosed = false) {
   const cv = $("docCv"), c = cv.getContext("2d"), w = cv.width, h = cv.height;
+  // 異変の見た目は applyAnom() が spec.flags に立てる（src/anoms.js）。v24 で anoms.js へ
+  // 移したとき、ここが spec.mirror 等の旧位置を読んだままで、鏡・逆さ印・見ている印・
+  // 濡れ・透かし・朱の呪の6種が**真正と同一の絵**になっていた。必ず flags から読む。
+  const f = spec.flags || {};
   c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
   c.textBaseline = "alphabetic";
   c.fillStyle = "#ece7d8"; c.fillRect(0, 0, w, h);
-  if (spec.mirror) { c.translate(w, 0); c.scale(-1, 1); }
-  if (spec.mark) {
+  if (f.mirror) { c.translate(w, 0); c.scale(-1, 1); }
+  if (f.mark) {
     // 透かし：うっすらと、あの顔
     c.save();
     c.globalAlpha = 0.07; c.fillStyle = "#1a1815";
@@ -330,7 +334,7 @@ function drawDoc(spec) {
     c.restore();
   }
   c.strokeStyle = "#8a8574"; c.lineWidth = 2; c.strokeRect(14, 14, w - 28, h - 28);
-  if (spec.ju) {
+  if (f.ju) {
     c.save();
     c.translate(54, 54); c.rotate(-0.12);
     c.globalAlpha = 0.75; c.fillStyle = "#b23b2e";
@@ -345,7 +349,7 @@ function drawDoc(spec) {
      fill/stroke がシャドウ付き**で描かれていた。Canvas の shadowBlur は通常描画より
      一桁近く重く、しかも異変の名前は「濡れた**文字**」なので枠や印まで滲むのは仕様違い。
      ここ（題字の直前）から、朱印の直前までの文字描画にだけ掛ける。 */
-  if (spec.blur) { c.shadowColor = "rgba(40,38,30,0.85)"; c.shadowBlur = 3.5; }
+  if (f.blur) { c.shadowColor = "rgba(40,38,30,0.85)"; c.shadowBlur = 3.5; }
   c.fillStyle = "#22201c"; c.textAlign = "center";
   // 題字はロケールで長さが大きく変わる（「支払調書」4字 と "Nonemployee Compensation" 24字）。
   // 固定サイズだと枠外へ流れて読めなくなるので、必ず幅に収める。
@@ -382,17 +386,25 @@ function drawDoc(spec) {
   c.save();
   c.shadowBlur = 0;   // 朱印は滲ませない（上の「文字だけ」の但し書きを参照）
   c.translate(w - 80, h - 78);
-  if (spec.stampFlip) c.rotate(Math.PI);
+  if (f.stampFlip) c.rotate(Math.PI);
   /* 朱印は書類であることの記号だが、顔として見たときは**目より目立ってはいけない**。
      0.85 の朱色は暗い体の中で唯一の彩度になり、視線がそこへ行っていた（agy）。
      かすれた古い印として、薄く細く残す。 */
   c.globalAlpha = 0.42; c.strokeStyle = "#8e4438"; c.lineWidth = 1.6;
   c.beginPath(); c.arc(0, 0, 30, 0, Math.PI * 2); c.stroke();
-  if (spec.stampEye) {
-    c.fillStyle = "#f4f0e6";
-    c.beginPath(); c.ellipse(0, 0, 16, 9, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#1a1815";
-    c.beginPath(); c.arc(0, 0, 4.5, 0, Math.PI * 2); c.fill();
+  if (f.stampEye) {
+    // 目は異変そのものなので、かすれた印より濃く描く（薄いままだと灰色の点にしか見えない）。
+    c.globalAlpha = 0.85;
+    if (eyeClosed) {
+      // 瞬きの瞬間：閉じた瞼の線だけ
+      c.strokeStyle = "#1a1815"; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(-16, 0); c.quadraticCurveTo(0, 6, 16, 0); c.stroke();
+    } else {
+      c.fillStyle = "#f4f0e6";
+      c.beginPath(); c.ellipse(0, 0, 16, 9, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#1a1815";
+      c.beginPath(); c.arc(0, 0, 4.5, 0, Math.PI * 2); c.fill();
+    }
   } else {
     c.fillStyle = "#b23b2e"; c.textAlign = "center"; c.textBaseline = "middle";
     // 「印」は1字、「М.П.」「SELLO」は複数字。円（半径30）の内側に収める。
@@ -5458,15 +5470,36 @@ promptEl.addEventListener("touchstart", e => { e.preventDefault(); tryInteract()
 
 /* ---------- 検分（真贋判定） ---------- */
 let inspectIt = null;
+/* 「見ている印」の却下理由は「印影が**瞬き**しました」。静止した目を描くだけでは
+   言っていることと見えるものが食い違うので、検分中は実際に瞬かせる。
+   初回は開いてすぐ（見落とさせない）、以降は不規則な間隔で。 */
+let blinkTimer = 0;
+function startBlink(it, spec) {
+  clearTimeout(blinkTimer);
+  if (!spec.flags || !spec.flags.stampEye) return;
+  const blink = () => {
+    if (inspectIt !== it) return;
+    drawDoc(spec, true);
+    blinkTimer = setTimeout(() => {
+      if (inspectIt !== it) return;
+      drawDoc(spec, false);
+      blinkTimer = setTimeout(blink, 1600 + Math.random() * 2000);
+    }, 160);
+  };
+  blinkTimer = setTimeout(blink, 900);
+}
 function openInspect(it) {
   state = "INSPECT";
   inspectIt = it;
-  drawDoc(buildSpec(it));
+  const spec = buildSpec(it);
+  drawDoc(spec);
+  startBlink(it, spec);
   $("inspect").classList.remove("hidden");
   document.exitPointerLock && document.exitPointerLock();
   beep(520, 0.08, "triangle", 0.08);
 }
 function closeInspect() {
+  clearTimeout(blinkTimer);
   $("inspect").classList.add("hidden");
   if (state === "INSPECT") state = "PLAY";
   inspectIt = null;
