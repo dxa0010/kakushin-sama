@@ -100,9 +100,10 @@ for (const locale of LOCALES) {
     };
     const inside = (box, r) => box[0] >= r[0] && box[1] >= r[1] && box[2] <= r[2] && box[3] <= r[3];
     const MIN_PX = 12;      // これより少ない変化は、実際の画面ではまず気づけない
-    // 項目名の1字置換は巧妙系なので小さくてよいが、ё の2点（3px）未満は同形とみなす。
-    // í→i（1px）・l→I（1〜2px）はこれで落ち、混同表から外した。
-    const LABEL_MIN = 3;
+    // 項目名の1字置換は巧妙系だが、小さい窓では書類が 0.74 倍に縮み項目名は 9〜10px になる。
+    // 点やアクセントだけの置換（ё・й・í→i・ñ→n・额→額 = 1〜9px）は実画面で見えなかったので、
+    // 字の骨格が変わる 20px 以上を要求する（日本語の最小 期→斯 が 23px）。
+    const LABEL_MIN = 20;
 
     const out = { locale: loc, cases: [], labelSites: [], eye: null, failPngs: {} };
     const ITEMS = d.ITEMS;
